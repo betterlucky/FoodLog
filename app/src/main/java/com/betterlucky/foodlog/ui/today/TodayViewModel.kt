@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
+import com.betterlucky.foodlog.domain.intent.EntryIntent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -68,6 +69,7 @@ class TodayViewModel(
             message.value = when (result) {
                 is FoodLogRepository.SubmitResult.Parsed -> "Logged for ${result.logDate}"
                 is FoodLogRepository.SubmitResult.Pending -> "Saved as pending for ${result.logDate}"
+                is FoodLogRepository.SubmitResult.NonFood -> result.intent.placeholderMessage()
             }
         }
     }
@@ -98,6 +100,16 @@ class TodayViewModel(
         }
     }
 }
+
+private fun EntryIntent.placeholderMessage(): String =
+    when (this) {
+        EntryIntent.QUERY -> "Saved as a chat question. AI summaries will come later."
+        EntryIntent.EXPORT_COMMAND -> "Saved as an export request. Export workflow will come later."
+        EntryIntent.CORRECTION -> "Saved as a correction for later review."
+        EntryIntent.NOTE -> "Saved as a note for later."
+        EntryIntent.UNKNOWN -> "Saved for later review."
+        EntryIntent.FOOD_LOG -> "Saved."
+    }
 
 class TodayViewModelFactory(
     private val repository: FoodLogRepository,

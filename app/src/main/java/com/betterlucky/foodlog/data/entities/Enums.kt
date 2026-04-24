@@ -5,6 +5,8 @@ enum class EntryKind {
     PHOTO,
     CORRECTION,
     QUERY,
+    EXPORT_COMMAND,
+    NOTE,
     SYSTEM,
 }
 

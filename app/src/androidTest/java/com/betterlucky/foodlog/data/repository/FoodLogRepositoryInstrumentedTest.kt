@@ -11,6 +11,7 @@ import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
+import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.util.DateTimeProvider
 import kotlinx.coroutines.flow.first
@@ -42,6 +43,7 @@ class FoodLogRepositoryInstrumentedTest {
             .build()
         repository = FoodLogRepository(
             database = database,
+            intentClassifier = DeterministicIntentClassifier(),
             parser = DeterministicParser(),
             dateTimeProvider = FakeDateTimeProvider(
                 now = now,
@@ -110,6 +112,41 @@ class FoodLogRepositoryInstrumentedTest {
 
         assertEquals(listOf("apple"), todayPending.map { it.rawText })
         assertEquals(listOf("yesterday curry"), yesterdayPending.map { it.rawText })
+    }
+
+    @Test
+    fun queryDoesNotBecomePendingFoodCleanup() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("how am I doing today?")
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val rawEntries = database.rawEntryDao().observeRawEntriesForDate(today).first()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.NonFood)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(EntryKind.QUERY, rawEntries.single().entryKind)
+        assertEquals(RawEntryStatus.PARSED, rawEntries.single().status)
+    }
+
+    @Test
+    fun exportCommandAndCorrectionDoNotBecomePendingFoodCleanup() = runTest {
+        repository.seedDefaults()
+
+        repository.submitText("end of day")
+        repository.submitText("actually that was 50g")
+
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val rawEntries = database.rawEntryDao().observeRawEntriesForDate(today).first()
+
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(
+            listOf(EntryKind.EXPORT_COMMAND, EntryKind.CORRECTION),
+            rawEntries.map { it.entryKind },
+        )
+        assertEquals(
+            listOf(RawEntryStatus.PARSED, RawEntryStatus.NEEDS_REVIEW),
+            rawEntries.map { it.status },
+        )
     }
 
     @Test

@@ -9,6 +9,8 @@ import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.export.AuditCsvExporter
 import com.betterlucky.foodlog.domain.export.LegacyHealthCsvExporter
+import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
+import com.betterlucky.foodlog.domain.intent.EntryIntent
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.util.DateTimeProvider
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +18,7 @@ import java.time.LocalDate
 
 class FoodLogRepository(
     private val database: FoodLogDatabase,
+    private val intentClassifier: DeterministicIntentClassifier,
     private val parser: DeterministicParser,
     private val dateTimeProvider: DateTimeProvider,
     private val legacyHealthCsvExporter: LegacyHealthCsvExporter = LegacyHealthCsvExporter(),
@@ -33,9 +36,29 @@ class FoodLogRepository(
 
     suspend fun submitText(input: String): SubmitResult =
         database.withTransaction {
+            val intent = intentClassifier.classify(input)
             val parsed = parser.parse(input, dateTimeProvider.today())
             val createdAt = dateTimeProvider.nowInstant()
             val consumedTime = dateTimeProvider.localTime()
+
+            if (intent != EntryIntent.FOOD_LOG) {
+                val rawEntryId = rawEntryDao.insert(
+                    RawEntryEntity(
+                        createdAt = createdAt,
+                        logDate = parsed.logDate,
+                        consumedTime = consumedTime,
+                        rawText = input,
+                        entryKind = intent.toEntryKind(),
+                        status = intent.toRawEntryStatus(),
+                        notes = intent.placeholderNotes(),
+                    ),
+                )
+                return@withTransaction SubmitResult.NonFood(
+                    rawEntryId = rawEntryId,
+                    logDate = parsed.logDate,
+                    intent = intent,
+                )
+            }
 
             val rawEntryId = rawEntryDao.insert(
                 RawEntryEntity(
@@ -112,6 +135,12 @@ class FoodLogRepository(
             override val rawEntryId: Long,
             override val logDate: LocalDate,
         ) : SubmitResult
+
+        data class NonFood(
+            override val rawEntryId: Long,
+            override val logDate: LocalDate,
+            val intent: EntryIntent,
+        ) : SubmitResult
     }
 
     companion object {
@@ -124,3 +153,33 @@ class FoodLogRepository(
         )
     }
 }
+
+private fun EntryIntent.toEntryKind(): EntryKind =
+    when (this) {
+        EntryIntent.QUERY -> EntryKind.QUERY
+        EntryIntent.CORRECTION -> EntryKind.CORRECTION
+        EntryIntent.EXPORT_COMMAND -> EntryKind.EXPORT_COMMAND
+        EntryIntent.NOTE -> EntryKind.NOTE
+        EntryIntent.UNKNOWN,
+        EntryIntent.FOOD_LOG -> EntryKind.TEXT
+    }
+
+private fun EntryIntent.toRawEntryStatus(): RawEntryStatus =
+    when (this) {
+        EntryIntent.CORRECTION -> RawEntryStatus.NEEDS_REVIEW
+        EntryIntent.UNKNOWN -> RawEntryStatus.NEEDS_REVIEW
+        EntryIntent.QUERY,
+        EntryIntent.EXPORT_COMMAND,
+        EntryIntent.NOTE,
+        EntryIntent.FOOD_LOG -> RawEntryStatus.PARSED
+    }
+
+private fun EntryIntent.placeholderNotes(): String? =
+    when (this) {
+        EntryIntent.QUERY -> "Conversational responses will be handled by a later phase."
+        EntryIntent.EXPORT_COMMAND -> "Daily export commands will be handled by a later phase."
+        EntryIntent.CORRECTION -> "Correction handling will be handled by a later phase."
+        EntryIntent.NOTE -> "Notes will be handled by a later phase."
+        EntryIntent.UNKNOWN -> "Input was not confidently classified."
+        EntryIntent.FOOD_LOG -> null
+    }
