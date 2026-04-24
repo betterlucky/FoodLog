@@ -6,7 +6,7 @@ The canonical implementation plan is in [PLAN.md](PLAN.md). The retained CSV fil
 
 ## Current Status
 
-This repository is prepared for Phase 1 implementation:
+This repository contains the first Phase 1 implementation slice:
 
 - Kotlin native Android app
 - Jetpack Compose UI
@@ -15,3 +15,12 @@ This repository is prepared for Phase 1 implementation:
 - local CSV export
 - no backend and no OpenAI calls in Phase 1
 
+## Local Development
+
+This project uses the checked-in Gradle wrapper.
+
+```sh
+JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home ./gradlew testDebugUnitTest
+```
+
+The local Android SDK path is stored in ignored `local.properties`.

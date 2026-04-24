@@ -1,0 +1,36 @@
+package com.betterlucky.foodlog.domain.parser
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import java.time.LocalDate
+
+class DeterministicParserTest {
+    private val parser = DeterministicParser()
+    private val today = LocalDate.parse("2026-04-24")
+
+    @Test
+    fun teaPhrasesResolveToTeaShortcut() {
+        listOf("tea", "a tea", "cup of tea", "1 tea", "  CUP   OF   TEA  ").forEach { input ->
+            val parsed = parser.parse(input, today)
+
+            assertEquals("tea", parsed.shortcutTrigger)
+            assertEquals(today, parsed.logDate)
+        }
+    }
+
+    @Test
+    fun supportedDatePrefixesSetLogDate() {
+        assertEquals(today, parser.parse("today tea", today).logDate)
+        assertEquals(today.minusDays(1), parser.parse("yesterday tea", today).logDate)
+        assertEquals(LocalDate.parse("2026-04-23"), parser.parse("2026-04-23 tea", today).logDate)
+    }
+
+    @Test
+    fun datePrefixLeavesUnsupportedPhraseForPendingEntry() {
+        val parsed = parser.parse("yesterday curry", today)
+
+        assertEquals(today.minusDays(1), parsed.logDate)
+        assertEquals("curry", parsed.normalizedFoodText)
+        assertEquals("curry", parsed.shortcutTrigger)
+    }
+}

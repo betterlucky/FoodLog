@@ -1,0 +1,24 @@
+package com.betterlucky.foodlog.data.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import com.betterlucky.foodlog.data.entities.RawEntryEntity
+import com.betterlucky.foodlog.data.entities.RawEntryStatus
+import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
+
+@Dao
+interface RawEntryDao {
+    @Insert
+    suspend fun insert(entry: RawEntryEntity): Long
+
+    @Query("UPDATE raw_entries SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: RawEntryStatus)
+
+    @Query("SELECT * FROM raw_entries WHERE logDate = :date ORDER BY createdAt ASC")
+    fun observeRawEntriesForDate(date: LocalDate): Flow<List<RawEntryEntity>>
+
+    @Query("SELECT * FROM raw_entries WHERE status = :status ORDER BY createdAt DESC")
+    fun observeByStatus(status: RawEntryStatus): Flow<List<RawEntryEntity>>
+}
