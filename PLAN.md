@@ -1,0 +1,249 @@
+# FoodLog Phase 1 Plan
+
+## Summary
+
+FoodLog is a private, local-first native Android food logging app in Kotlin. The app should feel like a small chat-style food log, but the source of truth is a deterministic local Room database, not the rendered chat UI, previous conversational text, or exported CSV.
+
+Phase 1 proves the local data path:
+
+- user submits text
+- raw text is saved immediately
+- deterministic local parsing resolves known shortcuts
+- consumed items are stored as structured database rows
+- today view and CSV exports are rendered from Room rows only
+
+The sample file `food_log_full_2026-04-04_to_2026-04-23.csv` is retained unchanged as fixture data and as the legacy health-monitor CSV export contract.
+
+## Phase 1 Requirements
+
+Use:
+
+- Kotlin
+- native Android
+- Jetpack Compose
+- Room
+- Coroutines and Flow
+- MVVM-style structure
+- local-only storage
+
+Do not implement in Phase 1:
+
+- OpenAI calls
+- backend/server integration
+- nutrition-label photo extraction
+- leftovers
+- corrections
+- product matching
+- conversational summaries
+
+Core behavior:
+
+- Save every submitted text as `RawEntryEntity` before interpretation.
+- Store consumed foods only as `FoodItemEntity` rows generated from deterministic local logic.
+- Unsupported inputs become pending raw entries and create no food item.
+- Use a repository/database transaction for raw-entry insertion, parsing/default resolution, food-item insertion, and raw-entry status update.
+- Raw entries are audit records and should not be deleted in normal app flows.
+- Totals and exports exclude voided food rows by default.
+
+Seed tea as the first `UserDefaultEntity`:
+
+- `trigger = "tea"`
+- `name = "Tea"`
+- `calories = 25`
+- `unit = "cup"`
+- `notes = "English tea with skimmed milk and half a teaspoon of sugar"`
+- `source = USER_DEFAULT`
+- `confidence = HIGH`
+
+Tea is the first example of the shortcut/default mechanism, not one-off hardcoded business logic. Similar compound items such as cranberry mix should eventually use the same default mechanism; until configured, they remain pending.
+
+## Parsing And Dates
+
+Implement a small deterministic parser for Phase 1.
+
+Normalization:
+
+- trim leading/trailing whitespace
+- collapse repeated whitespace
+- match case-insensitively
+- do not fuzzy-match arbitrary text
+
+Supported shortcut phrases:
+
+- `tea`
+- `a tea`
+- `cup of tea`
+- `1 tea`
+
+Supported date prefixes:
+
+- `today tea`
+- `yesterday tea`
+- `YYYY-MM-DD tea`
+
+Date behavior:
+
+- Date prefixes set `RawEntryEntity.logDate` and `FoodItemEntity.logDate`.
+- If a date prefix is present but the remaining phrase is unsupported, save a pending raw entry using the parsed `logDate`.
+- `createdAt` is always the actual timestamp when the entry is saved.
+- `consumedTime` defaults to the current local time for parsed food items unless a later phase adds explicit time parsing.
+- `logDate` defaults to the current local date when no supported date prefix is present.
+
+Examples:
+
+| Input | Result |
+| --- | --- |
+| `tea` | parsed raw entry and one Tea food item for today |
+| `a tea` | parsed raw entry and one Tea food item for today |
+| `cup of tea` | parsed raw entry and one Tea food item for today |
+| `1 tea` | parsed raw entry and one Tea food item for today |
+| `yesterday tea` | parsed raw entry and one Tea food item for yesterday |
+| `2026-04-23 tea` | parsed raw entry and one Tea food item for 2026-04-23 |
+| `yesterday curry` | pending raw entry for yesterday, no food item |
+| `cranberry mix` | pending raw entry for today, no food item |
+
+## Data Model
+
+Define Room entities and DAOs for:
+
+- `RawEntryEntity`
+- `FoodItemEntity`
+- `ProductEntity`
+- `ProductPhotoEntity`
+- `ContainerEntity`
+- `UserDefaultEntity`
+
+Keep product, photo, and container support minimal in Phase 1. Database setup and DAOs are enough; no UI or behavior is required for those concepts yet.
+
+`CorrectionEntity` is a later-phase TODO unless it is trivial to include as an inert placeholder. Phase 1 must not implement correction behavior.
+
+Required converters:
+
+- `Instant`
+- `LocalDate`
+- `LocalTime`
+- enums
+
+Android compatibility:
+
+- Require API 26+, or enable Java time desugaring for `java.time` support.
+
+Recommended high-level package structure:
+
+```text
+app/src/main/java/.../foodlogger/
+  data/
+    dao/
+    db/
+    entities/
+    repository/
+  domain/
+    export/
+    parser/
+    totals/
+  ui/
+    today/
+    components/
+  util/
+```
+
+Keep parsing, export generation, and totals outside composables.
+
+## UI Scope
+
+Create a mobile-first Compose Today screen with:
+
+- current selected date
+- chat-style text input
+- submit/log button
+- today's logged food items
+- today's calorie total
+- pending entries section
+- export CSV controls
+
+The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data.
+
+## CSV Export
+
+Implement two CSV exporters from Room rows only.
+
+### `LegacyHealthCsvExporter`
+
+This exporter matches the retained sample CSV and is the Phase 1 health-monitor handoff format.
+
+Header:
+
+```csv
+date,time_local,item,quantity,calories_kcal,notes
+```
+
+Mapping:
+
+- `date` = `FoodItemEntity.logDate`
+- `time_local` = `FoodItemEntity.consumedTime`, blank when null
+- `item` = `FoodItemEntity.name`
+- `quantity` = amount plus unit when available, otherwise unit or blank
+- `calories_kcal` = calories formatted deterministically
+- `notes` = notes or blank
+
+### `AuditCsvExporter`
+
+This richer export preserves provenance for debugging and future import paths.
+
+Header:
+
+```csv
+log_date,consumed_time,item,amount,unit,grams,calories,source,confidence,product,notes,raw_entry_id,created_at
+```
+
+Rules for both exporters:
+
+- Export from Room `FoodItemEntity` rows only.
+- Exclude voided rows by default.
+- Sort by `logDate`, then `consumedTime`, then `createdAt`.
+- Escape commas, quotes, and newlines correctly.
+- Preserve blank times as blank CSV fields.
+- Do not call AI during export.
+- Do not use rendered UI text as export input.
+
+## Tests
+
+Add focused tests for Phase 1 behavior:
+
+- Default tea shortcut is seeded.
+- `tea`, `a tea`, `cup of tea`, and `1 tea` create parsed raw entries and one food item.
+- Tea food item has `25 kcal`, `source = USER_DEFAULT`, and `confidence = HIGH`.
+- `today tea`, `yesterday tea`, and `YYYY-MM-DD tea` set the expected `logDate`.
+- `yesterday curry` creates a pending raw entry with yesterday's `logDate` and no food item.
+- Unsupported input creates a pending raw entry and no food item.
+- Daily total excludes voided rows.
+- `LegacyHealthCsvExporter` header matches the sample CSV exactly.
+- `AuditCsvExporter` header matches the rich schema exactly.
+- CSV export includes active rows, excludes voided rows, handles blank times, and escapes commas/quotes/newlines.
+- Repository submit flow keeps raw and food rows consistent.
+
+Prefer local unit tests for parser, export, and totals logic. Use instrumented tests only where Room or Android framework behavior makes that necessary.
+
+## Later Phase TODOs
+
+Later phases may add:
+
+- user-editable shortcut/default management
+- structured OpenAI text parser behind an interface
+- nutrition-label photo extraction
+- product review and confirmation screens
+- product matching with stale-cache protection
+- active leftover/container handling
+- correction handling with audit trail
+- conversational day summaries from database-derived context
+- direct health-monitor integration beyond CSV export
+
+Future AI features must query structured database state first. They must not infer the day's food from chat history.
+
+## Assumptions
+
+- `25 kcal` is the Phase 1 seeded tea default.
+- Historical sample rows with `18 kcal` tea entries are legacy data and do not override the new seed default.
+- Shortcut/default editing can wait until after Phase 1.
+- The sample CSV is context for the legacy export contract, not the new internal schema.
+- The app should remain convenient, but never silently wrong: use deterministic shortcuts when known, otherwise save pending entries for review.

@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Android / Gradle
+.gradle/
+build/
+*/build/
+local.properties
+
+# IDEs
+.idea/
+*.iml
+
+# Kotlin / Java
+*.class
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
