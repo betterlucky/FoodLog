@@ -23,4 +23,10 @@ This project uses the checked-in Gradle wrapper.
 JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home ./gradlew testDebugUnitTest
 ```
 
+To build, install, launch, and capture a phone screenshot:
+
+```sh
+scripts/android-smoke.sh /tmp/foodlog-smoke.png
+```
+
 The local Android SDK path is stored in ignored `local.properties`.

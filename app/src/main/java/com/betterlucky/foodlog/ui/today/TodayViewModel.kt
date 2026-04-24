@@ -29,7 +29,7 @@ class TodayViewModel(
             message,
             selectedDate.flatMapLatest(repository::observeFoodItemsForDate),
             selectedDate.flatMapLatest(repository::observeCaloriesForDate),
-            repository.observePendingEntries(),
+            selectedDate.flatMapLatest(repository::observePendingEntriesForDate),
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             TodayUiState(

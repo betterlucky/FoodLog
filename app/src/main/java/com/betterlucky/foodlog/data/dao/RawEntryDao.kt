@@ -21,4 +21,16 @@ interface RawEntryDao {
 
     @Query("SELECT * FROM raw_entries WHERE status = :status ORDER BY createdAt DESC")
     fun observeByStatus(status: RawEntryStatus): Flow<List<RawEntryEntity>>
+
+    @Query(
+        """
+        SELECT * FROM raw_entries
+        WHERE status = :status AND logDate = :date
+        ORDER BY createdAt DESC
+        """,
+    )
+    fun observeByStatusForDate(
+        status: RawEntryStatus,
+        date: LocalDate,
+    ): Flow<List<RawEntryEntity>>
 }

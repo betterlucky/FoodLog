@@ -13,9 +13,14 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -45,16 +50,18 @@ fun TodayScreen(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Button(onClick = viewModel::previousDay) {
+            TextButton(onClick = viewModel::previousDay) {
                 Text("Prev")
             }
             Text(
                 text = uiState.selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
                 fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineSmall,
             )
-            Button(onClick = viewModel::nextDay) {
+            TextButton(onClick = viewModel::nextDay) {
                 Text("Next")
             }
         }
@@ -94,10 +101,10 @@ fun TodayScreen(
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
+            OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
                 Text("Export Legacy CSV")
             }
-            Button(onClick = { viewModel.exportAuditCsv(onShareCsv) }) {
+            OutlinedButton(onClick = { viewModel.exportAuditCsv(onShareCsv) }) {
                 Text("Export Audit CSV")
             }
         }
@@ -109,35 +116,103 @@ fun TodayScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Text(text = "Logged Items", fontWeight = FontWeight.Bold)
+                SectionTitle("Logged Items")
             }
-            items(uiState.items) { item ->
-                FoodItemRow(item)
+            if (uiState.items.isEmpty()) {
+                item {
+                    EmptyState("No food logged for this day yet.")
+                }
+            } else {
+                items(uiState.items) { item ->
+                    FoodItemRow(item)
+                }
             }
 
             item {
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(text = "Pending", fontWeight = FontWeight.Bold)
+                SectionTitle("Pending")
             }
-            items(uiState.pendingEntries) { entry ->
-                PendingEntryRow(entry)
+            if (uiState.pendingEntries.isEmpty()) {
+                item {
+                    EmptyState("No pending entries for this day.")
+                }
+            } else {
+                items(uiState.pendingEntries) { entry ->
+                    PendingEntryRow(entry)
+                }
             }
         }
     }
 }
 
 @Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.titleLarge,
+    )
+}
+
+@Composable
+private fun EmptyState(text: String) {
+    Text(
+        text = text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+@Composable
 private fun FoodItemRow(item: FoodItemEntity) {
-    Row(
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
     ) {
-        Text(text = "${item.consumedTime ?: "--:--"}  ${item.name}")
-        Text(text = "${item.calories.toInt()} kcal")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(text = item.name, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = item.consumedTime?.toString() ?: "No time",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(
+                text = "${item.calories.toInt()} kcal",
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 
 @Composable
 private fun PendingEntryRow(entry: RawEntryEntity) {
-    Text(text = "${entry.logDate}: \"${entry.rawText}\"")
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            Text(text = entry.rawText, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = "Needs review",
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
 }

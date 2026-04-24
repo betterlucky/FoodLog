@@ -85,6 +85,9 @@ class FoodLogRepository(
     fun observePendingEntries(): Flow<List<RawEntryEntity>> =
         rawEntryDao.observeByStatus(RawEntryStatus.PENDING)
 
+    fun observePendingEntriesForDate(date: LocalDate): Flow<List<RawEntryEntity>> =
+        rawEntryDao.observeByStatusForDate(RawEntryStatus.PENDING, date)
+
     suspend fun exportLegacyHealthCsv(date: LocalDate): String {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
         return legacyHealthCsvExporter.export(items)

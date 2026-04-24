@@ -99,6 +99,20 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingEntriesCanBeObservedForSelectedDate() = runTest {
+        repository.seedDefaults()
+
+        repository.submitText("yesterday curry")
+        repository.submitText("apple")
+
+        val todayPending = repository.observePendingEntriesForDate(today).first()
+        val yesterdayPending = repository.observePendingEntriesForDate(today.minusDays(1)).first()
+
+        assertEquals(listOf("apple"), todayPending.map { it.rawText })
+        assertEquals(listOf("yesterday curry"), yesterdayPending.map { it.rawText })
+    }
+
+    @Test
     fun dailyTotalExcludesVoidedRows() = runTest {
         val rawEntryId = database.rawEntryDao().insert(
             RawEntryEntity(
