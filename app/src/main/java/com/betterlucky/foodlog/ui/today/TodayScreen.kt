@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
@@ -18,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
@@ -27,13 +29,15 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun TodayScreen(
     viewModel: TodayViewModel,
-    onShareCsv: (String) -> Unit,
+    onShareCsv: (String, String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val focusManager = LocalFocusManager.current
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .safeDrawingPadding()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -64,7 +68,12 @@ fun TodayScreen(
                 singleLine = true,
                 label = { Text("Type food naturally") },
             )
-            Button(onClick = viewModel::submit) {
+            Button(
+                onClick = {
+                    focusManager.clearFocus()
+                    viewModel.submit()
+                },
+            ) {
                 Text("Log")
             }
         }

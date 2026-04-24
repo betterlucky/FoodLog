@@ -1,6 +1,5 @@
 package com.betterlucky.foodlog
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,10 +8,14 @@ import androidx.compose.material3.MaterialTheme
 import com.betterlucky.foodlog.ui.today.TodayScreen
 import com.betterlucky.foodlog.ui.today.TodayViewModel
 import com.betterlucky.foodlog.ui.today.TodayViewModelFactory
+import com.betterlucky.foodlog.util.CsvShareHelper
 
 class MainActivity : ComponentActivity() {
     private val viewModel: TodayViewModel by viewModels {
         TodayViewModelFactory((application as FoodLogApplication).repository)
+    }
+    private val csvShareHelper: CsvShareHelper by lazy {
+        CsvShareHelper(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,12 +31,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun shareCsv(csv: String) {
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/csv"
-            putExtra(Intent.EXTRA_SUBJECT, "FoodLog export")
-            putExtra(Intent.EXTRA_TEXT, csv)
-        }
-        startActivity(Intent.createChooser(intent, "Share FoodLog CSV"))
+    private fun shareCsv(
+        csv: String,
+        fileName: String,
+    ) {
+        csvShareHelper.shareCsv(csv, fileName)
     }
 }

@@ -84,15 +84,17 @@ class TodayViewModel(
         selectedDate.update { it.plusDays(1) }
     }
 
-    fun exportLegacyCsv(onExported: (String) -> Unit) {
+    fun exportLegacyCsv(onExported: (String, String) -> Unit) {
         viewModelScope.launch {
-            onExported(repository.exportLegacyHealthCsv(selectedDate.value))
+            val date = selectedDate.value
+            onExported(repository.exportLegacyHealthCsv(date), "foodlog-legacy-$date.csv")
         }
     }
 
-    fun exportAuditCsv(onExported: (String) -> Unit) {
+    fun exportAuditCsv(onExported: (String, String) -> Unit) {
         viewModelScope.launch {
-            onExported(repository.exportAuditCsv(selectedDate.value))
+            val date = selectedDate.value
+            onExported(repository.exportAuditCsv(date), "foodlog-audit-$date.csv")
         }
     }
 }
