@@ -167,6 +167,8 @@ The UI should render from Room-backed state. It must not parse visible tables, c
 
 Implement two CSV exporters from Room rows only.
 
+Daily export is the primary workflow for Phase 1 and the near-term Health Monitor handoff. The user should be encouraged to export the day's report regularly rather than treating the export as an unbounded canonical log.
+
 ### `LegacyHealthCsvExporter`
 
 This exporter matches the retained sample CSV and is the Phase 1 health-monitor handoff format.
@@ -206,6 +208,13 @@ Rules for both exporters:
 - Do not call AI during export.
 - Do not use rendered UI text as export input.
 
+Later export behavior should consider:
+
+- a setting or toggle for appending exports to a long-term log file for users who want an ongoing personal ledger
+- a daily export/reset reminder or status indicator
+- a configurable day-boundary grace period so midnight or early-morning snacks can still be assigned to the previous daily report when appropriate
+- clear handling of whether an exported day is considered closed, especially before any older-day editing is allowed
+
 ## Tests
 
 Add focused tests for Phase 1 behavior:
@@ -237,6 +246,8 @@ Later phases may add:
 - correction handling with audit trail
 - conversational day summaries from database-derived context
 - direct health-monitor integration beyond CSV export
+- optional long-term append-log export mode
+- daily close/export reminders with a midnight or early-morning grace period
 
 Future AI features must query structured database state first. They must not infer the day's food from chat history.
 
