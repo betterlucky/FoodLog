@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -59,13 +61,17 @@ fun TodayScreen(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Bottom,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
                 value = uiState.inputText,
                 onValueChange = viewModel::onInputChanged,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 96.dp, max = 180.dp),
+                minLines = 2,
+                maxLines = 5,
                 label = { Text("Type food naturally") },
             )
             Button(
