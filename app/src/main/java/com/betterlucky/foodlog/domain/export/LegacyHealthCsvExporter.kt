@@ -31,10 +31,20 @@ class LegacyHealthCsvExporter {
 
     private fun quantityFor(item: FoodItemEntity): String =
         when {
-            item.amount != null && item.unit != null -> "${item.amount.formatAmount()} ${item.unit}"
+            item.amount != null && item.unit != null -> "${item.amount.formatAmount()} ${pluralizedUnit(item.unit, item.amount)}"
             item.amount != null -> item.amount.formatAmount()
             item.unit != null -> item.unit
             else -> ""
+        }
+
+    private fun pluralizedUnit(
+        unit: String,
+        amount: Double,
+    ): String =
+        when {
+            amount == 1.0 -> unit
+            unit == "cup" -> "cups"
+            else -> unit
         }
 
     companion object {

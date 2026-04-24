@@ -181,7 +181,10 @@ private fun FoodItemRow(item: FoodItemEntity) {
             Column {
                 Text(text = item.name, fontWeight = FontWeight.SemiBold)
                 Text(
-                    text = item.consumedTime?.toString() ?: "No time",
+                    text = listOfNotNull(
+                        item.consumedTime?.toString() ?: "No time",
+                        quantityText(item),
+                    ).joinToString(" - "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -193,6 +196,27 @@ private fun FoodItemRow(item: FoodItemEntity) {
         }
     }
 }
+
+private fun quantityText(item: FoodItemEntity): String? =
+    when {
+        item.amount != null && item.unit != null -> "${item.amount.formatAmount()} ${pluralizedUnit(item.unit, item.amount)}"
+        item.amount != null -> item.amount.formatAmount()
+        item.unit != null -> item.unit
+        else -> null
+    }
+
+private fun Double.formatAmount(): String =
+    if (rem(1.0) == 0.0) toInt().toString() else toString()
+
+private fun pluralizedUnit(
+    unit: String,
+    amount: Double,
+): String =
+    when {
+        amount == 1.0 -> unit
+        unit == "cup" -> "cups"
+        else -> unit
+    }
 
 @Composable
 private fun PendingEntryRow(entry: RawEntryEntity) {

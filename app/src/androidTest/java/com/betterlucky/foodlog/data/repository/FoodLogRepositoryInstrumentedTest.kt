@@ -86,6 +86,22 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun teaQuantityMultipliesAmountAndCalories() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("2 teas")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val total = repository.observeCaloriesForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(2.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals(50.0, foodItem.calories, 0.001)
+        assertEquals(50.0, total, 0.001)
+        assertTrue(csv.contains("2 cups,50"))
+    }
+
+    @Test
     fun unsupportedDatedSubmissionStaysPendingWithParsedLogDate() = runTest {
         repository.seedDefaults()
 

@@ -56,10 +56,20 @@ class CsvExporterTest {
         assertTrue(csv.lines()[1].startsWith("2026-04-24,,Tea"))
     }
 
+    @Test
+    fun legacyExporterPluralizesCupQuantities() {
+        val csv = LegacyHealthCsvExporter().export(
+            listOf(foodItem(amount = 2.0)),
+        )
+
+        assertTrue(csv.lines()[1].contains("2 cups"))
+    }
+
     private fun foodItem(
         name: String = "Tea",
         notes: String? = "English tea with skimmed milk and half a teaspoon of sugar",
         consumedTime: LocalTime? = LocalTime.parse("16:00"),
+        amount: Double = 1.0,
         voided: Boolean = false,
     ): FoodItemEntity =
         FoodItemEntity(
@@ -68,7 +78,7 @@ class CsvExporterTest {
             logDate = LocalDate.parse("2026-04-24"),
             consumedTime = consumedTime,
             name = name,
-            amount = 1.0,
+            amount = amount,
             unit = "cup",
             calories = 25.0,
             source = FoodItemSource.USER_DEFAULT,

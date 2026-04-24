@@ -14,7 +14,23 @@ class DeterministicParserTest {
             val parsed = parser.parse(input, today)
 
             assertEquals("tea", parsed.shortcutTrigger)
+            assertEquals(1.0, parsed.quantity, 0.001)
             assertEquals(today, parsed.logDate)
+        }
+    }
+
+    @Test
+    fun teaQuantitiesResolveToTeaShortcutWithAmount() {
+        mapOf(
+            "2 tea" to 2.0,
+            "2 teas" to 2.0,
+            "two teas" to 2.0,
+            "three tea" to 3.0,
+        ).forEach { (input, quantity) ->
+            val parsed = parser.parse(input, today)
+
+            assertEquals("tea", parsed.shortcutTrigger)
+            assertEquals(quantity, parsed.quantity, 0.001)
         }
     }
 

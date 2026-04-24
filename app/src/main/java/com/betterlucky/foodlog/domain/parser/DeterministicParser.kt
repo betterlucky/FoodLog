@@ -7,6 +7,7 @@ data class ParsedSubmission(
     val normalizedFoodText: String,
     val logDate: LocalDate,
     val shortcutTrigger: String?,
+    val quantity: Double = 1.0,
 )
 
 class DeterministicParser {
@@ -19,7 +20,8 @@ class DeterministicParser {
             rawText = input,
             normalizedFoodText = dated.foodText,
             logDate = dated.logDate,
-            shortcutTrigger = shortcutTrigger,
+            shortcutTrigger = shortcutTrigger?.trigger,
+            quantity = shortcutTrigger?.quantity ?: 1.0,
         )
     }
 
@@ -60,16 +62,53 @@ class DeterministicParser {
         }
     }
 
-    private fun shortcutTriggerFor(foodText: String): String? {
+    private fun shortcutTriggerFor(foodText: String): ShortcutMatch? {
+        if (foodText.isBlank()) return null
+
+        val numericMatch = Regex("^(\\d+(?:\\.\\d+)?)\\s+(.+)$").matchEntire(foodText)
+        if (numericMatch != null) {
+            return ShortcutMatch(
+                trigger = singularizeShortcut(numericMatch.groupValues[2]),
+                quantity = numericMatch.groupValues[1].toDouble(),
+            )
+        }
+
+        val wordQuantityMatch = Regex("^(two|three|four|five)\\s+(.+)$").matchEntire(foodText)
+        if (wordQuantityMatch != null) {
+            return ShortcutMatch(
+                trigger = singularizeShortcut(wordQuantityMatch.groupValues[2]),
+                quantity = wordQuantityMatch.groupValues[1].wordQuantity(),
+            )
+        }
+
         val trigger = when {
-            foodText.isBlank() -> null
             foodText.startsWith("a ") -> foodText.removePrefix("a ")
-            foodText.startsWith("1 ") -> foodText.removePrefix("1 ")
             foodText.startsWith("cup of ") -> foodText.removePrefix("cup of ")
             else -> foodText
         }
-        return trigger?.takeIf { it.isNotBlank() }
+        return ShortcutMatch(trigger = singularizeShortcut(trigger), quantity = 1.0)
+            .takeIf { it.trigger.isNotBlank() }
     }
+
+    private fun singularizeShortcut(trigger: String): String =
+        when (trigger) {
+            "teas", "cups of tea" -> "tea"
+            else -> trigger
+        }
+
+    private fun String.wordQuantity(): Double =
+        when (this) {
+            "two" -> 2.0
+            "three" -> 3.0
+            "four" -> 4.0
+            "five" -> 5.0
+            else -> 1.0
+        }
+
+    private data class ShortcutMatch(
+        val trigger: String,
+        val quantity: Double,
+    )
 
     private data class DatedFoodText(
         val foodText: String,
