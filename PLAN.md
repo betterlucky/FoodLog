@@ -12,7 +12,7 @@ Phase 1 proves the local data path:
 - consumed items are stored as structured database rows
 - today view and CSV exports are rendered from Room rows only
 
-The sample file `food_log_full_2026-04-04_to_2026-04-23.csv` is retained unchanged as fixture data and as the legacy health-monitor CSV export contract.
+The sample file `food_log_full_2026-04-04_to_2026-04-23.csv` is retained as synthetic fixture data and as the legacy health-monitor CSV export contract. It should not contain real personal food history.
 
 ## Phase 1 Requirements
 
@@ -162,6 +162,14 @@ Create a mobile-first Compose Today screen with:
 - export CSV controls
 
 The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data.
+
+Current pending-entry behavior:
+
+- Pending food entries can be manually resolved by the user from the Today screen.
+- Manual resolution requires at least an item name and calories.
+- Manual resolutions create `FoodItemEntity` rows with `source = MANUAL_OVERRIDE` and `confidence = HIGH`.
+- Resolving a pending entry marks the associated raw entry as `PARSED` without deleting the audit record.
+- Leaving an entry pending is the "keep pending" behavior; it remains unresolved and excluded from food exports until handled.
 
 ## CSV Export
 

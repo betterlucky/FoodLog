@@ -99,6 +99,49 @@ class TodayViewModel(
             onExported(repository.exportAuditCsv(date), "foodlog-audit-$date.csv")
         }
     }
+
+    fun resolvePendingEntry(
+        rawEntryId: Long,
+        name: String,
+        amount: String,
+        unit: String,
+        calories: String,
+        notes: String,
+        onResolved: () -> Unit,
+    ) {
+        val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+        val parsedCalories = calories.trim().toDoubleOrNull()
+
+        if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
+            message.value = "Add an item name and calories to resolve the pending entry."
+            return
+        }
+
+        if (amount.isNotBlank() && parsedAmount == null) {
+            message.value = "Amount must be a number."
+            return
+        }
+
+        viewModelScope.launch {
+            val result = repository.resolvePendingEntryManually(
+                rawEntryId = rawEntryId,
+                name = name,
+                amount = parsedAmount,
+                unit = unit,
+                calories = parsedCalories,
+                notes = notes,
+            )
+            message.value = when (result) {
+                is FoodLogRepository.ManualResolveResult.Resolved -> {
+                    onResolved()
+                    "Resolved pending entry for ${result.logDate}"
+                }
+                FoodLogRepository.ManualResolveResult.InvalidInput -> "Add an item name and calories to resolve the pending entry."
+                FoodLogRepository.ManualResolveResult.NotFound -> "That pending entry no longer exists."
+                FoodLogRepository.ManualResolveResult.NotPending -> "That entry has already been handled."
+            }
+        }
+    }
 }
 
 private fun EntryIntent.placeholderMessage(): String =

@@ -131,6 +131,55 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingEntryCanBeResolvedWithManualCalories() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("apple")
+        val rawEntryId = pendingResult.rawEntryId
+        val resolveResult = repository.resolvePendingEntryManually(
+            rawEntryId = rawEntryId,
+            name = "Apple",
+            amount = 1.0,
+            unit = "medium",
+            calories = 95.0,
+            notes = "User estimate",
+        )
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(rawEntryId)
+        val csv = repository.exportLegacyHealthCsv(today)
+
+        assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals("Apple", foodItem.name)
+        assertEquals(95.0, foodItem.calories, 0.001)
+        assertEquals(FoodItemSource.MANUAL_OVERRIDE, foodItem.source)
+        assertEquals(ConfidenceLevel.HIGH, foodItem.confidence)
+        assertTrue(csv.contains("2026-04-24,12:30,Apple,1 medium,95,User estimate"))
+    }
+
+    @Test
+    fun manualResolutionRejectsAlreadyParsedEntry() = runTest {
+        repository.seedDefaults()
+
+        val parsedResult = repository.submitText("tea")
+        val resolveResult = repository.resolvePendingEntryManually(
+            rawEntryId = parsedResult.rawEntryId,
+            name = "Tea override",
+            amount = null,
+            unit = null,
+            calories = 30.0,
+            notes = null,
+        )
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals(FoodLogRepository.ManualResolveResult.NotPending, resolveResult)
+        assertEquals(1, foodItems.size)
+        assertEquals("Tea", foodItems.single().name)
+    }
+
+    @Test
     fun queryDoesNotBecomePendingFoodCleanup() = runTest {
         repository.seedDefaults()
 

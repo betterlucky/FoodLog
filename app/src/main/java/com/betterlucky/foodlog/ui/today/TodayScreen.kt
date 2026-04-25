@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,10 +26,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
@@ -40,6 +46,7 @@ fun TodayScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
+    var resolvingEntry by remember { mutableStateOf<RawEntryEntity?>(null) }
 
     Column(
         modifier = Modifier
@@ -138,10 +145,31 @@ fun TodayScreen(
                 }
             } else {
                 items(uiState.pendingEntries) { entry ->
-                    PendingEntryRow(entry)
+                    PendingEntryRow(
+                        entry = entry,
+                        onResolve = { resolvingEntry = entry },
+                    )
                 }
             }
         }
+    }
+
+    resolvingEntry?.let { entry ->
+        ResolvePendingDialog(
+            entry = entry,
+            onDismiss = { resolvingEntry = null },
+            onResolve = { name, amount, unit, calories, notes ->
+                viewModel.resolvePendingEntry(
+                    rawEntryId = entry.id,
+                    name = name,
+                    amount = amount,
+                    unit = unit,
+                    calories = calories,
+                    notes = notes,
+                    onResolved = { resolvingEntry = null },
+                )
+            },
+        )
     }
 }
 
@@ -219,7 +247,10 @@ private fun pluralizedUnit(
     }
 
 @Composable
-private fun PendingEntryRow(entry: RawEntryEntity) {
+private fun PendingEntryRow(
+    entry: RawEntryEntity,
+    onResolve: () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -237,6 +268,93 @@ private fun PendingEntryRow(entry: RawEntryEntity) {
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 style = MaterialTheme.typography.bodySmall,
             )
+            Button(
+                onClick = onResolve,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .padding(top = 8.dp),
+            ) {
+                Text("Resolve")
+            }
         }
     }
+}
+
+@Composable
+private fun ResolvePendingDialog(
+    entry: RawEntryEntity,
+    onDismiss: () -> Unit,
+    onResolve: (name: String, amount: String, unit: String, calories: String, notes: String) -> Unit,
+) {
+    var name by remember(entry.id) { mutableStateOf(entry.rawText) }
+    var amount by remember(entry.id) { mutableStateOf("") }
+    var unit by remember(entry.id) { mutableStateOf("") }
+    var calories by remember(entry.id) { mutableStateOf("") }
+    var notes by remember(entry.id) { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Resolve pending entry") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = entry.rawText,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Item") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Amount") },
+                    )
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = { unit = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Unit") },
+                    )
+                }
+                OutlinedTextField(
+                    value = calories,
+                    onValueChange = { calories = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    label = { Text("Calories") },
+                )
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    minLines = 2,
+                    maxLines = 3,
+                    label = { Text("Notes") },
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onResolve(name, amount, unit, calories, notes) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }

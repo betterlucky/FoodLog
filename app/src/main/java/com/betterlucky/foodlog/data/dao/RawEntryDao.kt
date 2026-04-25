@@ -13,6 +13,9 @@ interface RawEntryDao {
     @Insert
     suspend fun insert(entry: RawEntryEntity): Long
 
+    @Query("SELECT * FROM raw_entries WHERE id = :id")
+    suspend fun getById(id: Long): RawEntryEntity?
+
     @Query("UPDATE raw_entries SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: RawEntryStatus)
 

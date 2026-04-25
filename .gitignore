@@ -3,6 +3,8 @@
 
 # Android / Gradle
 .gradle/
+.gradle-user-home/
+.android-user-home/
 build/
 */build/
 local.properties
@@ -18,4 +20,3 @@ local.properties
 *.log
 tmp/
 temp/
-

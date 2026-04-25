@@ -3,7 +3,9 @@ package com.betterlucky.foodlog.data.repository
 import androidx.room.withTransaction
 import com.betterlucky.foodlog.data.db.FoodLogDatabase
 import com.betterlucky.foodlog.data.entities.EntryKind
+import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
+import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
@@ -111,6 +113,50 @@ class FoodLogRepository(
     fun observePendingEntriesForDate(date: LocalDate): Flow<List<RawEntryEntity>> =
         rawEntryDao.observeByStatusForDate(RawEntryStatus.PENDING, date)
 
+    suspend fun resolvePendingEntryManually(
+        rawEntryId: Long,
+        name: String,
+        amount: Double?,
+        unit: String?,
+        calories: Double,
+        notes: String?,
+    ): ManualResolveResult =
+        database.withTransaction {
+            val trimmedName = name.trim()
+            val normalizedUnit = unit?.trim().orEmpty().ifBlank { null }
+            val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
+            val normalizedAmount = amount?.takeIf { it > 0.0 }
+
+            if (trimmedName.isBlank() || calories <= 0.0) {
+                return@withTransaction ManualResolveResult.InvalidInput
+            }
+
+            val rawEntry = rawEntryDao.getById(rawEntryId)
+                ?: return@withTransaction ManualResolveResult.NotFound
+
+            if (rawEntry.status != RawEntryStatus.PENDING) {
+                return@withTransaction ManualResolveResult.NotPending
+            }
+
+            val foodItemId = foodItemDao.insert(
+                FoodItemEntity(
+                    rawEntryId = rawEntry.id,
+                    logDate = rawEntry.logDate,
+                    consumedTime = rawEntry.consumedTime,
+                    name = trimmedName,
+                    amount = normalizedAmount,
+                    unit = normalizedUnit,
+                    calories = calories,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = normalizedNotes,
+                    createdAt = dateTimeProvider.nowInstant(),
+                ),
+            )
+            rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
+            ManualResolveResult.Resolved(foodItemId = foodItemId, logDate = rawEntry.logDate)
+        }
+
     suspend fun exportLegacyHealthCsv(date: LocalDate): String {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
         return legacyHealthCsvExporter.export(items)
@@ -141,6 +187,17 @@ class FoodLogRepository(
             override val logDate: LocalDate,
             val intent: EntryIntent,
         ) : SubmitResult
+    }
+
+    sealed interface ManualResolveResult {
+        data class Resolved(
+            val foodItemId: Long,
+            val logDate: LocalDate,
+        ) : ManualResolveResult
+
+        data object InvalidInput : ManualResolveResult
+        data object NotFound : ManualResolveResult
+        data object NotPending : ManualResolveResult
     }
 
     companion object {
