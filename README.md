@@ -4,6 +4,10 @@ Private, local-first Android food logging app.
 
 The canonical implementation plan is in [PLAN.md](PLAN.md). The retained CSV file is sample fixture data and documents the legacy health-monitor export format.
 
+## Data Hygiene
+
+Keep this repo private. Do not commit real food logs, personal exports, local SDK paths, keystores, tokens, or API keys. Use synthetic fixtures for CSV examples and tests.
+
 ## Current Status
 
 This repository contains the first Phase 1 implementation slice:
