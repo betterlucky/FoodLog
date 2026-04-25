@@ -31,6 +31,7 @@ class TodayViewModel(
             selectedDate.flatMapLatest(repository::observeFoodItemsForDate),
             selectedDate.flatMapLatest(repository::observeCaloriesForDate),
             selectedDate.flatMapLatest(repository::observePendingEntriesForDate),
+            repository.observeActiveDefaults(),
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             TodayUiState(
@@ -40,6 +41,7 @@ class TodayViewModel(
                 items = values[3] as List<com.betterlucky.foodlog.data.entities.FoodItemEntity>,
                 totalCalories = values[4] as Double,
                 pendingEntries = values[5] as List<com.betterlucky.foodlog.data.entities.RawEntryEntity>,
+                userDefaults = values[6] as List<com.betterlucky.foodlog.data.entities.UserDefaultEntity>,
                 isLoading = false,
             )
         }.stateIn(
@@ -145,6 +147,39 @@ class TodayViewModel(
                 FoodLogRepository.ManualResolveResult.InvalidInput -> "Add an item name and calories to resolve the pending entry."
                 FoodLogRepository.ManualResolveResult.NotFound -> "That pending entry no longer exists."
                 FoodLogRepository.ManualResolveResult.NotPending -> "That entry has already been handled."
+            }
+        }
+    }
+
+    fun forgetShortcut(trigger: String) {
+        viewModelScope.launch {
+            repository.deactivateDefault(trigger)
+            message.value = "Forgot shortcut '$trigger'"
+        }
+    }
+
+    fun updateShortcut(
+        trigger: String,
+        name: String,
+        calories: String,
+        unit: String,
+        notes: String,
+        onUpdated: () -> Unit,
+    ) {
+        val parsedCalories = calories.trim().toDoubleOrNull()
+        if (name.isBlank() || unit.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
+            message.value = "Add a name, unit, and calories to update the shortcut."
+            return
+        }
+
+        viewModelScope.launch {
+            message.value = when (repository.updateDefault(trigger, name, parsedCalories, unit, notes)) {
+                FoodLogRepository.DefaultUpdateResult.Updated -> {
+                    onUpdated()
+                    "Updated shortcut '$trigger'"
+                }
+                FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a name, unit, and calories to update the shortcut."
+                FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
             }
         }
     }

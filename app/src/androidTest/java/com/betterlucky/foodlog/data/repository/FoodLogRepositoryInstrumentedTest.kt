@@ -208,6 +208,62 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun savedShortcutCanBeUpdated() = runTest {
+        repository.seedDefaults()
+        val pendingResult = repository.submitText("toast")
+        repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Toast",
+            amount = 1.0,
+            unit = "slice",
+            calories = 95.0,
+            notes = "Initial",
+            saveAsDefault = true,
+        )
+
+        val updateResult = repository.updateDefault(
+            trigger = "toast",
+            name = "Buttered toast",
+            calories = 130.0,
+            unit = "slice",
+            notes = "Edited default",
+        )
+        val default = database.userDefaultDao().getActiveDefault("toast")
+        repository.submitText("toast")
+        val latestFoodItem = repository.observeFoodItemsForDate(today).first().last()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.Updated, updateResult)
+        assertEquals("Buttered toast", default?.name)
+        assertEquals(130.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("Edited default", default?.notes)
+        assertEquals("Buttered toast", latestFoodItem.name)
+        assertEquals(130.0, latestFoodItem.calories, 0.001)
+    }
+
+    @Test
+    fun savedShortcutCanBeDeactivated() = runTest {
+        repository.seedDefaults()
+        val pendingResult = repository.submitText("toast")
+        repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Toast",
+            amount = 1.0,
+            unit = "slice",
+            calories = 95.0,
+            notes = null,
+            saveAsDefault = true,
+        )
+
+        repository.deactivateDefault("toast")
+        val nextResult = repository.submitText("toast")
+        val activeDefaults = repository.observeActiveDefaults().first()
+
+        assertEquals(null, database.userDefaultDao().getActiveDefault("toast"))
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Pending)
+        assertEquals(listOf("tea"), activeDefaults.map { it.trigger })
+    }
+
+    @Test
     fun manualResolutionRejectsAlreadyParsedEntry() = runTest {
         repository.seedDefaults()
 

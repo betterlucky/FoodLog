@@ -113,6 +113,43 @@ class FoodLogRepository(
     fun observePendingEntriesForDate(date: LocalDate): Flow<List<RawEntryEntity>> =
         rawEntryDao.observeByStatusForDate(RawEntryStatus.PENDING, date)
 
+    fun observeActiveDefaults(): Flow<List<UserDefaultEntity>> =
+        userDefaultDao.observeActiveDefaults()
+
+    suspend fun deactivateDefault(trigger: String) {
+        userDefaultDao.deactivate(trigger)
+    }
+
+    suspend fun updateDefault(
+        trigger: String,
+        name: String,
+        calories: Double,
+        unit: String,
+        notes: String?,
+    ): DefaultUpdateResult {
+        val trimmedTrigger = trigger.trim()
+        val trimmedName = name.trim()
+        val trimmedUnit = unit.trim()
+        val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
+
+        if (trimmedTrigger.isBlank() || trimmedName.isBlank() || trimmedUnit.isBlank() || calories <= 0.0) {
+            return DefaultUpdateResult.InvalidInput
+        }
+
+        val existing = userDefaultDao.getActiveDefault(trimmedTrigger)
+            ?: return DefaultUpdateResult.NotFound
+
+        userDefaultDao.upsert(
+            existing.copy(
+                name = trimmedName,
+                calories = calories,
+                unit = trimmedUnit,
+                notes = normalizedNotes,
+            ),
+        )
+        return DefaultUpdateResult.Updated
+    }
+
     suspend fun resolvePendingEntryManually(
         rawEntryId: Long,
         name: String,
@@ -224,6 +261,12 @@ class FoodLogRepository(
         data object InvalidInput : ManualResolveResult
         data object NotFound : ManualResolveResult
         data object NotPending : ManualResolveResult
+    }
+
+    sealed interface DefaultUpdateResult {
+        data object Updated : DefaultUpdateResult
+        data object InvalidInput : DefaultUpdateResult
+        data object NotFound : DefaultUpdateResult
     }
 
     companion object {

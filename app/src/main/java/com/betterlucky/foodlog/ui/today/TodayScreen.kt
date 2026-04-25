@@ -38,6 +38,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
+import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -48,6 +49,7 @@ fun TodayScreen(
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
     var resolvingEntry by remember { mutableStateOf<RawEntryEntity?>(null) }
+    var editingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
 
     Column(
         modifier = Modifier
@@ -152,6 +154,24 @@ fun TodayScreen(
                     )
                 }
             }
+
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                SectionTitle("Shortcuts")
+            }
+            if (uiState.userDefaults.isEmpty()) {
+                item {
+                    EmptyState("No shortcuts saved yet.")
+                }
+            } else {
+                items(uiState.userDefaults) { userDefault ->
+                    ShortcutRow(
+                        userDefault = userDefault,
+                        onEdit = { editingDefault = userDefault },
+                        onForget = { viewModel.forgetShortcut(userDefault.trigger) },
+                    )
+                }
+            }
         }
     }
 
@@ -169,6 +189,23 @@ fun TodayScreen(
                     notes = notes,
                     saveAsDefault = saveAsDefault,
                     onResolved = { resolvingEntry = null },
+                )
+            },
+        )
+    }
+
+    editingDefault?.let { userDefault ->
+        EditShortcutDialog(
+            userDefault = userDefault,
+            onDismiss = { editingDefault = null },
+            onSave = { name, calories, unit, notes ->
+                viewModel.updateShortcut(
+                    trigger = userDefault.trigger,
+                    name = name,
+                    calories = calories,
+                    unit = unit,
+                    notes = notes,
+                    onUpdated = { editingDefault = null },
                 )
             },
         )
@@ -283,6 +320,49 @@ private fun PendingEntryRow(
 }
 
 @Composable
+private fun ShortcutRow(
+    userDefault: UserDefaultEntity,
+    onEdit: () -> Unit,
+    onForget: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = userDefault.trigger, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        text = "${userDefault.name} - ${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = onEdit) {
+                        Text("Edit")
+                    }
+                    TextButton(onClick = onForget) {
+                        Text("Forget")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ResolvePendingDialog(
     entry: RawEntryEntity,
     onDismiss: () -> Unit,
@@ -371,6 +451,76 @@ private fun ResolvePendingDialog(
         },
         confirmButton = {
             Button(onClick = { onResolve(name, amount, unit, calories, notes, saveAsDefault) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun EditShortcutDialog(
+    userDefault: UserDefaultEntity,
+    onDismiss: () -> Unit,
+    onSave: (name: String, calories: String, unit: String, notes: String) -> Unit,
+) {
+    var name by remember(userDefault.trigger) { mutableStateOf(userDefault.name) }
+    var calories by remember(userDefault.trigger) { mutableStateOf(userDefault.calories.formatAmount()) }
+    var unit by remember(userDefault.trigger) { mutableStateOf(userDefault.unit) }
+    var notes by remember(userDefault.trigger) { mutableStateOf(userDefault.notes.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit shortcut") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = userDefault.trigger,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Item") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = calories,
+                        onValueChange = { calories = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Calories") },
+                    )
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = { unit = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Unit") },
+                    )
+                }
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    minLines = 2,
+                    maxLines = 3,
+                    label = { Text("Notes") },
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(name, calories, unit, notes) }) {
                 Text("Save")
             }
         },
