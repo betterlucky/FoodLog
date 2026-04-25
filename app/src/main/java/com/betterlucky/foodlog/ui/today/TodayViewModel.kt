@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeParseException
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TodayViewModel(
@@ -108,11 +110,13 @@ class TodayViewModel(
         amount: String,
         unit: String,
         calories: String,
+        time: String,
         notes: String,
         onUpdated: () -> Unit,
     ) {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedCalories = calories.trim().toDoubleOrNull()
+        val parsedTime = parseTimeOrNull(time)
 
         if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
             message.value = "Add an item name and calories to update the logged item."
@@ -124,6 +128,11 @@ class TodayViewModel(
             return
         }
 
+        if (parsedTime == null) {
+            message.value = "Time must use HH:mm, such as 08:30."
+            return
+        }
+
         viewModelScope.launch {
             message.value = when (
                 repository.updateFoodItem(
@@ -132,6 +141,7 @@ class TodayViewModel(
                     amount = parsedAmount,
                     unit = unit,
                     calories = parsedCalories,
+                    consumedTime = parsedTime,
                     notes = notes,
                 )
             ) {
@@ -234,6 +244,17 @@ class TodayViewModel(
                 FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
             }
         }
+    }
+}
+
+private fun parseTimeOrNull(value: String): LocalTime? {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return null
+
+    return try {
+        LocalTime.parse(trimmed)
+    } catch (_: DateTimeParseException) {
+        null
     }
 }
 

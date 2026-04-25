@@ -17,6 +17,7 @@ import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.util.DateTimeProvider
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
+import java.time.LocalTime
 
 class FoodLogRepository(
     private val database: FoodLogDatabase,
@@ -156,6 +157,7 @@ class FoodLogRepository(
         amount: Double?,
         unit: String?,
         calories: Double,
+        consumedTime: LocalTime,
         notes: String?,
     ): FoodItemUpdateResult {
         val trimmedName = name.trim()
@@ -176,6 +178,7 @@ class FoodLogRepository(
                 amount = normalizedAmount,
                 unit = normalizedUnit,
                 calories = calories,
+                consumedTime = consumedTime,
                 notes = normalizedNotes,
             ),
         )

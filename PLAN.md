@@ -169,7 +169,8 @@ The UI should render from Room-backed state. It must not parse visible tables, c
 Current logged-item behavior:
 
 - Logged food items can be edited from the Today screen.
-- Editing supports item name, amount, unit, calories, and notes.
+- Editing supports item name, amount, unit, calories, consumed time, and notes.
+- Consumed time is required for edited food rows and currently uses `HH:mm`.
 - Logged food items can be removed after confirmation.
 - Removing a logged item hard-deletes the `FoodItemEntity`; the raw entry remains.
 

@@ -233,13 +233,14 @@ fun TodayScreen(
         EditFoodItemDialog(
             item = item,
             onDismiss = { editingFoodItem = null },
-            onSave = { name, amount, unit, calories, notes ->
+            onSave = { name, amount, unit, calories, time, notes ->
                 viewModel.updateFoodItem(
                     id = item.id,
                     name = name,
                     amount = amount,
                     unit = unit,
                     calories = calories,
+                    time = time,
                     notes = notes,
                     onUpdated = { editingFoodItem = null },
                 )
@@ -627,12 +628,13 @@ private fun ForgetShortcutDialog(
 private fun EditFoodItemDialog(
     item: FoodItemEntity,
     onDismiss: () -> Unit,
-    onSave: (name: String, amount: String, unit: String, calories: String, notes: String) -> Unit,
+    onSave: (name: String, amount: String, unit: String, calories: String, time: String, notes: String) -> Unit,
 ) {
     var name by remember(item.id) { mutableStateOf(item.name) }
     var amount by remember(item.id) { mutableStateOf(item.amount?.formatAmount().orEmpty()) }
     var unit by remember(item.id) { mutableStateOf(item.unit.orEmpty()) }
     var calories by remember(item.id) { mutableStateOf(item.calories.formatAmount()) }
+    var time by remember(item.id) { mutableStateOf(item.consumedTime?.toString().orEmpty()) }
     var notes by remember(item.id) { mutableStateOf(item.notes.orEmpty()) }
 
     AlertDialog(
@@ -673,6 +675,14 @@ private fun EditFoodItemDialog(
                     label = { Text("Calories") },
                 )
                 OutlinedTextField(
+                    value = time,
+                    onValueChange = { time = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Time") },
+                    placeholder = { Text("HH:mm") },
+                )
+                OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
                     modifier = Modifier
@@ -685,7 +695,7 @@ private fun EditFoodItemDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name, amount, unit, calories, notes) }) {
+            Button(onClick = { onSave(name, amount, unit, calories, time, notes) }) {
                 Text("Save")
             }
         },

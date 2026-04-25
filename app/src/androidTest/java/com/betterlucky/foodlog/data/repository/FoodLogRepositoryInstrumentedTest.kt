@@ -294,6 +294,7 @@ class FoodLogRepositoryInstrumentedTest {
             amount = 1.0,
             unit = "mug",
             calories = 35.0,
+            consumedTime = LocalTime.parse("08:45"),
             notes = "Edited today",
         )
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
@@ -303,10 +304,11 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
         assertEquals("Large tea", foodItem.name)
         assertEquals("mug", foodItem.unit)
+        assertEquals(LocalTime.parse("08:45"), foodItem.consumedTime)
         assertEquals(35.0, foodItem.calories, 0.001)
         assertEquals("Edited today", foodItem.notes)
         assertEquals(35.0, total, 0.001)
-        assertTrue(csv.contains("Large tea,1 mug,35,Edited today"))
+        assertTrue(csv.contains("2026-04-24,08:45,Large tea,1 mug,35,Edited today"))
     }
 
     @Test
