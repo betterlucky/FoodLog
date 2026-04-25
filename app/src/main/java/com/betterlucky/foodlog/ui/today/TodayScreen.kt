@@ -40,6 +40,9 @@ import androidx.compose.ui.unit.dp
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
+import com.betterlucky.foodlog.data.entities.DailyStatusEntity
+import java.time.Instant
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -122,6 +125,11 @@ fun TodayScreen(
                 Text("Export Audit CSV")
             }
         }
+
+        ExportStatus(
+            dailyStatus = uiState.dailyStatus,
+            pendingCount = uiState.pendingEntries.size,
+        )
 
         HorizontalDivider()
 
@@ -263,6 +271,32 @@ fun TodayScreen(
 }
 
 @Composable
+private fun ExportStatus(
+    dailyStatus: DailyStatusEntity?,
+    pendingCount: Int,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = "Legacy: ${dailyStatus?.legacyExportedAt.exportText()}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text = "Audit: ${dailyStatus?.auditExportedAt.exportText()}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (pendingCount > 0) {
+            Text(
+                text = "$pendingCount pending ${if (pendingCount == 1) "entry" else "entries"} before export",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
 private fun SectionTitle(text: String) {
     Text(
         text = text,
@@ -270,6 +304,10 @@ private fun SectionTitle(text: String) {
         style = MaterialTheme.typography.titleLarge,
     )
 }
+
+private fun Instant?.exportText(): String =
+    this?.atZone(ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("HH:mm"))
+        ?: "not exported"
 
 @Composable
 private fun EmptyState(text: String) {

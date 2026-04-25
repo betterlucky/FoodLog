@@ -34,6 +34,7 @@ class TodayViewModel(
             selectedDate.flatMapLatest(repository::observeCaloriesForDate),
             selectedDate.flatMapLatest(repository::observePendingEntriesForDate),
             repository.observeActiveDefaults(),
+            selectedDate.flatMapLatest(repository::observeDailyStatusForDate),
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             TodayUiState(
@@ -44,6 +45,7 @@ class TodayViewModel(
                 totalCalories = values[4] as Double,
                 pendingEntries = values[5] as List<com.betterlucky.foodlog.data.entities.RawEntryEntity>,
                 userDefaults = values[6] as List<com.betterlucky.foodlog.data.entities.UserDefaultEntity>,
+                dailyStatus = values[7] as com.betterlucky.foodlog.data.entities.DailyStatusEntity?,
                 isLoading = false,
             )
         }.stateIn(

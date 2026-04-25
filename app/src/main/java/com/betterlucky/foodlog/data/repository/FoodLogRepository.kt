@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.betterlucky.foodlog.data.db.FoodLogDatabase
 import com.betterlucky.foodlog.data.entities.EntryKind
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
+import com.betterlucky.foodlog.data.entities.DailyStatusEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
@@ -30,6 +31,7 @@ class FoodLogRepository(
     private val rawEntryDao = database.rawEntryDao()
     private val foodItemDao = database.foodItemDao()
     private val userDefaultDao = database.userDefaultDao()
+    private val dailyStatusDao = database.dailyStatusDao()
 
     suspend fun seedDefaults() {
         if (userDefaultDao.countByTrigger(DEFAULT_TEA.trigger) == 0) {
@@ -116,6 +118,9 @@ class FoodLogRepository(
 
     fun observeActiveDefaults(): Flow<List<UserDefaultEntity>> =
         userDefaultDao.observeActiveDefaults()
+
+    fun observeDailyStatusForDate(date: LocalDate) =
+        dailyStatusDao.observeByDate(date)
 
     suspend fun deactivateDefault(trigger: String) {
         userDefaultDao.deactivate(trigger)
@@ -265,11 +270,29 @@ class FoodLogRepository(
     suspend fun exportLegacyHealthCsv(date: LocalDate): String {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
         return legacyHealthCsvExporter.export(items)
+            .also { markLegacyExported(date) }
     }
 
     suspend fun exportAuditCsv(date: LocalDate): String {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
         return auditCsvExporter.export(items)
+            .also { markAuditExported(date) }
+    }
+
+    private suspend fun markLegacyExported(date: LocalDate) {
+        val existing = dailyStatusDao.getByDate(date)
+        dailyStatusDao.upsert(
+            (existing ?: DailyStatusEntity(logDate = date))
+                .copy(legacyExportedAt = dateTimeProvider.nowInstant()),
+        )
+    }
+
+    private suspend fun markAuditExported(date: LocalDate) {
+        val existing = dailyStatusDao.getByDate(date)
+        dailyStatusDao.upsert(
+            (existing ?: DailyStatusEntity(logDate = date))
+                .copy(auditExportedAt = dateTimeProvider.nowInstant()),
+        )
     }
 
     sealed interface SubmitResult {

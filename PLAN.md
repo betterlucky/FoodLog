@@ -193,6 +193,16 @@ Implement two CSV exporters from Room rows only.
 
 Daily export is the primary workflow for Phase 1 and the near-term Health Monitor handoff. The user should be encouraged to export the day's report regularly rather than treating the export as an unbounded canonical log.
 
+Exported CSV files are output artifacts, not source data. If food rows change after export, FoodLog should generate a fresh export from Room rather than editing an existing external CSV file.
+
+Daily export status is tracked locally with a date-keyed status row:
+
+- `legacyExportedAt` is updated when the legacy Health Monitor CSV is exported.
+- `auditExportedAt` is updated when the audit CSV is exported.
+- The Today screen shows whether each export has happened for the selected date.
+- The Today screen highlights pending entry count before export.
+- Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
+
 ### `LegacyHealthCsvExporter`
 
 This exporter matches the retained sample CSV and is the Phase 1 health-monitor handoff format.

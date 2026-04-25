@@ -407,6 +407,24 @@ class FoodLogRepositoryInstrumentedTest {
         assertTrue(!csv.contains("Old tea"))
     }
 
+    @Test
+    fun exportsMarkDailyStatus() = runTest {
+        repository.seedDefaults()
+        repository.submitText("tea")
+
+        repository.exportLegacyHealthCsv(today)
+        var status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(now, status?.legacyExportedAt)
+        assertEquals(null, status?.auditExportedAt)
+
+        repository.exportAuditCsv(today)
+        status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(now, status?.legacyExportedAt)
+        assertEquals(now, status?.auditExportedAt)
+    }
+
     private fun foodItem(
         rawEntryId: Long,
         name: String = "Tea",
