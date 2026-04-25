@@ -173,6 +173,7 @@ Current pending-entry behavior:
 - Manual resolutions can optionally be saved as reusable user defaults so future matching inputs can be logged deterministically.
 - Saved defaults represent calories per unit. If the user resolves `2 slices` as `190 kcal`, the stored shortcut is `95 kcal` per `slice`.
 - Active shortcuts can be reviewed from the Today screen, edited in place, or forgotten by soft-deactivating the default.
+- Forgetting a shortcut requires confirmation.
 
 ## CSV Export
 

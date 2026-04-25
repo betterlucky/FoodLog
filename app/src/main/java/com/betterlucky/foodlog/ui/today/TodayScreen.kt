@@ -50,6 +50,7 @@ fun TodayScreen(
     val focusManager = LocalFocusManager.current
     var resolvingEntry by remember { mutableStateOf<RawEntryEntity?>(null) }
     var editingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
+    var forgettingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
 
     Column(
         modifier = Modifier
@@ -168,7 +169,7 @@ fun TodayScreen(
                     ShortcutRow(
                         userDefault = userDefault,
                         onEdit = { editingDefault = userDefault },
-                        onForget = { viewModel.forgetShortcut(userDefault.trigger) },
+                        onForget = { forgettingDefault = userDefault },
                     )
                 }
             }
@@ -207,6 +208,17 @@ fun TodayScreen(
                     notes = notes,
                     onUpdated = { editingDefault = null },
                 )
+            },
+        )
+    }
+
+    forgettingDefault?.let { userDefault ->
+        ForgetShortcutDialog(
+            userDefault = userDefault,
+            onDismiss = { forgettingDefault = null },
+            onConfirm = {
+                viewModel.forgetShortcut(userDefault.trigger)
+                forgettingDefault = null
             },
         )
     }
@@ -522,6 +534,33 @@ private fun EditShortcutDialog(
         confirmButton = {
             Button(onClick = { onSave(name, calories, unit, notes) }) {
                 Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun ForgetShortcutDialog(
+    userDefault: UserDefaultEntity,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Forget shortcut?") },
+        text = {
+            Text(
+                text = "'${userDefault.trigger}' currently logs ${userDefault.name} at ${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}.",
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Forget")
             }
         },
         dismissButton = {
