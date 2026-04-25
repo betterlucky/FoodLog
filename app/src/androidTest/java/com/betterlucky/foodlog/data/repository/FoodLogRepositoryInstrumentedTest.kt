@@ -284,6 +284,51 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun loggedFoodItemCanBeEdited() = runTest {
+        repository.seedDefaults()
+        val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        val updateResult = repository.updateFoodItem(
+            id = result.foodItemId,
+            name = "Large tea",
+            amount = 1.0,
+            unit = "mug",
+            calories = 35.0,
+            notes = "Edited today",
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val total = repository.observeCaloriesForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today)
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
+        assertEquals("Large tea", foodItem.name)
+        assertEquals("mug", foodItem.unit)
+        assertEquals(35.0, foodItem.calories, 0.001)
+        assertEquals("Edited today", foodItem.notes)
+        assertEquals(35.0, total, 0.001)
+        assertTrue(csv.contains("Large tea,1 mug,35,Edited today"))
+    }
+
+    @Test
+    fun loggedFoodItemCanBeRemovedWithHardDelete() = runTest {
+        repository.seedDefaults()
+        val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        val removeResult = repository.removeFoodItem(result.foodItemId)
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val total = repository.observeCaloriesForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today)
+
+        assertEquals(FoodLogRepository.FoodItemRemoveResult.Removed, removeResult)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals(null, database.foodItemDao().getById(result.foodItemId))
+        assertEquals(emptyList<FoodItemEntity>(), foodItems)
+        assertEquals(0.0, total, 0.001)
+        assertTrue(!csv.contains("Tea"))
+    }
+
+    @Test
     fun queryDoesNotBecomePendingFoodCleanup() = runTest {
         repository.seedDefaults()
 

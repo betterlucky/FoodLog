@@ -102,6 +102,58 @@ class TodayViewModel(
         }
     }
 
+    fun updateFoodItem(
+        id: Long,
+        name: String,
+        amount: String,
+        unit: String,
+        calories: String,
+        notes: String,
+        onUpdated: () -> Unit,
+    ) {
+        val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+        val parsedCalories = calories.trim().toDoubleOrNull()
+
+        if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
+            message.value = "Add an item name and calories to update the logged item."
+            return
+        }
+
+        if (amount.isNotBlank() && parsedAmount == null) {
+            message.value = "Amount must be a number."
+            return
+        }
+
+        viewModelScope.launch {
+            message.value = when (
+                repository.updateFoodItem(
+                    id = id,
+                    name = name,
+                    amount = parsedAmount,
+                    unit = unit,
+                    calories = parsedCalories,
+                    notes = notes,
+                )
+            ) {
+                FoodLogRepository.FoodItemUpdateResult.Updated -> {
+                    onUpdated()
+                    "Updated logged item"
+                }
+                FoodLogRepository.FoodItemUpdateResult.InvalidInput -> "Add an item name and calories to update the logged item."
+                FoodLogRepository.FoodItemUpdateResult.NotFound -> "That logged item no longer exists."
+            }
+        }
+    }
+
+    fun removeFoodItem(id: Long) {
+        viewModelScope.launch {
+            message.value = when (repository.removeFoodItem(id)) {
+                FoodLogRepository.FoodItemRemoveResult.Removed -> "Removed logged item"
+                FoodLogRepository.FoodItemRemoveResult.NotFound -> "That logged item no longer exists."
+            }
+        }
+    }
+
     fun resolvePendingEntry(
         rawEntryId: Long,
         name: String,

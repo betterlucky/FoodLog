@@ -43,7 +43,9 @@ Core behavior:
 - Unsupported inputs become pending raw entries and create no food item.
 - Use a repository/database transaction for raw-entry insertion, parsing/default resolution, food-item insertion, and raw-entry status update.
 - Raw entries are audit records and should not be deleted in normal app flows.
-- Totals and exports exclude voided food rows by default.
+- Totals and exports use active `FoodItemEntity` rows.
+- User-facing removal is called `Remove` and hard-deletes the selected `FoodItemEntity`.
+- Removing a food item does not delete the associated `RawEntryEntity` audit record.
 
 Seed tea as the first `UserDefaultEntity`:
 
@@ -160,8 +162,16 @@ Create a mobile-first Compose Today screen with:
 - today's calorie total
 - pending entries section
 - export CSV controls
+- logged item edit/remove controls
 
 The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data.
+
+Current logged-item behavior:
+
+- Logged food items can be edited from the Today screen.
+- Editing supports item name, amount, unit, calories, and notes.
+- Logged food items can be removed after confirmation.
+- Removing a logged item hard-deletes the `FoodItemEntity`; the raw entry remains.
 
 Current pending-entry behavior:
 
@@ -213,7 +223,7 @@ log_date,consumed_time,item,amount,unit,grams,calories,source,confidence,product
 Rules for both exporters:
 
 - Export from Room `FoodItemEntity` rows only.
-- Exclude voided rows by default.
+- Export currently active rows only.
 - Sort by `logDate`, then `consumedTime`, then `createdAt`.
 - Escape commas, quotes, and newlines correctly.
 - Preserve blank times as blank CSV fields.
@@ -237,10 +247,12 @@ Add focused tests for Phase 1 behavior:
 - `today tea`, `yesterday tea`, and `YYYY-MM-DD tea` set the expected `logDate`.
 - `yesterday curry` creates a pending raw entry with yesterday's `logDate` and no food item.
 - Unsupported input creates a pending raw entry and no food item.
-- Daily total excludes voided rows.
+- Daily total reflects active food rows.
+- Logged item edits update totals and exports.
+- Logged item removal deletes the food row and updates totals/exports.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.
 - `AuditCsvExporter` header matches the rich schema exactly.
-- CSV export includes active rows, excludes voided rows, handles blank times, and escapes commas/quotes/newlines.
+- CSV export includes active rows, handles blank times, and escapes commas/quotes/newlines.
 - Repository submit flow keeps raw and food rows consistent.
 
 Prefer local unit tests for parser, export, and totals logic. Use instrumented tests only where Room or Android framework behavior makes that necessary.

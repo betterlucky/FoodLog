@@ -51,6 +51,8 @@ fun TodayScreen(
     var resolvingEntry by remember { mutableStateOf<RawEntryEntity?>(null) }
     var editingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
     var forgettingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
+    var editingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
+    var removingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
 
     Column(
         modifier = Modifier
@@ -135,7 +137,11 @@ fun TodayScreen(
                 }
             } else {
                 items(uiState.items) { item ->
-                    FoodItemRow(item)
+                    FoodItemRow(
+                        item = item,
+                        onEdit = { editingFoodItem = item },
+                        onRemove = { removingFoodItem = item },
+                    )
                 }
             }
 
@@ -222,6 +228,35 @@ fun TodayScreen(
             },
         )
     }
+
+    editingFoodItem?.let { item ->
+        EditFoodItemDialog(
+            item = item,
+            onDismiss = { editingFoodItem = null },
+            onSave = { name, amount, unit, calories, notes ->
+                viewModel.updateFoodItem(
+                    id = item.id,
+                    name = name,
+                    amount = amount,
+                    unit = unit,
+                    calories = calories,
+                    notes = notes,
+                    onUpdated = { editingFoodItem = null },
+                )
+            },
+        )
+    }
+
+    removingFoodItem?.let { item ->
+        RemoveFoodItemDialog(
+            item = item,
+            onDismiss = { removingFoodItem = null },
+            onConfirm = {
+                viewModel.removeFoodItem(item.id)
+                removingFoodItem = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -243,7 +278,11 @@ private fun EmptyState(text: String) {
 }
 
 @Composable
-private fun FoodItemRow(item: FoodItemEntity) {
+private fun FoodItemRow(
+    item: FoodItemEntity,
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -272,6 +311,19 @@ private fun FoodItemRow(item: FoodItemEntity) {
                 text = "${item.calories.toInt()} kcal",
                 fontWeight = FontWeight.Bold,
             )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onEdit) {
+                Text("Edit")
+            }
+            TextButton(onClick = onRemove) {
+                Text("Remove")
+            }
         }
     }
 }
@@ -561,6 +613,107 @@ private fun ForgetShortcutDialog(
         confirmButton = {
             Button(onClick = onConfirm) {
                 Text("Forget")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun EditFoodItemDialog(
+    item: FoodItemEntity,
+    onDismiss: () -> Unit,
+    onSave: (name: String, amount: String, unit: String, calories: String, notes: String) -> Unit,
+) {
+    var name by remember(item.id) { mutableStateOf(item.name) }
+    var amount by remember(item.id) { mutableStateOf(item.amount?.formatAmount().orEmpty()) }
+    var unit by remember(item.id) { mutableStateOf(item.unit.orEmpty()) }
+    var calories by remember(item.id) { mutableStateOf(item.calories.formatAmount()) }
+    var notes by remember(item.id) { mutableStateOf(item.notes.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit logged item") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Item") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Amount") },
+                    )
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = { unit = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Unit") },
+                    )
+                }
+                OutlinedTextField(
+                    value = calories,
+                    onValueChange = { calories = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    label = { Text("Calories") },
+                )
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    minLines = 2,
+                    maxLines = 3,
+                    label = { Text("Notes") },
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(name, amount, unit, calories, notes) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun RemoveFoodItemDialog(
+    item: FoodItemEntity,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove logged item?") },
+        text = {
+            Text(
+                text = "${item.name} at ${item.calories.formatAmount()} kcal will be removed from this report.",
+            )
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text("Remove")
             }
         },
         dismissButton = {

@@ -150,6 +150,46 @@ class FoodLogRepository(
         return DefaultUpdateResult.Updated
     }
 
+    suspend fun updateFoodItem(
+        id: Long,
+        name: String,
+        amount: Double?,
+        unit: String?,
+        calories: Double,
+        notes: String?,
+    ): FoodItemUpdateResult {
+        val trimmedName = name.trim()
+        val normalizedAmount = amount?.takeIf { it > 0.0 }
+        val normalizedUnit = unit?.trim().orEmpty().ifBlank { null }
+        val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
+
+        if (trimmedName.isBlank() || calories <= 0.0) {
+            return FoodItemUpdateResult.InvalidInput
+        }
+
+        val existing = foodItemDao.getById(id)
+            ?: return FoodItemUpdateResult.NotFound
+
+        foodItemDao.update(
+            existing.copy(
+                name = trimmedName,
+                amount = normalizedAmount,
+                unit = normalizedUnit,
+                calories = calories,
+                notes = normalizedNotes,
+            ),
+        )
+        return FoodItemUpdateResult.Updated
+    }
+
+    suspend fun removeFoodItem(id: Long): FoodItemRemoveResult {
+        val existing = foodItemDao.getById(id)
+            ?: return FoodItemRemoveResult.NotFound
+
+        foodItemDao.deleteById(existing.id)
+        return FoodItemRemoveResult.Removed
+    }
+
     suspend fun resolvePendingEntryManually(
         rawEntryId: Long,
         name: String,
@@ -267,6 +307,17 @@ class FoodLogRepository(
         data object Updated : DefaultUpdateResult
         data object InvalidInput : DefaultUpdateResult
         data object NotFound : DefaultUpdateResult
+    }
+
+    sealed interface FoodItemUpdateResult {
+        data object Updated : FoodItemUpdateResult
+        data object InvalidInput : FoodItemUpdateResult
+        data object NotFound : FoodItemUpdateResult
+    }
+
+    sealed interface FoodItemRemoveResult {
+        data object Removed : FoodItemRemoveResult
+        data object NotFound : FoodItemRemoveResult
     }
 
     companion object {

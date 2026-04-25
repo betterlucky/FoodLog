@@ -3,6 +3,7 @@ package com.betterlucky.foodlog.data.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
@@ -11,6 +12,15 @@ import java.time.LocalDate
 interface FoodItemDao {
     @Insert
     suspend fun insert(item: FoodItemEntity): Long
+
+    @Update
+    suspend fun update(item: FoodItemEntity)
+
+    @Query("SELECT * FROM food_items WHERE id = :id")
+    suspend fun getById(id: Long): FoodItemEntity?
+
+    @Query("DELETE FROM food_items WHERE id = :id")
+    suspend fun deleteById(id: Long)
 
     @Query(
         """
