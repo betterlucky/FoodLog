@@ -120,6 +120,7 @@ class FoodLogRepository(
         unit: String?,
         calories: Double,
         notes: String?,
+        saveAsDefault: Boolean = false,
     ): ManualResolveResult =
         database.withTransaction {
             val trimmedName = name.trim()
@@ -154,7 +155,31 @@ class FoodLogRepository(
                 ),
             )
             rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
-            ManualResolveResult.Resolved(foodItemId = foodItemId, logDate = rawEntry.logDate)
+
+            val savedDefaultTrigger = if (saveAsDefault) {
+                val parsed = parser.parse(rawEntry.rawText, rawEntry.logDate)
+                parsed.shortcutTrigger
+                    ?.takeIf { it.isNotBlank() }
+                    ?.also { trigger ->
+                        userDefaultDao.upsert(
+                            UserDefaultEntity(
+                                trigger = trigger,
+                                name = trimmedName,
+                                calories = calories / (normalizedAmount ?: 1.0),
+                                unit = normalizedUnit ?: "serving",
+                                notes = normalizedNotes,
+                            ),
+                        )
+                    }
+            } else {
+                null
+            }
+
+            ManualResolveResult.Resolved(
+                foodItemId = foodItemId,
+                logDate = rawEntry.logDate,
+                savedDefaultTrigger = savedDefaultTrigger,
+            )
         }
 
     suspend fun exportLegacyHealthCsv(date: LocalDate): String {
@@ -193,6 +218,7 @@ class FoodLogRepository(
         data class Resolved(
             val foodItemId: Long,
             val logDate: LocalDate,
+            val savedDefaultTrigger: String?,
         ) : ManualResolveResult
 
         data object InvalidInput : ManualResolveResult

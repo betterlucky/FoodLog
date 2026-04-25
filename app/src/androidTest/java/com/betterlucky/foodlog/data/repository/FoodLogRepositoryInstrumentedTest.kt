@@ -160,6 +160,54 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun resolvedPendingEntryCanBeSavedAsShortcutForFutureSubmissions() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("toast")
+        val resolveResult = repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Toast",
+            amount = 2.0,
+            unit = "slice",
+            calories = 190.0,
+            notes = "Manual estimate",
+            saveAsDefault = true,
+        )
+        val default = database.userDefaultDao().getActiveDefault("toast")
+        val nextResult = repository.submitText("toast")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
+        assertEquals("toast", (resolveResult as FoodLogRepository.ManualResolveResult.Resolved).savedDefaultTrigger)
+        assertEquals("Toast", default?.name)
+        assertEquals(95.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("slice", default?.unit)
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(listOf(190.0, 95.0), foodItems.map { it.calories })
+        assertEquals(emptyList<RawEntryEntity>(), repository.observePendingEntriesForDate(today).first())
+    }
+
+    @Test
+    fun manualResolutionDoesNotSaveShortcutWhenUnchecked() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("pear")
+        repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Pear",
+            amount = 1.0,
+            unit = "medium",
+            calories = 100.0,
+            notes = null,
+            saveAsDefault = false,
+        )
+        val nextResult = repository.submitText("pear")
+
+        assertEquals(null, database.userDefaultDao().getActiveDefault("pear"))
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Pending)
+    }
+
+    @Test
     fun manualResolutionRejectsAlreadyParsedEntry() = runTest {
         repository.seedDefaults()
 

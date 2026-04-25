@@ -17,6 +17,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -158,7 +159,7 @@ fun TodayScreen(
         ResolvePendingDialog(
             entry = entry,
             onDismiss = { resolvingEntry = null },
-            onResolve = { name, amount, unit, calories, notes ->
+            onResolve = { name, amount, unit, calories, notes, saveAsDefault ->
                 viewModel.resolvePendingEntry(
                     rawEntryId = entry.id,
                     name = name,
@@ -166,6 +167,7 @@ fun TodayScreen(
                     unit = unit,
                     calories = calories,
                     notes = notes,
+                    saveAsDefault = saveAsDefault,
                     onResolved = { resolvingEntry = null },
                 )
             },
@@ -284,13 +286,21 @@ private fun PendingEntryRow(
 private fun ResolvePendingDialog(
     entry: RawEntryEntity,
     onDismiss: () -> Unit,
-    onResolve: (name: String, amount: String, unit: String, calories: String, notes: String) -> Unit,
+    onResolve: (
+        name: String,
+        amount: String,
+        unit: String,
+        calories: String,
+        notes: String,
+        saveAsDefault: Boolean,
+    ) -> Unit,
 ) {
     var name by remember(entry.id) { mutableStateOf(entry.rawText) }
     var amount by remember(entry.id) { mutableStateOf("") }
     var unit by remember(entry.id) { mutableStateOf("") }
     var calories by remember(entry.id) { mutableStateOf("") }
     var notes by remember(entry.id) { mutableStateOf("") }
+    var saveAsDefault by remember(entry.id) { mutableStateOf(true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -344,10 +354,23 @@ private fun ResolvePendingDialog(
                     maxLines = 3,
                     label = { Text("Notes") },
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = saveAsDefault,
+                        onCheckedChange = { saveAsDefault = it },
+                    )
+                    Text(
+                        text = "Save as shortcut",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = { onResolve(name, amount, unit, calories, notes) }) {
+            Button(onClick = { onResolve(name, amount, unit, calories, notes, saveAsDefault) }) {
                 Text("Save")
             }
         },

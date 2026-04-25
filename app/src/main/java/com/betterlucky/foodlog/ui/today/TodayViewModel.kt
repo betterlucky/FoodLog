@@ -107,6 +107,7 @@ class TodayViewModel(
         unit: String,
         calories: String,
         notes: String,
+        saveAsDefault: Boolean,
         onResolved: () -> Unit,
     ) {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
@@ -130,11 +131,16 @@ class TodayViewModel(
                 unit = unit,
                 calories = parsedCalories,
                 notes = notes,
+                saveAsDefault = saveAsDefault,
             )
             message.value = when (result) {
                 is FoodLogRepository.ManualResolveResult.Resolved -> {
                     onResolved()
-                    "Resolved pending entry for ${result.logDate}"
+                    if (result.savedDefaultTrigger == null) {
+                        "Resolved pending entry for ${result.logDate}"
+                    } else {
+                        "Resolved and saved shortcut '${result.savedDefaultTrigger}'"
+                    }
                 }
                 FoodLogRepository.ManualResolveResult.InvalidInput -> "Add an item name and calories to resolve the pending entry."
                 FoodLogRepository.ManualResolveResult.NotFound -> "That pending entry no longer exists."

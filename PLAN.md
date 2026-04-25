@@ -170,6 +170,8 @@ Current pending-entry behavior:
 - Manual resolutions create `FoodItemEntity` rows with `source = MANUAL_OVERRIDE` and `confidence = HIGH`.
 - Resolving a pending entry marks the associated raw entry as `PARSED` without deleting the audit record.
 - Leaving an entry pending is the "keep pending" behavior; it remains unresolved and excluded from food exports until handled.
+- Manual resolutions can optionally be saved as reusable user defaults so future matching inputs can be logged deterministically.
+- Saved defaults represent calories per unit. If the user resolves `2 slices` as `190 kcal`, the stored shortcut is `95 kcal` per `slice`.
 
 ## CSV Export
 
@@ -245,7 +247,7 @@ Prefer local unit tests for parser, export, and totals logic. Use instrumented t
 
 Later phases may add:
 
-- user-editable shortcut/default management
+- user-editable shortcut/default management screens
 - structured OpenAI text parser behind an interface
 - nutrition-label photo extraction
 - product review and confirmation screens
