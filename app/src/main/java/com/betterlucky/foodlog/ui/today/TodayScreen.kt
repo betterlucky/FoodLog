@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -174,6 +175,7 @@ fun TodayScreen(
                 items(uiState.userDefaults) { userDefault ->
                     ShortcutRow(
                         userDefault = userDefault,
+                        onLog = { viewModel.logShortcut(userDefault.trigger) },
                         onEdit = { editingDefault = userDefault },
                         onForget = { forgettingDefault = userDefault },
                     )
@@ -387,11 +389,14 @@ private fun PendingEntryRow(
 @Composable
 private fun ShortcutRow(
     userDefault: UserDefaultEntity,
+    onLog: () -> Unit,
     onEdit: () -> Unit,
     onForget: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onLog),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),

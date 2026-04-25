@@ -185,6 +185,7 @@ Current pending-entry behavior:
 - Saved defaults represent calories per unit. If the user resolves `2 slices` as `190 kcal`, the stored shortcut is `95 kcal` per `slice`.
 - Active shortcuts can be reviewed from the Today screen, edited in place, or forgotten by soft-deactivating the default.
 - Forgetting a shortcut requires confirmation.
+- Tapping an active shortcut logs one serving for the selected day using the same raw-entry and food-row path as typing the shortcut trigger.
 
 ## CSV Export
 

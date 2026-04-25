@@ -67,9 +67,22 @@ class TodayViewModel(
         val text = inputText.value
         if (text.isBlank()) return
 
+        submitText(text, clearInput = true)
+    }
+
+    fun logShortcut(trigger: String) {
+        submitText(trigger, clearInput = false)
+    }
+
+    private fun submitText(
+        text: String,
+        clearInput: Boolean,
+    ) {
         viewModelScope.launch {
             val result = repository.submitText(text)
-            inputText.value = ""
+            if (clearInput) {
+                inputText.value = ""
+            }
             message.value = when (result) {
                 is FoodLogRepository.SubmitResult.Parsed -> "Logged for ${result.logDate}"
                 is FoodLogRepository.SubmitResult.Pending -> "Saved as pending for ${result.logDate}"
