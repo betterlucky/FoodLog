@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.betterlucky.foodlog.data.dao.AppSettingsDao
 import com.betterlucky.foodlog.data.dao.ContainerDao
 import com.betterlucky.foodlog.data.dao.DailyStatusDao
 import com.betterlucky.foodlog.data.dao.FoodItemDao
@@ -14,6 +15,7 @@ import com.betterlucky.foodlog.data.dao.ProductDao
 import com.betterlucky.foodlog.data.dao.ProductPhotoDao
 import com.betterlucky.foodlog.data.dao.RawEntryDao
 import com.betterlucky.foodlog.data.dao.UserDefaultDao
+import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.ContainerEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
@@ -31,12 +33,14 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         ContainerEntity::class,
         UserDefaultEntity::class,
         DailyStatusEntity::class,
+        AppSettingsEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
 abstract class FoodLogDatabase : RoomDatabase() {
+    abstract fun appSettingsDao(): AppSettingsDao
     abstract fun rawEntryDao(): RawEntryDao
     abstract fun foodItemDao(): FoodItemDao
     abstract fun productDao(): ProductDao
@@ -67,6 +71,21 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS app_settings (
+                        id INTEGER NOT NULL,
+                        dayBoundaryTime TEXT,
+                        PRIMARY KEY(id)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL("INSERT OR IGNORE INTO app_settings (id, dayBoundaryTime) VALUES (1, NULL)")
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -75,6 +94,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
             )
                 .addMigrations(MIGRATION_1_2)
                 .addMigrations(MIGRATION_2_3)
+                .addMigrations(MIGRATION_3_4)
                 .build()
     }
 }

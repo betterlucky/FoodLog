@@ -11,9 +11,17 @@ data class ParsedSubmission(
 )
 
 class DeterministicParser {
-    fun parse(input: String, today: LocalDate): ParsedSubmission {
+    fun parse(
+        input: String,
+        today: LocalDate,
+        defaultLogDate: LocalDate = today,
+    ): ParsedSubmission {
         val normalized = normalize(input)
-        val dated = extractDatePrefix(normalized, today)
+        val dated = extractDatePrefix(
+            normalized = normalized,
+            today = today,
+            defaultLogDate = defaultLogDate,
+        )
         val shortcutTrigger = shortcutTriggerFor(dated.foodText)
 
         return ParsedSubmission(
@@ -34,6 +42,7 @@ class DeterministicParser {
     private fun extractDatePrefix(
         normalized: String,
         today: LocalDate,
+        defaultLogDate: LocalDate,
     ): DatedFoodText {
         val yesterdayPrefix = "yesterday "
         val todayPrefix = "today "
@@ -58,7 +67,7 @@ class DeterministicParser {
                     logDate = LocalDate.parse(isoDateMatch.groupValues[1]),
                 )
 
-            else -> DatedFoodText(foodText = normalized, logDate = today)
+            else -> DatedFoodText(foodText = normalized, logDate = defaultLogDate)
         }
     }
 

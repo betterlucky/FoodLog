@@ -57,6 +57,7 @@ class TodayViewModel(
     init {
         viewModelScope.launch {
             repository.seedDefaults()
+            selectedDate.value = repository.currentFoodDate()
         }
     }
 

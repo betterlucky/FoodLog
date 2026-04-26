@@ -42,6 +42,16 @@ class DeterministicParserTest {
     }
 
     @Test
+    fun unprefixedTextUsesDefaultLogDateButExplicitPrefixesUseCalendarToday() {
+        val defaultLogDate = today.minusDays(1)
+
+        assertEquals(defaultLogDate, parser.parse("tea", today, defaultLogDate).logDate)
+        assertEquals(today, parser.parse("today tea", today, defaultLogDate).logDate)
+        assertEquals(today.minusDays(1), parser.parse("yesterday tea", today, defaultLogDate).logDate)
+        assertEquals(LocalDate.parse("2026-04-23"), parser.parse("2026-04-23 tea", today, defaultLogDate).logDate)
+    }
+
+    @Test
     fun datePrefixLeavesUnsupportedPhraseForPendingEntry() {
         val parsed = parser.parse("yesterday curry", today)
 

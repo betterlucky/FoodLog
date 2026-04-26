@@ -2,6 +2,7 @@ package com.betterlucky.foodlog.data.repository
 
 import androidx.room.withTransaction
 import com.betterlucky.foodlog.data.db.FoodLogDatabase
+import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.EntryKind
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
@@ -12,6 +13,7 @@ import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.export.AuditCsvExporter
 import com.betterlucky.foodlog.domain.export.LegacyHealthCsvExporter
+import com.betterlucky.foodlog.domain.dayboundary.FoodDayPolicy
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.intent.EntryIntent
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
@@ -27,13 +29,19 @@ class FoodLogRepository(
     private val dateTimeProvider: DateTimeProvider,
     private val legacyHealthCsvExporter: LegacyHealthCsvExporter = LegacyHealthCsvExporter(),
     private val auditCsvExporter: AuditCsvExporter = AuditCsvExporter(),
+    private val foodDayPolicy: FoodDayPolicy = FoodDayPolicy(),
 ) {
+    private val appSettingsDao = database.appSettingsDao()
     private val rawEntryDao = database.rawEntryDao()
     private val foodItemDao = database.foodItemDao()
     private val userDefaultDao = database.userDefaultDao()
     private val dailyStatusDao = database.dailyStatusDao()
 
     suspend fun seedDefaults() {
+        if (appSettingsDao.getById() == null) {
+            appSettingsDao.upsert(AppSettingsEntity())
+        }
+
         if (userDefaultDao.countByTrigger(DEFAULT_TEA.trigger) == 0) {
             userDefaultDao.upsert(DEFAULT_TEA)
         }
@@ -42,9 +50,19 @@ class FoodLogRepository(
     suspend fun submitText(input: String): SubmitResult =
         database.withTransaction {
             val intent = intentClassifier.classify(input)
-            val parsed = parser.parse(input, dateTimeProvider.today())
+            val calendarToday = dateTimeProvider.today()
+            val localTime = dateTimeProvider.localTime()
+            val defaultLogDate = currentFoodDate(
+                calendarToday = calendarToday,
+                localTime = localTime,
+            )
+            val parsed = parser.parse(
+                input = input,
+                today = calendarToday,
+                defaultLogDate = defaultLogDate,
+            )
             val createdAt = dateTimeProvider.nowInstant()
-            val consumedTime = dateTimeProvider.localTime()
+            val consumedTime = localTime
 
             if (intent != EntryIntent.FOOD_LOG) {
                 val rawEntryId = rawEntryDao.insert(
@@ -122,6 +140,20 @@ class FoodLogRepository(
 
     fun observeDailyStatusForDate(date: LocalDate) =
         dailyStatusDao.observeByDate(date)
+
+    suspend fun currentFoodDate(): LocalDate =
+        currentFoodDate(
+            calendarToday = dateTimeProvider.today(),
+            localTime = dateTimeProvider.localTime(),
+        )
+
+    suspend fun setDayBoundaryTime(dayBoundaryTime: LocalTime?) {
+        if (appSettingsDao.getById() == null) {
+            appSettingsDao.upsert(AppSettingsEntity(dayBoundaryTime = dayBoundaryTime))
+        } else {
+            appSettingsDao.updateDayBoundaryTime(dayBoundaryTime)
+        }
+    }
 
     suspend fun deactivateDefault(trigger: String) {
         userDefaultDao.deactivate(trigger)
@@ -306,6 +338,16 @@ class FoodLogRepository(
                 .copy(auditExportedAt = dateTimeProvider.nowInstant()),
         )
     }
+
+    private suspend fun currentFoodDate(
+        calendarToday: LocalDate,
+        localTime: LocalTime,
+    ): LocalDate =
+        foodDayPolicy.defaultLogDate(
+            calendarDate = calendarToday,
+            localTime = localTime,
+            dayBoundaryTime = appSettingsDao.getById()?.dayBoundaryTime,
+        )
 
     sealed interface SubmitResult {
         val rawEntryId: Long

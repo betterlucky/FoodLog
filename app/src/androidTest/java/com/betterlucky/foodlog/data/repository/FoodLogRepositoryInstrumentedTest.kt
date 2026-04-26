@@ -133,6 +133,41 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun unprefixedEarlyMorningSubmissionUsesConfiguredPreviousFoodDay() = runTest {
+        repository.seedDefaults()
+        repository.setDayBoundaryTime(LocalTime.parse("03:00"))
+        dateTimeProvider.localTime = LocalTime.parse("02:30")
+
+        val result = repository.submitText("tea")
+        val previousDayFoodItems = repository.observeFoodItemsForDate(today.minusDays(1)).first()
+        val todayFoodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(today.minusDays(1), result.logDate)
+        assertEquals(today.minusDays(1), rawEntry?.logDate)
+        assertEquals(LocalTime.parse("02:30"), rawEntry?.consumedTime)
+        assertEquals(listOf("Tea"), previousDayFoodItems.map { it.name })
+        assertEquals(emptyList<FoodItemEntity>(), todayFoodItems)
+    }
+
+    @Test
+    fun explicitDatePrefixOverridesConfiguredFoodDayBoundary() = runTest {
+        repository.seedDefaults()
+        repository.setDayBoundaryTime(LocalTime.parse("03:00"))
+        dateTimeProvider.localTime = LocalTime.parse("02:30")
+
+        val result = repository.submitText("today tea")
+        val todayFoodItems = repository.observeFoodItemsForDate(today).first()
+        val previousDayFoodItems = repository.observeFoodItemsForDate(today.minusDays(1)).first()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(today, result.logDate)
+        assertEquals(listOf("Tea"), todayFoodItems.map { it.name })
+        assertEquals(emptyList<FoodItemEntity>(), previousDayFoodItems)
+    }
+
+    @Test
     fun pendingEntryCanBeResolvedWithManualCalories() = runTest {
         repository.seedDefaults()
 

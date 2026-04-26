@@ -209,6 +209,11 @@ Daily export status is tracked locally with a date-keyed status row:
   - `Ready to export` when the selected day has confirmed food rows and the legacy Health Monitor export is missing or stale.
   - `Already exported` when the selected day has confirmed food rows and the legacy Health Monitor export is current.
 - Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
+- FoodLog has a persisted day-boundary setting foundation:
+  - `null` day boundary means normal calendar-day logging.
+  - A configured boundary such as `03:00` means unprefixed entries before that time are assigned to the previous food day.
+  - Explicit date prefixes such as `today`, `yesterday`, and `YYYY-MM-DD` override the default food-day fallback.
+  - The Today screen starts on the current food day when the app opens.
 
 ### `LegacyHealthCsvExporter`
 
