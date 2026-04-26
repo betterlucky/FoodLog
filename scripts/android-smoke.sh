@@ -22,6 +22,8 @@ if ! "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk; then
     "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk
 fi
 
+"$ADB" shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
+"$ADB" shell wm dismiss-keyguard >/dev/null 2>&1 || true
 "$ADB" shell monkey -p com.betterlucky.foodlog -c android.intent.category.LAUNCHER 1 >/dev/null
 sleep 2
 "$ADB" exec-out screencap -p > "$SCREENSHOT_PATH"

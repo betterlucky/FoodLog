@@ -129,6 +129,7 @@ fun TodayScreen(
         ExportStatus(
             dailyStatus = uiState.dailyStatus,
             pendingCount = uiState.pendingEntries.size,
+            foodItemCount = uiState.items.size,
         )
 
         HorizontalDivider()
@@ -274,8 +275,26 @@ fun TodayScreen(
 private fun ExportStatus(
     dailyStatus: DailyStatusEntity?,
     pendingCount: Int,
+    foodItemCount: Int,
 ) {
+    val readiness = dailyReadiness(
+        dailyStatus = dailyStatus,
+        pendingCount = pendingCount,
+        foodItemCount = foodItemCount,
+    )
+
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = "Daily status: ${readiness.label}",
+            color = when (readiness) {
+                DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.error
+                DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary
+                DailyReadiness.NoFoodLogged,
+                DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodyMedium,
+        )
         Text(
             text = "Legacy: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt)}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -296,6 +315,13 @@ private fun ExportStatus(
     }
 }
 
+private enum class DailyReadiness(val label: String) {
+    NoFoodLogged("No food logged"),
+    ResolvePending("Resolve pending entries"),
+    ReadyToExport("Ready to export"),
+    AlreadyExported("Already exported"),
+}
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(
@@ -312,6 +338,24 @@ private fun DailyStatusEntity?.exportText(exportedAt: Instant?): String =
             "changed since ${exportedAt.displayTime()}"
         else -> "exported ${exportedAt.displayTime()}"
     }
+
+private fun dailyReadiness(
+    dailyStatus: DailyStatusEntity?,
+    pendingCount: Int,
+    foodItemCount: Int,
+): DailyReadiness =
+    when {
+        pendingCount > 0 -> DailyReadiness.ResolvePending
+        foodItemCount == 0 -> DailyReadiness.NoFoodLogged
+        dailyStatus.isLegacyExportCurrent() -> DailyReadiness.AlreadyExported
+        else -> DailyReadiness.ReadyToExport
+    }
+
+private fun DailyStatusEntity?.isLegacyExportCurrent(): Boolean {
+    val exportedAt = this?.legacyExportedAt ?: return false
+    val changedAt = lastFoodChangedAt ?: return true
+    return changedAt <= exportedAt
+}
 
 private fun Instant.displayTime(): String =
     atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))

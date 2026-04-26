@@ -203,6 +203,11 @@ Daily export status is tracked locally with a date-keyed status row:
 - The Today screen shows whether each export has happened for the selected date.
 - The Today screen shows when food rows changed after the last export.
 - The Today screen highlights pending entry count before export.
+- The Today screen shows a daily close readiness summary:
+  - `No food logged` when the selected day has no confirmed food rows and no pending entries.
+  - `Resolve pending entries` when unresolved raw entries remain for the selected day.
+  - `Ready to export` when the selected day has confirmed food rows and the legacy Health Monitor export is missing or stale.
+  - `Already exported` when the selected day has confirmed food rows and the legacy Health Monitor export is current.
 - Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
 
 ### `LegacyHealthCsvExporter`
