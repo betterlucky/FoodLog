@@ -277,12 +277,12 @@ private fun ExportStatus(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-            text = "Legacy: ${dailyStatus?.legacyExportedAt.exportText()}",
+            text = "Legacy: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt)}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
         Text(
-            text = "Audit: ${dailyStatus?.auditExportedAt.exportText()}",
+            text = "Audit: ${dailyStatus.exportText(dailyStatus?.auditExportedAt)}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -305,9 +305,16 @@ private fun SectionTitle(text: String) {
     )
 }
 
-private fun Instant?.exportText(): String =
-    this?.atZone(ZoneId.systemDefault())?.format(DateTimeFormatter.ofPattern("HH:mm"))
-        ?: "not exported"
+private fun DailyStatusEntity?.exportText(exportedAt: Instant?): String =
+    when {
+        exportedAt == null -> "not exported"
+        this?.lastFoodChangedAt != null && lastFoodChangedAt > exportedAt ->
+            "changed since ${exportedAt.displayTime()}"
+        else -> "exported ${exportedAt.displayTime()}"
+    }
+
+private fun Instant.displayTime(): String =
+    atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
 
 @Composable
 private fun EmptyState(text: String) {

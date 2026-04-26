@@ -32,7 +32,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         UserDefaultEntity::class,
         DailyStatusEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -61,6 +61,12 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE daily_statuses ADD COLUMN lastFoodChangedAt TEXT")
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -68,6 +74,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 "foodlog.db",
             )
                 .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_2_3)
                 .build()
     }
 }

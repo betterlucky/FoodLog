@@ -199,7 +199,9 @@ Daily export status is tracked locally with a date-keyed status row:
 
 - `legacyExportedAt` is updated when the legacy Health Monitor CSV is exported.
 - `auditExportedAt` is updated when the audit CSV is exported.
+- `lastFoodChangedAt` is updated when confirmed food rows are added, edited, manually resolved, or removed.
 - The Today screen shows whether each export has happened for the selected date.
+- The Today screen shows when food rows changed after the last export.
 - The Today screen highlights pending entry count before export.
 - Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
 

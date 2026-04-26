@@ -96,6 +96,7 @@ class FoodLogRepository(
                     ),
                 )
                 rawEntryDao.updateStatus(rawEntryId, RawEntryStatus.PARSED)
+                markFoodChanged(parsed.logDate)
                 SubmitResult.Parsed(
                     rawEntryId = rawEntryId,
                     foodItemId = foodItemId,
@@ -187,6 +188,7 @@ class FoodLogRepository(
                 notes = normalizedNotes,
             ),
         )
+        markFoodChanged(existing.logDate)
         return FoodItemUpdateResult.Updated
     }
 
@@ -195,6 +197,7 @@ class FoodLogRepository(
             ?: return FoodItemRemoveResult.NotFound
 
         foodItemDao.deleteById(existing.id)
+        markFoodChanged(existing.logDate)
         return FoodItemRemoveResult.Removed
     }
 
@@ -240,6 +243,7 @@ class FoodLogRepository(
                 ),
             )
             rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
+            markFoodChanged(rawEntry.logDate)
 
             val savedDefaultTrigger = if (saveAsDefault) {
                 val parsed = parser.parse(rawEntry.rawText, rawEntry.logDate)
@@ -284,6 +288,14 @@ class FoodLogRepository(
         dailyStatusDao.upsert(
             (existing ?: DailyStatusEntity(logDate = date))
                 .copy(legacyExportedAt = dateTimeProvider.nowInstant()),
+        )
+    }
+
+    private suspend fun markFoodChanged(date: LocalDate) {
+        val existing = dailyStatusDao.getByDate(date)
+        dailyStatusDao.upsert(
+            (existing ?: DailyStatusEntity(logDate = date))
+                .copy(lastFoodChangedAt = dateTimeProvider.nowInstant()),
         )
     }
 

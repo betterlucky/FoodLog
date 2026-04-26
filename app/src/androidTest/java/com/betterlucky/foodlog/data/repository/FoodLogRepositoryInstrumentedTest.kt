@@ -30,6 +30,7 @@ import java.time.LocalTime
 class FoodLogRepositoryInstrumentedTest {
     private lateinit var database: FoodLogDatabase
     private lateinit var repository: FoodLogRepository
+    private lateinit var dateTimeProvider: MutableDateTimeProvider
 
     private val today = LocalDate.parse("2026-04-24")
     private val now = Instant.parse("2026-04-24T11:30:00Z")
@@ -41,15 +42,16 @@ class FoodLogRepositoryInstrumentedTest {
         database = Room.inMemoryDatabaseBuilder(context, FoodLogDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        dateTimeProvider = MutableDateTimeProvider(
+            now = now,
+            today = today,
+            localTime = localTime,
+        )
         repository = FoodLogRepository(
             database = database,
             intentClassifier = DeterministicIntentClassifier(),
             parser = DeterministicParser(),
-            dateTimeProvider = FakeDateTimeProvider(
-                now = now,
-                today = today,
-                localTime = localTime,
-            ),
+            dateTimeProvider = dateTimeProvider,
         )
     }
 
@@ -425,6 +427,37 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(now, status?.auditExportedAt)
     }
 
+    @Test
+    fun foodChangesAfterExportMarkDayAsChangedSinceExport() = runTest {
+        repository.seedDefaults()
+        val parsedResult = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
+        repository.exportLegacyHealthCsv(today)
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:30:00Z")
+        repository.updateFoodItem(
+            id = parsedResult.foodItemId,
+            name = "Edited tea",
+            amount = 1.0,
+            unit = "cup",
+            calories = 30.0,
+            consumedTime = localTime,
+            notes = null,
+        )
+        var status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
+        assertEquals(Instant.parse("2026-04-24T12:30:00Z"), status?.lastFoodChangedAt)
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T13:00:00Z")
+        repository.exportLegacyHealthCsv(today)
+        status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(Instant.parse("2026-04-24T13:00:00Z"), status?.legacyExportedAt)
+        assertEquals(Instant.parse("2026-04-24T12:30:00Z"), status?.lastFoodChangedAt)
+    }
+
     private fun foodItem(
         rawEntryId: Long,
         name: String = "Tea",
@@ -446,10 +479,10 @@ class FoodLogRepositoryInstrumentedTest {
             voided = voided,
         )
 
-    private class FakeDateTimeProvider(
-        private val now: Instant,
-        private val today: LocalDate,
-        private val localTime: LocalTime,
+    private class MutableDateTimeProvider(
+        var now: Instant,
+        var today: LocalDate,
+        var localTime: LocalTime,
     ) : DateTimeProvider {
         override fun nowInstant(): Instant = now
 
