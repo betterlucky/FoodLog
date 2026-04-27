@@ -357,6 +357,24 @@ Later phases may add:
 
 Future AI features must query structured database state first. They must not infer the day's food from chat history.
 
+### Later AI Service Architecture
+
+Backend-backed AI remains out of scope until the local-first app works well for daily personal use. If FoodLog later adds hosted AI features for release:
+
+- Keep food logs local by default; do not store personal food logs on the backend.
+- Use a thin backend proxy so API keys never ship in the Android app.
+- Sign app requests and verify signatures before doing paid work.
+- Consider Play Integrity attestation as a later hardening layer for release builds.
+- Rate-limit by anonymous install ID, IP, and request class before calling paid providers.
+- Cache normalized requests and structured results before calling an AI provider.
+- Prefer deterministic routes first: shortcut/defaults, local history, barcode/product lookup, nutrition databases, and on-device OCR.
+- Use AI only as a fallback for ambiguous text, label parsing failures, or richer review/summarization.
+- Require strict JSON responses; never parse markdown tables or prose as the app contract.
+- Version the request and response schema so cache entries can be invalidated safely.
+- Treat AI calories as estimates with confidence and provenance, requiring review when confidence is not high.
+
+Initial hosting preference for a thin proxy/cache is Cloudflare Workers plus a small hosted key-value/cache store. Reconsider Railway, Fly.io, or a VPS only if the backend grows beyond simple request verification, caching, routing, and provider calls.
+
 ## Assumptions
 
 - `25 kcal` is the Phase 1 seeded tea default.
