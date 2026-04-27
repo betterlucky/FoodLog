@@ -214,6 +214,15 @@ Daily export status is tracked locally with a date-keyed status row:
   - A configured boundary such as `03:00` means unprefixed entries before that time are assigned to the previous food day.
   - Explicit date prefixes such as `today`, `yesterday`, and `YYYY-MM-DD` override the default food-day fallback.
   - The Today screen starts on the current food day when the app opens.
+- The Today screen exposes the day-boundary setting with:
+  - a compact boundary status row
+  - an early-morning boundary toggle
+  - an `HH:mm` boundary time field, defaulting to `03:00` when enabled
+- The Today screen shows a daily close prompt:
+  - no export needed when the selected day is empty
+  - resolve pending entries before Health Monitor export when pending entries remain
+  - export the Health Monitor CSV when confirmed rows exist and the legacy export is missing or stale
+  - confirm the Health Monitor export is current after export
 
 ### `LegacyHealthCsvExporter`
 

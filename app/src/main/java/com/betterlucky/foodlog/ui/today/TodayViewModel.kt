@@ -3,6 +3,7 @@ package com.betterlucky.foodlog.ui.today
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.intent.EntryIntent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,7 @@ class TodayViewModel(
             selectedDate.flatMapLatest(repository::observePendingEntriesForDate),
             repository.observeActiveDefaults(),
             selectedDate.flatMapLatest(repository::observeDailyStatusForDate),
+            repository.observeAppSettings(),
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             TodayUiState(
@@ -46,6 +48,7 @@ class TodayViewModel(
                 pendingEntries = values[5] as List<com.betterlucky.foodlog.data.entities.RawEntryEntity>,
                 userDefaults = values[6] as List<com.betterlucky.foodlog.data.entities.UserDefaultEntity>,
                 dailyStatus = values[7] as com.betterlucky.foodlog.data.entities.DailyStatusEntity?,
+                dayBoundaryTime = (values[8] as AppSettingsEntity?)?.dayBoundaryTime,
                 isLoading = false,
             )
         }.stateIn(
@@ -117,6 +120,24 @@ class TodayViewModel(
         viewModelScope.launch {
             val date = selectedDate.value
             onExported(repository.exportAuditCsv(date), "foodlog-audit-$date.csv")
+        }
+    }
+
+    fun updateDayBoundaryTime(value: String?) {
+        val parsedTime = value?.let(::parseTimeOrNull)
+        if (value != null && parsedTime == null) {
+            message.value = "Boundary time must use HH:mm, such as 03:00."
+            return
+        }
+
+        viewModelScope.launch {
+            repository.setDayBoundaryTime(parsedTime)
+            selectedDate.value = repository.currentFoodDate()
+            message.value = if (parsedTime == null) {
+                "Using calendar days"
+            } else {
+                "Using ${parsedTime} food day boundary"
+            }
         }
     }
 

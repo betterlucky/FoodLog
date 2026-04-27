@@ -23,6 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,8 +43,10 @@ import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
 import java.time.Instant
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 @Composable
 fun TodayScreen(
@@ -57,6 +60,7 @@ fun TodayScreen(
     var forgettingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
     var editingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var removingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
+    var editingBoundary by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -82,6 +86,11 @@ fun TodayScreen(
                 Text("Next")
             }
         }
+
+        FoodDaySettingsRow(
+            dayBoundaryTime = uiState.dayBoundaryTime,
+            onEdit = { editingBoundary = true },
+        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -130,6 +139,13 @@ fun TodayScreen(
             dailyStatus = uiState.dailyStatus,
             pendingCount = uiState.pendingEntries.size,
             foodItemCount = uiState.items.size,
+        )
+
+        DailyClosePrompt(
+            dailyStatus = uiState.dailyStatus,
+            pendingCount = uiState.pendingEntries.size,
+            foodItemCount = uiState.items.size,
+            onExportLegacy = { viewModel.exportLegacyCsv(onShareCsv) },
         )
 
         HorizontalDivider()
@@ -269,6 +285,38 @@ fun TodayScreen(
             },
         )
     }
+
+    if (editingBoundary) {
+        DayBoundaryDialog(
+            currentBoundary = uiState.dayBoundaryTime,
+            onDismiss = { editingBoundary = false },
+            onSave = { boundary ->
+                viewModel.updateDayBoundaryTime(boundary)
+                editingBoundary = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun FoodDaySettingsRow(
+    dayBoundaryTime: LocalTime?,
+    onEdit: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = "Boundary: ${dayBoundaryTime?.toString() ?: "calendar day"}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        TextButton(onClick = onEdit) {
+            Text("Settings")
+        }
+    }
 }
 
 @Composable
@@ -315,12 +363,77 @@ private fun ExportStatus(
     }
 }
 
+@Composable
+private fun DailyClosePrompt(
+    dailyStatus: DailyStatusEntity?,
+    pendingCount: Int,
+    foodItemCount: Int,
+    onExportLegacy: () -> Unit,
+) {
+    val readiness = dailyReadiness(
+        dailyStatus = dailyStatus,
+        pendingCount = pendingCount,
+        foodItemCount = foodItemCount,
+    )
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = when (readiness) {
+                DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.errorContainer
+                DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primaryContainer
+                DailyReadiness.NoFoodLogged,
+                DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.surfaceVariant
+            },
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Daily close",
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = readiness.closePromptText(),
+                    color = when (readiness) {
+                        DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
+                        DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
+                        DailyReadiness.NoFoodLogged,
+                        DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (readiness == DailyReadiness.ReadyToExport) {
+                Button(onClick = onExportLegacy) {
+                    Text("Export")
+                }
+            }
+        }
+    }
+}
+
 private enum class DailyReadiness(val label: String) {
     NoFoodLogged("No food logged"),
     ResolvePending("Resolve pending entries"),
     ReadyToExport("Ready to export"),
     AlreadyExported("Already exported"),
 }
+
+private fun DailyReadiness.closePromptText(): String =
+    when (this) {
+        DailyReadiness.NoFoodLogged -> "No export needed yet."
+        DailyReadiness.ResolvePending -> "Resolve pending entries before Health Monitor export."
+        DailyReadiness.ReadyToExport -> "Export the Health Monitor CSV before closing this day."
+        DailyReadiness.AlreadyExported -> "Health Monitor export is current."
+    }
 
 @Composable
 private fun SectionTitle(text: String) {
@@ -520,6 +633,87 @@ private fun ShortcutRow(
         }
     }
 }
+
+@Composable
+private fun DayBoundaryDialog(
+    currentBoundary: LocalTime?,
+    onDismiss: () -> Unit,
+    onSave: (String?) -> Unit,
+) {
+    var enabled by remember(currentBoundary) { mutableStateOf(currentBoundary != null) }
+    var boundaryTime by remember(currentBoundary) {
+        mutableStateOf(currentBoundary?.toString() ?: "03:00")
+    }
+    var timeError by remember(currentBoundary) { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Food day boundary") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "Early-morning boundary",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = { enabled = it },
+                    )
+                }
+                OutlinedTextField(
+                    value = boundaryTime,
+                    onValueChange = { boundaryTime = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = enabled,
+                    singleLine = true,
+                    isError = timeError != null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    label = { Text("Boundary time") },
+                    supportingText = timeError?.let { { Text(it) } },
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (!enabled) {
+                        onSave(null)
+                        return@Button
+                    }
+
+                    timeError = if (boundaryTime.parseLocalTimeOrNull() == null) {
+                        "Use HH:mm, such as 03:00."
+                    } else {
+                        null
+                    }
+
+                    if (timeError == null) {
+                        onSave(boundaryTime)
+                    }
+                },
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+private fun String.parseLocalTimeOrNull(): LocalTime? =
+    try {
+        LocalTime.parse(trim())
+    } catch (_: DateTimeParseException) {
+        null
+    }
 
 @Composable
 private fun ResolvePendingDialog(

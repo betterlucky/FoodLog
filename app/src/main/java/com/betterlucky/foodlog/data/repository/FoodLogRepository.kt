@@ -141,6 +141,9 @@ class FoodLogRepository(
     fun observeDailyStatusForDate(date: LocalDate) =
         dailyStatusDao.observeByDate(date)
 
+    fun observeAppSettings() =
+        appSettingsDao.observeById()
+
     suspend fun currentFoodDate(): LocalDate =
         currentFoodDate(
             calendarToday = dateTimeProvider.today(),
