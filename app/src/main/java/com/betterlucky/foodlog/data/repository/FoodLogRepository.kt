@@ -6,6 +6,7 @@ import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.EntryKind
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
+import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
@@ -36,6 +37,7 @@ class FoodLogRepository(
     private val foodItemDao = database.foodItemDao()
     private val userDefaultDao = database.userDefaultDao()
     private val dailyStatusDao = database.dailyStatusDao()
+    private val dailyWeightDao = database.dailyWeightDao()
 
     suspend fun seedDefaults() {
         if (appSettingsDao.getById() == null) {
@@ -140,6 +142,9 @@ class FoodLogRepository(
 
     fun observeDailyStatusForDate(date: LocalDate) =
         dailyStatusDao.observeByDate(date)
+
+    fun observeDailyWeightForDate(date: LocalDate) =
+        dailyWeightDao.observeByDate(date)
 
     fun observeAppSettings() =
         appSettingsDao.observeById()
@@ -382,11 +387,38 @@ class FoodLogRepository(
             )
         }
 
+    suspend fun upsertDailyWeight(
+        logDate: LocalDate,
+        weightKg: Double,
+        measuredTime: LocalTime?,
+    ): DailyWeightResult {
+        if (weightKg <= 0.0) {
+            return DailyWeightResult.InvalidInput
+        }
+
+        database.withTransaction {
+            val now = dateTimeProvider.nowInstant()
+            val existing = dailyWeightDao.getByDate(logDate)
+            dailyWeightDao.upsert(
+                DailyWeightEntity(
+                    logDate = logDate,
+                    weightKg = weightKg,
+                    measuredTime = measuredTime ?: dateTimeProvider.localTime(),
+                    createdAt = existing?.createdAt ?: now,
+                    updatedAt = now,
+                ),
+            )
+            markFoodChanged(logDate)
+        }
+        return DailyWeightResult.Saved
+    }
+
     suspend fun exportLegacyHealthCsv(date: LocalDate): ExportedCsv {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
+        val weight = dailyWeightDao.getByDate(date)
         val fileName = healthMonitorFileName(date)
         return ExportedCsv(
-            csv = legacyHealthCsvExporter.export(items),
+            csv = legacyHealthCsvExporter.export(items, weight),
             fileName = fileName,
         ).also { markLegacyExported(date, fileName) }
     }
@@ -506,6 +538,11 @@ class FoodLogRepository(
     sealed interface FoodItemRemoveResult {
         data object Removed : FoodItemRemoveResult
         data object NotFound : FoodItemRemoveResult
+    }
+
+    sealed interface DailyWeightResult {
+        data object Saved : DailyWeightResult
+        data object InvalidInput : DailyWeightResult
     }
 
     data class ExportedCsv(

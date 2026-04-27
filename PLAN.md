@@ -225,10 +225,10 @@ Daily export status is tracked locally with a date-keyed status row:
 - The Today screen labels the primary handoff as `Health Monitor` while preserving the standard Health Monitor CSV contract.
 - The Today screen highlights pending entry count before export.
 - The Today screen shows a daily close readiness summary:
-  - `No food logged` when the selected day has no confirmed food rows and no pending entries.
+  - `No food logged` when the selected day has no confirmed food rows, no daily weight, and no pending entries.
   - `Resolve pending entries` when unresolved raw entries remain for the selected day.
-  - `Ready to export` when the selected day has confirmed food rows and the Health Monitor export is missing or stale.
-  - `Already exported` when the selected day has confirmed food rows and the Health Monitor export is current.
+  - `Ready to export` when the selected day has confirmed food rows or a daily weight and the Health Monitor export is missing or stale.
+  - `Already exported` when the selected day has confirmed food rows or a daily weight and the Health Monitor export is current.
 - Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
 - FoodLog has a persisted day-boundary setting foundation:
   - `null` day boundary means normal calendar-day logging.
@@ -242,9 +242,27 @@ Daily export status is tracked locally with a date-keyed status row:
 - The Today screen shows a daily close prompt:
   - no export needed when the selected day is empty
   - resolve pending entries before Health Monitor export when pending entries remain
-  - export the Health Monitor CSV when confirmed rows exist and the Health Monitor export is missing or stale
+  - export the Health Monitor CSV when confirmed rows or a daily weight exist and the Health Monitor export is missing or stale
   - confirm the Health Monitor export is current after export
 - The audit exporter is retained for developer/data tracing, but is not shown on the main Today screen.
+
+### Daily Weight
+
+Daily weight is optional daily metadata for Health Monitor handoff:
+
+- Store one `DailyWeightEntity` per `logDate`.
+- Store the canonical value as kilograms (`weightKg`).
+- The initial UI accepts stone and pounds because that is the preferred input format for now.
+- The user can add or edit the selected day's weight from the Today screen.
+- `measuredTime` is always stored; blank UI time falls back to the current local time.
+- Daily weight is not a `FoodItemEntity` and never contributes to calorie totals.
+- Saving or editing weight marks the day as changed for export readiness.
+- The Health Monitor export emits weight as a timestamped row with:
+  - `item = weight`
+  - `quantity = {weightKg} kg`
+  - blank `calories_kcal`
+  - `notes = Recorded weight`
+- Future polish can add a setting to hide weight logging for users who do not want it.
 
 ### `LegacyHealthCsvExporter`
 
@@ -264,6 +282,7 @@ Mapping:
 - `quantity` = amount plus unit when available, otherwise unit or blank
 - `calories_kcal` = calories formatted deterministically
 - `notes` = notes or blank
+- Optional daily weight rows use `date = DailyWeightEntity.logDate`, `time_local = measuredTime`, `item = weight`, `quantity = {weightKg} kg`, blank calories, and `notes = Recorded weight`.
 
 Generated filename:
 
@@ -283,7 +302,8 @@ log_date,consumed_time,item,amount,unit,grams,calories,source,confidence,product
 
 Rules for both exporters:
 
-- Export from Room `FoodItemEntity` rows only.
+- Export food data from Room `FoodItemEntity` rows only.
+- Export optional daily weight from Room `DailyWeightEntity` only.
 - Export currently active rows only.
 - Sort by `logDate`, then `consumedTime`, then `createdAt`.
 - Escape commas, quotes, and newlines correctly.
@@ -311,6 +331,7 @@ Add focused tests for Phase 1 behavior:
 - Daily total reflects active food rows.
 - Logged item edits update totals and exports.
 - Logged item removal deletes the food row and updates totals/exports.
+- Daily weight can be saved, edited, exported as a `weight` row, and does not affect calorie totals.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.
 - `AuditCsvExporter` header matches the rich schema exactly.
 - CSV export includes active rows, handles blank times, and escapes commas/quotes/newlines.

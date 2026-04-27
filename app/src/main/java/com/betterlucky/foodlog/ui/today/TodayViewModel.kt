@@ -36,6 +36,7 @@ class TodayViewModel(
             selectedDate.flatMapLatest(repository::observePendingEntriesForDate),
             repository.observeActiveDefaults(),
             selectedDate.flatMapLatest(repository::observeDailyStatusForDate),
+            selectedDate.flatMapLatest(repository::observeDailyWeightForDate),
             repository.observeAppSettings(),
         ) { values ->
             @Suppress("UNCHECKED_CAST")
@@ -48,7 +49,8 @@ class TodayViewModel(
                 pendingEntries = values[5] as List<com.betterlucky.foodlog.data.entities.RawEntryEntity>,
                 userDefaults = values[6] as List<com.betterlucky.foodlog.data.entities.UserDefaultEntity>,
                 dailyStatus = values[7] as com.betterlucky.foodlog.data.entities.DailyStatusEntity?,
-                dayBoundaryTime = (values[8] as AppSettingsEntity?)?.dayBoundaryTime,
+                dailyWeight = values[8] as com.betterlucky.foodlog.data.entities.DailyWeightEntity?,
+                dayBoundaryTime = (values[9] as AppSettingsEntity?)?.dayBoundaryTime,
                 isLoading = false,
             )
         }.stateIn(
@@ -139,6 +141,58 @@ class TodayViewModel(
                 "Using calendar days"
             } else {
                 "Using ${parsedTime} food day boundary"
+            }
+        }
+    }
+
+    fun saveDailyWeight(
+        stone: String,
+        pounds: String,
+        time: String,
+        onSaved: () -> Unit,
+    ) {
+        val parsedStone = stone.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull() ?: 0.0
+        val parsedPounds = pounds.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull() ?: 0.0
+        val parsedTime = time.trim().takeIf { it.isNotBlank() }?.let(::parseTimeOrNull)
+
+        if (stone.isNotBlank() && stone.trim().toDoubleOrNull() == null) {
+            message.value = "Stone must be a number."
+            return
+        }
+
+        if (pounds.isNotBlank() && pounds.trim().toDoubleOrNull() == null) {
+            message.value = "Pounds must be a number."
+            return
+        }
+
+        if (parsedStone <= 0.0 && parsedPounds <= 0.0) {
+            message.value = "Add a weight in stone and pounds."
+            return
+        }
+
+        if (parsedPounds >= 14.0) {
+            message.value = "Pounds should be less than 14."
+            return
+        }
+
+        if (time.isNotBlank() && parsedTime == null) {
+            message.value = "Time must use HH:mm, such as 07:30."
+            return
+        }
+
+        viewModelScope.launch {
+            message.value = when (
+                repository.upsertDailyWeight(
+                    logDate = selectedDate.value,
+                    weightKg = stonePoundsToKg(parsedStone, parsedPounds),
+                    measuredTime = parsedTime,
+                )
+            ) {
+                FoodLogRepository.DailyWeightResult.Saved -> {
+                    onSaved()
+                    "Saved weight for ${selectedDate.value}"
+                }
+                FoodLogRepository.DailyWeightResult.InvalidInput -> "Add a valid weight."
             }
         }
     }
@@ -351,6 +405,12 @@ private fun parseTimeOrNull(value: String): LocalTime? {
         null
     }
 }
+
+private fun stonePoundsToKg(
+    stone: Double,
+    pounds: Double,
+): Double =
+    ((stone * 14.0) + pounds) * 0.45359237
 
 private fun EntryIntent.placeholderMessage(): String =
     when (this) {

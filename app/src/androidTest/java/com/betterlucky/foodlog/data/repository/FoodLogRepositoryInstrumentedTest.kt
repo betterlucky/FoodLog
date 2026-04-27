@@ -303,6 +303,49 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun dailyWeightDoesNotAffectCalorieTotalAndExportsWeightRow() = runTest {
+        val result = repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.6,
+            measuredTime = LocalTime.parse("07:15"),
+        )
+        val total = repository.observeCaloriesForDate(today).first()
+        val weight = repository.observeDailyWeightForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today).csv
+        val status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(FoodLogRepository.DailyWeightResult.Saved, result)
+        assertEquals(0.0, total, 0.001)
+        assertEquals(82.6, weight?.weightKg ?: 0.0, 0.001)
+        assertTrue(csv.contains("2026-04-24,07:15,weight,82.6 kg,,Recorded weight"))
+        assertEquals(now, status?.lastFoodChangedAt)
+    }
+
+    @Test
+    fun dailyWeightBlankTimeUsesCurrentTimeAndCanBeUpdated() = runTest {
+        repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.0,
+            measuredTime = null,
+        )
+        val firstWeight = repository.observeDailyWeightForDate(today).first()
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:30:00Z")
+        val updateResult = repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 83.0,
+            measuredTime = LocalTime.parse("08:10"),
+        )
+        val weight = repository.observeDailyWeightForDate(today).first()
+
+        assertEquals(FoodLogRepository.DailyWeightResult.Saved, updateResult)
+        assertEquals(localTime, firstWeight?.measuredTime)
+        assertEquals(83.0, weight?.weightKg ?: 0.0, 0.001)
+        assertEquals(LocalTime.parse("08:10"), weight?.measuredTime)
+        assertEquals(now, weight?.createdAt)
+        assertEquals(Instant.parse("2026-04-24T12:30:00Z"), weight?.updatedAt)
+    }
+
+    @Test
     fun savedShortcutCanBeUpdated() = runTest {
         repository.seedDefaults()
         val pendingResult = repository.submitText("toast")

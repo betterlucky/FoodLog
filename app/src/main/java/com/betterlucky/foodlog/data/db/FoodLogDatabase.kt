@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.betterlucky.foodlog.data.dao.AppSettingsDao
 import com.betterlucky.foodlog.data.dao.ContainerDao
 import com.betterlucky.foodlog.data.dao.DailyStatusDao
+import com.betterlucky.foodlog.data.dao.DailyWeightDao
 import com.betterlucky.foodlog.data.dao.FoodItemDao
 import com.betterlucky.foodlog.data.dao.ProductDao
 import com.betterlucky.foodlog.data.dao.ProductPhotoDao
@@ -18,6 +19,7 @@ import com.betterlucky.foodlog.data.dao.UserDefaultDao
 import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.ContainerEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
+import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.ProductEntity
 import com.betterlucky.foodlog.data.entities.ProductPhotoEntity
@@ -34,8 +36,9 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         UserDefaultEntity::class,
         DailyStatusEntity::class,
         AppSettingsEntity::class,
+        DailyWeightEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -48,6 +51,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
     abstract fun containerDao(): ContainerDao
     abstract fun userDefaultDao(): UserDefaultDao
     abstract fun dailyStatusDao(): DailyStatusDao
+    abstract fun dailyWeightDao(): DailyWeightDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -93,6 +97,23 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_weights (
+                        logDate TEXT NOT NULL,
+                        weightKg REAL NOT NULL,
+                        measuredTime TEXT NOT NULL,
+                        createdAt TEXT NOT NULL,
+                        updatedAt TEXT NOT NULL,
+                        PRIMARY KEY(logDate)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -103,6 +124,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_2_3)
                 .addMigrations(MIGRATION_3_4)
                 .addMigrations(MIGRATION_4_5)
+                .addMigrations(MIGRATION_5_6)
                 .build()
     }
 }

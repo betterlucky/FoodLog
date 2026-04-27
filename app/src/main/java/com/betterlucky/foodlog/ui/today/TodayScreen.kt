@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
@@ -47,6 +48,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import kotlin.math.floor
 
 @Composable
 fun TodayScreen(
@@ -62,6 +64,7 @@ fun TodayScreen(
     var removingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var editingBoundary by remember { mutableStateOf(false) }
     var addingFoodItem by remember { mutableStateOf(false) }
+    var editingWeight by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -127,6 +130,11 @@ fun TodayScreen(
             fontWeight = FontWeight.Bold,
         )
 
+        DailyWeightRow(
+            dailyWeight = uiState.dailyWeight,
+            onEdit = { editingWeight = true },
+        )
+
         OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
             Text("Export Health Monitor CSV")
         }
@@ -135,12 +143,14 @@ fun TodayScreen(
             dailyStatus = uiState.dailyStatus,
             pendingCount = uiState.pendingEntries.size,
             foodItemCount = uiState.items.size,
+            hasDailyWeight = uiState.dailyWeight != null,
         )
 
         DailyClosePrompt(
             dailyStatus = uiState.dailyStatus,
             pendingCount = uiState.pendingEntries.size,
             foodItemCount = uiState.items.size,
+            hasDailyWeight = uiState.dailyWeight != null,
             onExportLegacy = { viewModel.exportLegacyCsv(onShareCsv) },
         )
 
@@ -319,6 +329,21 @@ fun TodayScreen(
             },
         )
     }
+
+    if (editingWeight) {
+        DailyWeightDialog(
+            dailyWeight = uiState.dailyWeight,
+            onDismiss = { editingWeight = false },
+            onSave = { stone, pounds, time ->
+                viewModel.saveDailyWeight(
+                    stone = stone,
+                    pounds = pounds,
+                    time = time,
+                    onSaved = { editingWeight = false },
+                )
+            },
+        )
+    }
 }
 
 @Composable
@@ -347,11 +372,13 @@ private fun ExportStatus(
     dailyStatus: DailyStatusEntity?,
     pendingCount: Int,
     foodItemCount: Int,
+    hasDailyWeight: Boolean,
 ) {
     val readiness = dailyReadiness(
         dailyStatus = dailyStatus,
         pendingCount = pendingCount,
         foodItemCount = foodItemCount,
+        hasDailyWeight = hasDailyWeight,
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -386,12 +413,14 @@ private fun DailyClosePrompt(
     dailyStatus: DailyStatusEntity?,
     pendingCount: Int,
     foodItemCount: Int,
+    hasDailyWeight: Boolean,
     onExportLegacy: () -> Unit,
 ) {
     val readiness = dailyReadiness(
         dailyStatus = dailyStatus,
         pendingCount = pendingCount,
         foodItemCount = foodItemCount,
+        hasDailyWeight = hasDailyWeight,
     )
 
     Card(
@@ -480,10 +509,11 @@ private fun dailyReadiness(
     dailyStatus: DailyStatusEntity?,
     pendingCount: Int,
     foodItemCount: Int,
+    hasDailyWeight: Boolean,
 ): DailyReadiness =
     when {
         pendingCount > 0 -> DailyReadiness.ResolvePending
-        foodItemCount == 0 -> DailyReadiness.NoFoodLogged
+        foodItemCount == 0 && !hasDailyWeight -> DailyReadiness.NoFoodLogged
         dailyStatus.isLegacyExportCurrent() -> DailyReadiness.AlreadyExported
         else -> DailyReadiness.ReadyToExport
     }
@@ -496,6 +526,36 @@ private fun DailyStatusEntity?.isLegacyExportCurrent(): Boolean {
 
 private fun Instant.displayTime(): String =
     atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
+
+@Composable
+private fun DailyWeightRow(
+    dailyWeight: DailyWeightEntity?,
+    onEdit: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Weight: ${dailyWeight?.displayWeight() ?: "not recorded"}",
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            dailyWeight?.let {
+                Text(
+                    text = "Measured at ${it.measuredTime}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        TextButton(onClick = onEdit) {
+            Text(if (dailyWeight == null) "Add" else "Edit")
+        }
+    }
+}
 
 @Composable
 private fun EmptyState(text: String) {
@@ -567,6 +627,29 @@ private fun quantityText(item: FoodItemEntity): String? =
 
 private fun Double.formatAmount(): String =
     if (rem(1.0) == 0.0) toInt().toString() else toString()
+
+private fun DailyWeightEntity.displayWeight(): String {
+    val stonePounds = weightKg.toStonePounds()
+    return "${stonePounds.stone} st ${stonePounds.pounds.formatPounds()} lb (${weightKg.formatWeightKg()} kg)"
+}
+
+private fun Double.toStonePounds(): StonePounds {
+    val totalPounds = this / 0.45359237
+    val stone = floor(totalPounds / 14.0).toInt()
+    val pounds = totalPounds - (stone * 14.0)
+    return StonePounds(stone = stone, pounds = pounds)
+}
+
+private data class StonePounds(
+    val stone: Int,
+    val pounds: Double,
+)
+
+private fun Double.formatWeightKg(): String =
+    String.format(java.util.Locale.US, "%.1f", this)
+
+private fun Double.formatPounds(): String =
+    String.format(java.util.Locale.US, "%.1f", this).removeSuffix(".0")
 
 private fun pluralizedUnit(
     unit: String,
@@ -738,6 +821,72 @@ private fun String.parseLocalTimeOrNull(): LocalTime? =
     } catch (_: DateTimeParseException) {
         null
     }
+
+@Composable
+private fun DailyWeightDialog(
+    dailyWeight: DailyWeightEntity?,
+    onDismiss: () -> Unit,
+    onSave: (stone: String, pounds: String, time: String) -> Unit,
+) {
+    val existing = remember(dailyWeight?.logDate, dailyWeight?.updatedAt) {
+        dailyWeight?.weightKg?.toStonePounds()
+    }
+    var stone by remember(dailyWeight?.logDate, dailyWeight?.updatedAt) {
+        mutableStateOf(existing?.stone?.toString().orEmpty())
+    }
+    var pounds by remember(dailyWeight?.logDate, dailyWeight?.updatedAt) {
+        mutableStateOf(existing?.pounds?.formatPounds().orEmpty())
+    }
+    var time by remember(dailyWeight?.logDate, dailyWeight?.updatedAt) {
+        mutableStateOf(dailyWeight?.measuredTime?.toString().orEmpty())
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (dailyWeight == null) "Add weight" else "Edit weight") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = stone,
+                        onValueChange = { stone = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Stone") },
+                    )
+                    OutlinedTextField(
+                        value = pounds,
+                        onValueChange = { pounds = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Pounds") },
+                    )
+                }
+                OutlinedTextField(
+                    value = time,
+                    onValueChange = { time = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Time") },
+                    placeholder = { Text("HH:mm") },
+                    supportingText = { Text("Blank = now") },
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(stone, pounds, time) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
 
 @Composable
 private fun AddFoodItemDialog(

@@ -1,6 +1,7 @@
 package com.betterlucky.foodlog.domain.export
 
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
+import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import org.junit.Assert.assertEquals
@@ -63,6 +64,23 @@ class CsvExporterTest {
         )
 
         assertTrue(csv.lines()[1].contains("2 cups"))
+    }
+
+    @Test
+    fun weightRowExportsWithBlankCaloriesAndSortsByTime() {
+        val csv = LegacyHealthCsvExporter().export(
+            items = listOf(foodItem(consumedTime = LocalTime.parse("16:00"))),
+            dailyWeight = DailyWeightEntity(
+                logDate = LocalDate.parse("2026-04-24"),
+                weightKg = 82.6,
+                measuredTime = LocalTime.parse("07:15"),
+                createdAt = Instant.parse("2026-04-24T06:15:00Z"),
+                updatedAt = Instant.parse("2026-04-24T06:15:00Z"),
+            ),
+        )
+
+        assertEquals("2026-04-24,07:15,weight,82.6 kg,,Recorded weight", csv.lines()[1])
+        assertTrue(csv.lines()[2].startsWith("2026-04-24,16:00,Tea"))
     }
 
     private fun foodItem(
