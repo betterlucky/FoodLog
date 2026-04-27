@@ -61,6 +61,7 @@ fun TodayScreen(
     var editingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var removingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var editingBoundary by remember { mutableStateOf(false) }
+    var addingFoodItem by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -150,7 +151,16 @@ fun TodayScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                SectionTitle("Logged Items")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    SectionTitle("Logged Items")
+                    TextButton(onClick = { addingFoodItem = true }) {
+                        Text("Add item")
+                    }
+                }
             }
             if (uiState.items.isEmpty()) {
                 item {
@@ -288,6 +298,24 @@ fun TodayScreen(
             onSave = { boundary ->
                 viewModel.updateDayBoundaryTime(boundary)
                 editingBoundary = false
+            },
+        )
+    }
+
+    if (addingFoodItem) {
+        AddFoodItemDialog(
+            onDismiss = { addingFoodItem = false },
+            onSave = { name, amount, unit, calories, time, notes, saveAsDefault ->
+                viewModel.addFoodItemManually(
+                    name = name,
+                    amount = amount,
+                    unit = unit,
+                    calories = calories,
+                    time = time,
+                    notes = notes,
+                    saveAsDefault = saveAsDefault,
+                    onAdded = { addingFoodItem = false },
+                )
             },
         )
     }
@@ -710,6 +738,112 @@ private fun String.parseLocalTimeOrNull(): LocalTime? =
     } catch (_: DateTimeParseException) {
         null
     }
+
+@Composable
+private fun AddFoodItemDialog(
+    onDismiss: () -> Unit,
+    onSave: (
+        name: String,
+        amount: String,
+        unit: String,
+        calories: String,
+        time: String,
+        notes: String,
+        saveAsDefault: Boolean,
+    ) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf("") }
+    var calories by remember { mutableStateOf("") }
+    var time by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var saveAsDefault by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add logged item") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Item") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Amount") },
+                    )
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = { unit = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Unit") },
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = calories,
+                        onValueChange = { calories = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Calories") },
+                    )
+                    OutlinedTextField(
+                        value = time,
+                        onValueChange = { time = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Time") },
+                        supportingText = { Text("Blank = now") },
+                    )
+                }
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    minLines = 2,
+                    maxLines = 3,
+                    label = { Text("Notes") },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = saveAsDefault,
+                        onCheckedChange = { saveAsDefault = it },
+                    )
+                    Text(
+                        text = "Save as shortcut",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(name, amount, unit, calories, time, notes, saveAsDefault) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
 
 @Composable
 private fun ResolvePendingDialog(

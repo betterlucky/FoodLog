@@ -245,6 +245,64 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun manualAddCreatesLoggedFoodItemUsingCurrentTimeWhenBlank() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addFoodItemManually(
+            logDate = today,
+            name = "Banana",
+            amount = 1.0,
+            unit = "medium",
+            calories = 105.0,
+            consumedTime = null,
+            notes = "Manual estimate",
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(
+            (addResult as FoodLogRepository.ManualAddResult.Added).rawEntryId,
+        )
+        val total = repository.observeCaloriesForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today).csv
+
+        assertEquals(today, addResult.logDate)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals("Manual entry: Banana", rawEntry?.rawText)
+        assertEquals(localTime, rawEntry?.consumedTime)
+        assertEquals("Banana", foodItem.name)
+        assertEquals(localTime, foodItem.consumedTime)
+        assertEquals(FoodItemSource.MANUAL_OVERRIDE, foodItem.source)
+        assertEquals(105.0, total, 0.001)
+        assertTrue(csv.contains("2026-04-24,12:30,Banana,1 medium,105,Manual estimate"))
+    }
+
+    @Test
+    fun manualAddCanSaveShortcutForFutureSubmissions() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addFoodItemManually(
+            logDate = today,
+            name = "Greek yogurt",
+            amount = 2.0,
+            unit = "pot",
+            calories = 180.0,
+            consumedTime = LocalTime.parse("09:15"),
+            notes = "Manual default",
+            saveAsDefault = true,
+        )
+        val default = database.userDefaultDao().getActiveDefault("greek yogurt")
+        val nextResult = repository.submitText("greek yogurt")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertTrue(addResult is FoodLogRepository.ManualAddResult.Added)
+        assertEquals("greek yogurt", (addResult as FoodLogRepository.ManualAddResult.Added).savedDefaultTrigger)
+        assertEquals("Greek yogurt", default?.name)
+        assertEquals(90.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("pot", default?.unit)
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(listOf(180.0, 90.0), foodItems.map { it.calories })
+    }
+
+    @Test
     fun savedShortcutCanBeUpdated() = runTest {
         repository.seedDefaults()
         val pendingResult = repository.submitText("toast")

@@ -203,6 +203,61 @@ class TodayViewModel(
         }
     }
 
+    fun addFoodItemManually(
+        name: String,
+        amount: String,
+        unit: String,
+        calories: String,
+        time: String,
+        notes: String,
+        saveAsDefault: Boolean,
+        onAdded: () -> Unit,
+    ) {
+        val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+        val parsedCalories = calories.trim().toDoubleOrNull()
+        val parsedTime = time.trim().takeIf { it.isNotBlank() }?.let(::parseTimeOrNull)
+
+        if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
+            message.value = "Add an item name and calories to log the item."
+            return
+        }
+
+        if (amount.isNotBlank() && parsedAmount == null) {
+            message.value = "Amount must be a number."
+            return
+        }
+
+        if (time.isNotBlank() && parsedTime == null) {
+            message.value = "Time must use HH:mm, such as 08:30."
+            return
+        }
+
+        viewModelScope.launch {
+            message.value = when (
+                val result = repository.addFoodItemManually(
+                    logDate = selectedDate.value,
+                    name = name,
+                    amount = parsedAmount,
+                    unit = unit,
+                    calories = parsedCalories,
+                    consumedTime = parsedTime,
+                    notes = notes,
+                    saveAsDefault = saveAsDefault,
+                )
+            ) {
+                is FoodLogRepository.ManualAddResult.Added -> {
+                    onAdded()
+                    if (result.savedDefaultTrigger == null) {
+                        "Logged item for ${result.logDate}"
+                    } else {
+                        "Logged item and saved shortcut '${result.savedDefaultTrigger}'"
+                    }
+                }
+                FoodLogRepository.ManualAddResult.InvalidInput -> "Add an item name and calories to log the item."
+            }
+        }
+    }
+
     fun resolvePendingEntry(
         rawEntryId: Long,
         name: String,

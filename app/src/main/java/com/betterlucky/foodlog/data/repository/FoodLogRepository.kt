@@ -306,6 +306,82 @@ class FoodLogRepository(
             )
         }
 
+    suspend fun addFoodItemManually(
+        logDate: LocalDate,
+        name: String,
+        amount: Double?,
+        unit: String?,
+        calories: Double,
+        consumedTime: LocalTime?,
+        notes: String?,
+        saveAsDefault: Boolean = false,
+    ): ManualAddResult =
+        database.withTransaction {
+            val trimmedName = name.trim()
+            val normalizedAmount = amount?.takeIf { it > 0.0 }
+            val normalizedUnit = unit?.trim().orEmpty().ifBlank { null }
+            val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
+            val resolvedTime = consumedTime ?: dateTimeProvider.localTime()
+            val createdAt = dateTimeProvider.nowInstant()
+
+            if (trimmedName.isBlank() || calories <= 0.0) {
+                return@withTransaction ManualAddResult.InvalidInput
+            }
+
+            val rawEntryId = rawEntryDao.insert(
+                RawEntryEntity(
+                    createdAt = createdAt,
+                    logDate = logDate,
+                    consumedTime = resolvedTime,
+                    rawText = "Manual entry: $trimmedName",
+                    entryKind = EntryKind.TEXT,
+                    status = RawEntryStatus.PARSED,
+                    notes = "Created from manual add form.",
+                ),
+            )
+            val foodItemId = foodItemDao.insert(
+                FoodItemEntity(
+                    rawEntryId = rawEntryId,
+                    logDate = logDate,
+                    consumedTime = resolvedTime,
+                    name = trimmedName,
+                    amount = normalizedAmount,
+                    unit = normalizedUnit,
+                    calories = calories,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = normalizedNotes,
+                    createdAt = createdAt,
+                ),
+            )
+            markFoodChanged(logDate)
+
+            val savedDefaultTrigger = if (saveAsDefault) {
+                trimmedName.shortcutTrigger()
+                    .takeIf { it.isNotBlank() }
+                    ?.also { trigger ->
+                        userDefaultDao.upsert(
+                            UserDefaultEntity(
+                                trigger = trigger,
+                                name = trimmedName,
+                                calories = calories / (normalizedAmount ?: 1.0),
+                                unit = normalizedUnit ?: "serving",
+                                notes = normalizedNotes,
+                            ),
+                        )
+                    }
+            } else {
+                null
+            }
+
+            ManualAddResult.Added(
+                rawEntryId = rawEntryId,
+                foodItemId = foodItemId,
+                logDate = logDate,
+                savedDefaultTrigger = savedDefaultTrigger,
+            )
+        }
+
     suspend fun exportLegacyHealthCsv(date: LocalDate): ExportedCsv {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
         val fileName = healthMonitorFileName(date)
@@ -404,6 +480,17 @@ class FoodLogRepository(
         data object NotPending : ManualResolveResult
     }
 
+    sealed interface ManualAddResult {
+        data class Added(
+            val rawEntryId: Long,
+            val foodItemId: Long,
+            val logDate: LocalDate,
+            val savedDefaultTrigger: String?,
+        ) : ManualAddResult
+
+        data object InvalidInput : ManualAddResult
+    }
+
     sealed interface DefaultUpdateResult {
         data object Updated : DefaultUpdateResult
         data object InvalidInput : DefaultUpdateResult
@@ -472,3 +559,8 @@ private fun EntryIntent.placeholderNotes(): String? =
         EntryIntent.UNKNOWN -> "Input was not confidently classified."
         EntryIntent.FOOD_LOG -> null
     }
+
+private fun String.shortcutTrigger(): String =
+    trim()
+        .lowercase()
+        .replace(Regex("\\s+"), " ")
