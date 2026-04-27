@@ -452,9 +452,9 @@ class FoodLogRepositoryInstrumentedTest {
         val healthMonitorExport = repository.exportLegacyHealthCsv(today)
         var status = database.dailyStatusDao().observeByDate(today).first()
 
-        assertEquals("foodlog-health-monitor-2026-04-24.csv", healthMonitorExport.fileName)
+        assertEquals("foodlog-legacy-2026-04-24.csv", healthMonitorExport.fileName)
         assertEquals(now, status?.legacyExportedAt)
-        assertEquals("foodlog-health-monitor-2026-04-24.csv", status?.legacyExportFileName)
+        assertEquals("foodlog-legacy-2026-04-24.csv", status?.legacyExportFileName)
         assertEquals(null, status?.auditExportedAt)
         assertEquals(null, status?.auditExportFileName)
 
@@ -463,7 +463,7 @@ class FoodLogRepositoryInstrumentedTest {
 
         assertEquals("foodlog-audit-2026-04-24.csv", auditExport.fileName)
         assertEquals(now, status?.legacyExportedAt)
-        assertEquals("foodlog-health-monitor-2026-04-24.csv", status?.legacyExportFileName)
+        assertEquals("foodlog-legacy-2026-04-24.csv", status?.legacyExportFileName)
         assertEquals(now, status?.auditExportedAt)
         assertEquals("foodlog-audit-2026-04-24.csv", status?.auditExportFileName)
     }

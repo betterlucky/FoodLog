@@ -249,7 +249,7 @@ Mapping:
 Generated filename:
 
 ```text
-foodlog-health-monitor-YYYY-MM-DD.csv
+foodlog-legacy-YYYY-MM-DD.csv
 ```
 
 ### `AuditCsvExporter`
