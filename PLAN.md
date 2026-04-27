@@ -197,20 +197,20 @@ Exported CSV files are output artifacts, not source data. If food rows change af
 
 Daily export status is tracked locally with a date-keyed status row:
 
-- `legacyExportedAt` is updated when the legacy Health Monitor CSV is exported.
+- `legacyExportedAt` is updated when the standard Health Monitor CSV is exported.
 - `legacyExportFileName` records the generated Health Monitor CSV filename.
 - `auditExportedAt` is updated when the audit CSV is exported.
 - `auditExportFileName` records the generated audit CSV filename.
 - `lastFoodChangedAt` is updated when confirmed food rows are added, edited, manually resolved, or removed.
 - The Today screen shows whether each export has happened for the selected date.
 - The Today screen shows when food rows changed after the last export.
-- The Today screen labels the primary handoff as `Health Monitor` while preserving the legacy CSV contract.
+- The Today screen labels the primary handoff as `Health Monitor` while preserving the standard Health Monitor CSV contract.
 - The Today screen highlights pending entry count before export.
 - The Today screen shows a daily close readiness summary:
   - `No food logged` when the selected day has no confirmed food rows and no pending entries.
   - `Resolve pending entries` when unresolved raw entries remain for the selected day.
-  - `Ready to export` when the selected day has confirmed food rows and the legacy Health Monitor export is missing or stale.
-  - `Already exported` when the selected day has confirmed food rows and the legacy Health Monitor export is current.
+  - `Ready to export` when the selected day has confirmed food rows and the Health Monitor export is missing or stale.
+  - `Already exported` when the selected day has confirmed food rows and the Health Monitor export is current.
 - Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
 - FoodLog has a persisted day-boundary setting foundation:
   - `null` day boundary means normal calendar-day logging.
@@ -224,7 +224,7 @@ Daily export status is tracked locally with a date-keyed status row:
 - The Today screen shows a daily close prompt:
   - no export needed when the selected day is empty
   - resolve pending entries before Health Monitor export when pending entries remain
-  - export the Health Monitor CSV when confirmed rows exist and the legacy export is missing or stale
+  - export the Health Monitor CSV when confirmed rows exist and the Health Monitor export is missing or stale
   - confirm the Health Monitor export is current after export
 
 ### `LegacyHealthCsvExporter`
@@ -249,7 +249,7 @@ Mapping:
 Generated filename:
 
 ```text
-foodlog-legacy-YYYY-MM-DD.csv
+food_log_YYYY-MM-DD.csv
 ```
 
 ### `AuditCsvExporter`

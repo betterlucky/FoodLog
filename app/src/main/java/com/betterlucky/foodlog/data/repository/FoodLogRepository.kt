@@ -428,7 +428,7 @@ class FoodLogRepository(
 
     companion object {
         fun healthMonitorFileName(date: LocalDate): String =
-            "foodlog-legacy-$date.csv"
+            "food_log_$date.csv"
 
         fun auditFileName(date: LocalDate): String =
             "foodlog-audit-$date.csv"
