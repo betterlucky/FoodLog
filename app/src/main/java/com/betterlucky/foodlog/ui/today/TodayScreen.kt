@@ -128,7 +128,7 @@ fun TodayScreen(
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
-                Text("Export Legacy CSV")
+                Text("Export Health Monitor CSV")
             }
             OutlinedButton(onClick = { viewModel.exportAuditCsv(onShareCsv) }) {
                 Text("Export Audit CSV")
@@ -344,12 +344,12 @@ private fun ExportStatus(
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            text = "Legacy: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt)}",
+            text = "Health Monitor: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt, dailyStatus?.legacyExportFileName)}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
         Text(
-            text = "Audit: ${dailyStatus.exportText(dailyStatus?.auditExportedAt)}",
+            text = "Audit: ${dailyStatus.exportText(dailyStatus?.auditExportedAt, dailyStatus?.auditExportFileName)}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -444,13 +444,19 @@ private fun SectionTitle(text: String) {
     )
 }
 
-private fun DailyStatusEntity?.exportText(exportedAt: Instant?): String =
+private fun DailyStatusEntity?.exportText(
+    exportedAt: Instant?,
+    fileName: String?,
+): String =
     when {
         exportedAt == null -> "not exported"
         this?.lastFoodChangedAt != null && lastFoodChangedAt > exportedAt ->
-            "changed since ${exportedAt.displayTime()}"
-        else -> "exported ${exportedAt.displayTime()}"
+            "changed since ${exportedAt.displayTime()}${fileName.exportFileSuffix()}"
+        else -> "exported ${exportedAt.displayTime()}${fileName.exportFileSuffix()}"
     }
+
+private fun String?.exportFileSuffix(): String =
+    if (isNullOrBlank()) "" else " - $this"
 
 private fun dailyReadiness(
     dailyStatus: DailyStatusEntity?,

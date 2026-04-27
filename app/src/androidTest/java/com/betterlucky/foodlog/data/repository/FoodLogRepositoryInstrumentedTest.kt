@@ -94,7 +94,7 @@ class FoodLogRepositoryInstrumentedTest {
         val result = repository.submitText("2 teas")
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
         val total = repository.observeCaloriesForDate(today).first()
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
         assertEquals(2.0, foodItem.amount ?: 0.0, 0.001)
@@ -184,7 +184,7 @@ class FoodLogRepositoryInstrumentedTest {
         val pendingEntries = repository.observePendingEntriesForDate(today).first()
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
         val rawEntry = database.rawEntryDao().getById(rawEntryId)
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
         assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
@@ -336,7 +336,7 @@ class FoodLogRepositoryInstrumentedTest {
         )
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
         val total = repository.observeCaloriesForDate(today).first()
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
         assertEquals("Large tea", foodItem.name)
@@ -357,7 +357,7 @@ class FoodLogRepositoryInstrumentedTest {
         val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
         val foodItems = repository.observeFoodItemsForDate(today).first()
         val total = repository.observeCaloriesForDate(today).first()
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertEquals(FoodLogRepository.FoodItemRemoveResult.Removed, removeResult)
         assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
@@ -437,7 +437,7 @@ class FoodLogRepositoryInstrumentedTest {
         database.foodItemDao().insert(foodItem(rawEntryId = rawEntryId, name = "Tea"))
         database.foodItemDao().insert(foodItem(rawEntryId = rawEntryId, name = "Old tea", voided = true))
 
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertTrue(csv.startsWith("date,time_local,item,quantity,calories_kcal,notes"))
         assertTrue(csv.contains("Tea"))
@@ -449,17 +449,23 @@ class FoodLogRepositoryInstrumentedTest {
         repository.seedDefaults()
         repository.submitText("tea")
 
-        repository.exportLegacyHealthCsv(today)
+        val healthMonitorExport = repository.exportLegacyHealthCsv(today)
         var status = database.dailyStatusDao().observeByDate(today).first()
 
+        assertEquals("foodlog-health-monitor-2026-04-24.csv", healthMonitorExport.fileName)
         assertEquals(now, status?.legacyExportedAt)
+        assertEquals("foodlog-health-monitor-2026-04-24.csv", status?.legacyExportFileName)
         assertEquals(null, status?.auditExportedAt)
+        assertEquals(null, status?.auditExportFileName)
 
-        repository.exportAuditCsv(today)
+        val auditExport = repository.exportAuditCsv(today)
         status = database.dailyStatusDao().observeByDate(today).first()
 
+        assertEquals("foodlog-audit-2026-04-24.csv", auditExport.fileName)
         assertEquals(now, status?.legacyExportedAt)
+        assertEquals("foodlog-health-monitor-2026-04-24.csv", status?.legacyExportFileName)
         assertEquals(now, status?.auditExportedAt)
+        assertEquals("foodlog-audit-2026-04-24.csv", status?.auditExportFileName)
     }
 
     @Test
@@ -468,7 +474,7 @@ class FoodLogRepositoryInstrumentedTest {
         val parsedResult = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
 
         dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
-        repository.exportLegacyHealthCsv(today)
+        repository.exportLegacyHealthCsv(today).csv
 
         dateTimeProvider.now = Instant.parse("2026-04-24T12:30:00Z")
         repository.updateFoodItem(
@@ -486,7 +492,7 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(Instant.parse("2026-04-24T12:30:00Z"), status?.lastFoodChangedAt)
 
         dateTimeProvider.now = Instant.parse("2026-04-24T13:00:00Z")
-        repository.exportLegacyHealthCsv(today)
+        repository.exportLegacyHealthCsv(today).csv
         status = database.dailyStatusDao().observeByDate(today).first()
 
         assertEquals(Instant.parse("2026-04-24T13:00:00Z"), status?.legacyExportedAt)

@@ -306,23 +306,35 @@ class FoodLogRepository(
             )
         }
 
-    suspend fun exportLegacyHealthCsv(date: LocalDate): String {
+    suspend fun exportLegacyHealthCsv(date: LocalDate): ExportedCsv {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
-        return legacyHealthCsvExporter.export(items)
-            .also { markLegacyExported(date) }
+        val fileName = healthMonitorFileName(date)
+        return ExportedCsv(
+            csv = legacyHealthCsvExporter.export(items),
+            fileName = fileName,
+        ).also { markLegacyExported(date, fileName) }
     }
 
-    suspend fun exportAuditCsv(date: LocalDate): String {
+    suspend fun exportAuditCsv(date: LocalDate): ExportedCsv {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
-        return auditCsvExporter.export(items)
-            .also { markAuditExported(date) }
+        val fileName = auditFileName(date)
+        return ExportedCsv(
+            csv = auditCsvExporter.export(items),
+            fileName = fileName,
+        ).also { markAuditExported(date, fileName) }
     }
 
-    private suspend fun markLegacyExported(date: LocalDate) {
+    private suspend fun markLegacyExported(
+        date: LocalDate,
+        fileName: String,
+    ) {
         val existing = dailyStatusDao.getByDate(date)
         dailyStatusDao.upsert(
             (existing ?: DailyStatusEntity(logDate = date))
-                .copy(legacyExportedAt = dateTimeProvider.nowInstant()),
+                .copy(
+                    legacyExportedAt = dateTimeProvider.nowInstant(),
+                    legacyExportFileName = fileName,
+                ),
         )
     }
 
@@ -334,11 +346,17 @@ class FoodLogRepository(
         )
     }
 
-    private suspend fun markAuditExported(date: LocalDate) {
+    private suspend fun markAuditExported(
+        date: LocalDate,
+        fileName: String,
+    ) {
         val existing = dailyStatusDao.getByDate(date)
         dailyStatusDao.upsert(
             (existing ?: DailyStatusEntity(logDate = date))
-                .copy(auditExportedAt = dateTimeProvider.nowInstant()),
+                .copy(
+                    auditExportedAt = dateTimeProvider.nowInstant(),
+                    auditExportFileName = fileName,
+                ),
         )
     }
 
@@ -403,7 +421,18 @@ class FoodLogRepository(
         data object NotFound : FoodItemRemoveResult
     }
 
+    data class ExportedCsv(
+        val csv: String,
+        val fileName: String,
+    )
+
     companion object {
+        fun healthMonitorFileName(date: LocalDate): String =
+            "foodlog-health-monitor-$date.csv"
+
+        fun auditFileName(date: LocalDate): String =
+            "foodlog-audit-$date.csv"
+
         val DEFAULT_TEA = UserDefaultEntity(
             trigger = "tea",
             name = "Tea",

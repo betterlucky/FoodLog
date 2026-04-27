@@ -198,10 +198,13 @@ Exported CSV files are output artifacts, not source data. If food rows change af
 Daily export status is tracked locally with a date-keyed status row:
 
 - `legacyExportedAt` is updated when the legacy Health Monitor CSV is exported.
+- `legacyExportFileName` records the generated Health Monitor CSV filename.
 - `auditExportedAt` is updated when the audit CSV is exported.
+- `auditExportFileName` records the generated audit CSV filename.
 - `lastFoodChangedAt` is updated when confirmed food rows are added, edited, manually resolved, or removed.
 - The Today screen shows whether each export has happened for the selected date.
 - The Today screen shows when food rows changed after the last export.
+- The Today screen labels the primary handoff as `Health Monitor` while preserving the legacy CSV contract.
 - The Today screen highlights pending entry count before export.
 - The Today screen shows a daily close readiness summary:
   - `No food logged` when the selected day has no confirmed food rows and no pending entries.
@@ -242,6 +245,12 @@ Mapping:
 - `quantity` = amount plus unit when available, otherwise unit or blank
 - `calories_kcal` = calories formatted deterministically
 - `notes` = notes or blank
+
+Generated filename:
+
+```text
+foodlog-health-monitor-YYYY-MM-DD.csv
+```
 
 ### `AuditCsvExporter`
 

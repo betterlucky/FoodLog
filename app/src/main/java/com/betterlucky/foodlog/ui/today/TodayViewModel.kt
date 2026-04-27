@@ -112,14 +112,16 @@ class TodayViewModel(
     fun exportLegacyCsv(onExported: (String, String) -> Unit) {
         viewModelScope.launch {
             val date = selectedDate.value
-            onExported(repository.exportLegacyHealthCsv(date), "foodlog-legacy-$date.csv")
+            val exported = repository.exportLegacyHealthCsv(date)
+            onExported(exported.csv, exported.fileName)
         }
     }
 
     fun exportAuditCsv(onExported: (String, String) -> Unit) {
         viewModelScope.launch {
             val date = selectedDate.value
-            onExported(repository.exportAuditCsv(date), "foodlog-audit-$date.csv")
+            val exported = repository.exportAuditCsv(date)
+            onExported(exported.csv, exported.fileName)
         }
     }
 
