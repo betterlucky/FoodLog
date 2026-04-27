@@ -195,6 +195,14 @@ Daily export is the primary workflow for Phase 1 and the near-term Health Monito
 
 Exported CSV files are output artifacts, not source data. If food rows change after export, FoodLog should generate a fresh export from Room rather than editing an existing external CSV file.
 
+FoodLog writes the Health Monitor CSV to:
+
+```text
+Downloads/FoodLogData
+```
+
+Health Monitor should import the standard daily file from that subfolder.
+
 Daily export status is tracked locally with a date-keyed status row:
 
 - `legacyExportedAt` is updated when the standard Health Monitor CSV is exported.
@@ -226,6 +234,7 @@ Daily export status is tracked locally with a date-keyed status row:
   - resolve pending entries before Health Monitor export when pending entries remain
   - export the Health Monitor CSV when confirmed rows exist and the Health Monitor export is missing or stale
   - confirm the Health Monitor export is current after export
+- The audit exporter is retained for developer/data tracing, but is not shown on the main Today screen.
 
 ### `LegacyHealthCsvExporter`
 

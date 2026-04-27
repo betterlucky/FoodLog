@@ -126,13 +126,8 @@ fun TodayScreen(
             fontWeight = FontWeight.Bold,
         )
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
-                Text("Export Health Monitor CSV")
-            }
-            OutlinedButton(onClick = { viewModel.exportAuditCsv(onShareCsv) }) {
-                Text("Export Audit CSV")
-            }
+        OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
+            Text("Export Health Monitor CSV")
         }
 
         ExportStatus(
@@ -345,11 +340,6 @@ private fun ExportStatus(
         )
         Text(
             text = "Health Monitor: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt, dailyStatus?.legacyExportFileName)}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Text(
-            text = "Audit: ${dailyStatus.exportText(dailyStatus?.auditExportedAt, dailyStatus?.auditExportFileName)}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )

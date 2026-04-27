@@ -1,6 +1,7 @@
 package com.betterlucky.foodlog
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
         csv: String,
         fileName: String,
     ) {
-        csvShareHelper.shareCsv(csv, fileName)
+        val path = csvShareHelper.saveCsv(csv, fileName)
+        Toast.makeText(this, "Saved $path", Toast.LENGTH_LONG).show()
     }
 }
