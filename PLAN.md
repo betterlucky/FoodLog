@@ -198,7 +198,9 @@ Current pending-entry behavior:
 - Pending food entries can be manually resolved by the user from the Today screen.
 - The pending-entry dialog has one `Save` action:
   - if item name and valid calories are present, it resolves the entry into a food row
-  - if calories are blank, it saves edited text/notes back to the pending queue
+  - if calories are blank, it re-runs deterministic parsing on the edited text
+  - if that parser pass now resolves fully, it creates food rows from shortcuts/defaults
+  - if that parser pass still cannot resolve fully, it saves edited text/notes back to the pending queue
 - Manual resolution requires at least an item name and calories.
 - Manual resolutions create `FoodItemEntity` rows with `source = MANUAL_OVERRIDE` and `confidence = HIGH`.
 - Resolving a pending entry marks the associated raw entry as `PARSED` without deleting the audit record.

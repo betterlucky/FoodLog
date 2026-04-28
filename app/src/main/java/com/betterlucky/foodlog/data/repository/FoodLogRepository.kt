@@ -289,8 +289,51 @@ class FoodLogRepository(
                 return@withTransaction PendingEntryUpdateResult.NotPending
             }
 
+            val parsed = parser.parse(
+                input = trimmedRawText,
+                today = dateTimeProvider.today(),
+                defaultLogDate = rawEntry.logDate,
+            )
+            val resolvedDefaults = parsed.parts
+                .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
+
+            if (resolvedDefaults.isNotEmpty() && resolvedDefaults.all { (_, default) -> default != null }) {
+                val createdAt = dateTimeProvider.nowInstant()
+                val foodItemIds = resolvedDefaults.map { (part, default) ->
+                    checkNotNull(default)
+                    foodItemDao.insert(
+                        FoodItemEntity(
+                            rawEntryId = rawEntry.id,
+                            logDate = parsed.logDate,
+                            consumedTime = rawEntry.consumedTime,
+                            name = default.name,
+                            amount = part.quantity,
+                            unit = default.unit,
+                            calories = default.calories * part.quantity,
+                            source = default.source,
+                            confidence = default.confidence,
+                            notes = default.notes,
+                            createdAt = createdAt,
+                        ),
+                    )
+                }
+                rawEntryDao.updatePendingDetails(
+                    id = rawEntry.id,
+                    logDate = parsed.logDate,
+                    rawText = trimmedRawText,
+                    notes = null,
+                )
+                rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
+                markFoodChanged(parsed.logDate)
+                return@withTransaction PendingEntryUpdateResult.Parsed(
+                    foodItemIds = foodItemIds,
+                    logDate = parsed.logDate,
+                )
+            }
+
             rawEntryDao.updatePendingDetails(
                 id = rawEntry.id,
+                logDate = rawEntry.logDate,
                 rawText = trimmedRawText,
                 notes = normalizedNotes,
             )
@@ -607,6 +650,11 @@ class FoodLogRepository(
 
     sealed interface PendingEntryUpdateResult {
         data object Updated : PendingEntryUpdateResult
+        data class Parsed(
+            val foodItemIds: List<Long>,
+            val logDate: LocalDate,
+        ) : PendingEntryUpdateResult
+
         data object InvalidInput : PendingEntryUpdateResult
         data object NotFound : PendingEntryUpdateResult
         data object NotPending : PendingEntryUpdateResult

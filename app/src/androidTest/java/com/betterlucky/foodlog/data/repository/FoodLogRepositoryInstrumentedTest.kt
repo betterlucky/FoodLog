@@ -318,6 +318,31 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingEntryEditRerunsParserAndResolvesShortcutWhenNoManualCalories() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("teklfhjl")
+        val updateResult = repository.updatePendingEntry(
+            rawEntryId = pendingResult.rawEntryId,
+            rawText = "tea",
+            amount = null,
+            unit = null,
+            calories = null,
+            notes = null,
+        )
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertTrue(updateResult is FoodLogRepository.PendingEntryUpdateResult.Parsed)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals("tea", rawEntry?.rawText)
+        assertEquals("Tea", foodItem.name)
+        assertEquals(25.0, foodItem.calories, 0.001)
+    }
+
+    @Test
     fun parsedEntryCannotBeRemovedAsPending() = runTest {
         repository.seedDefaults()
 

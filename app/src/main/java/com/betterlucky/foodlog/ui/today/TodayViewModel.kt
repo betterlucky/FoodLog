@@ -377,6 +377,10 @@ class TodayViewModel(
                         onResolved()
                         "Saved pending entry"
                     }
+                    is FoodLogRepository.PendingEntryUpdateResult.Parsed -> {
+                        onResolved()
+                        "Logged edited entry"
+                    }
                     FoodLogRepository.PendingEntryUpdateResult.InvalidInput -> "Add an item name to save the pending entry."
                     FoodLogRepository.PendingEntryUpdateResult.NotFound -> "That pending entry no longer exists."
                     FoodLogRepository.PendingEntryUpdateResult.NotPending -> "That entry has already been handled."
