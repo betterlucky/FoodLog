@@ -187,6 +187,19 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun ampersandSlashAndSemicolonSeparateCompoundShortcuts() = runTest {
+        repository.seedDefaults()
+        database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))
+        database.userDefaultDao().upsert(default(trigger = "satsuma", name = "Satsuma", calories = 35.0, unit = "each"))
+
+        repository.submitText("banana & satsuma / tea; banana")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals(listOf("Banana", "Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(270.0, repository.observeCaloriesForDate(today).first(), 0.001)
+    }
+
+    @Test
     fun compoundSubmissionWithUnknownPartStaysPendingAndCreatesNoFoodItems() = runTest {
         repository.seedDefaults()
 
@@ -604,6 +617,43 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(100.0, foodItem.amount ?: 0.0, 0.001)
         assertEquals("g", foodItem.unit)
         assertEquals(240.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun unitQuantityShortcutScalesCaloriesByParsedAmount() = runTest {
+        repository.seedDefaults()
+
+        repository.addDefault(
+            trigger = "sourdough",
+            name = "Sourdough",
+            calories = 90.0,
+            unit = "slice",
+            notes = null,
+        )
+        val result = repository.submitText("2 slices sourdough")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Sourdough", foodItem.name)
+        assertEquals(2.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals("slice", foodItem.unit)
+        assertEquals(180.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun unitQuantityPendingPreviewKeepsParsedUnit() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("3 slices sourdough + tea")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.Ready
+
+        assertEquals(listOf("3 slices sourdough", "tea"), preview.parts.map { it.inputText })
+        assertEquals(3.0, preview.parts.first().quantity, 0.001)
+        assertEquals("slice", preview.parts.first().quantityUnit)
+        assertEquals("sourdough", preview.parts.first().trigger)
+        assertEquals("Tea", preview.parts.last().default?.name)
     }
 
     @Test

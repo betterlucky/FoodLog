@@ -106,7 +106,7 @@ class DeterministicParser {
 
     private fun foodPartsFor(foodText: String): List<ParsedFoodPart> =
         foodText
-            .split(Regex("\\s*(?:,|\\+|\\band\\b)\\s*"))
+            .split(Regex("\\s*(?:,|\\+|/|&|;|\\band\\b)\\s*"))
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .map { part ->
@@ -128,6 +128,15 @@ class DeterministicParser {
                 trigger = singularizeShortcut(gramMatch.groupValues[2]),
                 quantity = gramMatch.groupValues[1].toDouble(),
                 unit = "g",
+            )
+        }
+
+        val unitQuantityMatch = Regex("^(\\d+(?:\\.\\d+)?)\\s+(${UNIT_PATTERN})\\s+(?:of\\s+)?(.+)$").matchEntire(foodText)
+        if (unitQuantityMatch != null) {
+            return ShortcutMatch(
+                trigger = singularizeShortcut(unitQuantityMatch.groupValues[3]),
+                quantity = unitQuantityMatch.groupValues[1].toDouble(),
+                unit = singularizeUnit(unitQuantityMatch.groupValues[2]),
             )
         }
 
@@ -162,6 +171,24 @@ class DeterministicParser {
         when (trigger) {
             "teas", "cups of tea" -> "tea"
             else -> trigger
+        }
+
+    private fun singularizeUnit(unit: String): String =
+        when (unit) {
+            "slices" -> "slice"
+            "pieces" -> "piece"
+            "servings" -> "serving"
+            "portions" -> "portion"
+            "pots" -> "pot"
+            "cups" -> "cup"
+            "crackers" -> "cracker"
+            "biscuits" -> "biscuit"
+            "bars" -> "bar"
+            "bowls" -> "bowl"
+            "spoons" -> "spoon"
+            "tablespoons" -> "tablespoon"
+            "teaspoons" -> "teaspoon"
+            else -> unit
         }
 
     private fun String.wordQuantity(): Double =
@@ -210,5 +237,6 @@ class DeterministicParser {
 
     private companion object {
         private const val TIME_PATTERN = "(?:[01]?\\d|2[0-3]):[0-5]\\d|(?:0?[1-9]|1[0-2])(?::[0-5]\\d)?\\s*(?:am|pm)"
+        private const val UNIT_PATTERN = "slices?|pieces?|servings?|portions?|pots?|cups?|crackers?|biscuits?|bars?|bowls?|spoons?|tablespoons?|teaspoons?"
     }
 }

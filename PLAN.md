@@ -78,6 +78,7 @@ Supported shortcut phrases:
 - `cup of tea`
 - `1 tea`
 - `100g sourdough with thin butter` when `sourdough with thin butter` exists as a per-gram shortcut/default
+- `2 slices sourdough` when `sourdough` exists as a per-slice shortcut/default
 
 Supported date prefixes:
 
@@ -96,10 +97,11 @@ Supported quantity behavior:
 
 - Plain numeric prefixes such as `2 teas` multiply the saved shortcut/default amount and calories.
 - Gram prefixes such as `100g sourdough` and `100 g sourdough` map to `amount = 100`, `unit = g`, and multiply per-gram shortcut/default calories.
+- Unit quantity prefixes such as `2 slices sourdough` map to `amount = 2`, `unit = slice`, and multiply per-unit shortcut/default calories.
 
 Supported compound shortcut behavior:
 
-- Split obvious meal entries on commas, plus signs, and the word `and`, for example `banana, satsuma and tea` or `150g sourdough + tea`.
+- Split obvious meal entries on commas, plus signs, ampersands, slashes, semicolons, and the word `and`, for example `banana, satsuma and tea` or `150g sourdough + tea`.
 - Resolve each part through the same shortcut/default mechanism.
 - If every part resolves, save one raw entry and create one `FoodItemEntity` per part.
 - If any part is unsupported, keep the whole raw entry pending and create no food rows.
@@ -378,6 +380,7 @@ Add focused tests for Phase 1 behavior:
 - Compound input with any unknown part stays pending and creates no food rows.
 - Plus-separated compound pending input stages recognised parts separately, for example `150g sourdough with thin butter + tea`.
 - Per-gram shortcuts scale calories correctly for different gram amounts.
+- Per-unit shortcuts scale calories correctly for different parsed unit amounts, for example `2 slices sourdough`.
 - Pending entries can be removed with a hard delete while unresolved.
 - Daily total reflects active food rows.
 - Logged item manual edits update totals and exports.
