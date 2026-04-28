@@ -1019,7 +1019,8 @@ private fun ResolvePendingDialog(
     var unit by remember(entry.id) { mutableStateOf("") }
     var calories by remember(entry.id) { mutableStateOf("") }
     var notes by remember(entry.id) { mutableStateOf("") }
-    var saveAsDefault by remember(entry.id) { mutableStateOf(true) }
+    var saveAsDefault by remember(entry.id) { mutableStateOf(false) }
+    val canSaveAsDefault = calories.isNotBlank()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1078,13 +1079,13 @@ private fun ResolvePendingDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(
-                        checked = saveAsDefault,
+                        checked = saveAsDefault && canSaveAsDefault,
                         onCheckedChange = { saveAsDefault = it },
-                        enabled = calories.isNotBlank(),
+                        enabled = canSaveAsDefault,
                     )
                     Text(
                         text = "Save as shortcut",
-                        color = if (calories.isBlank()) {
+                        color = if (!canSaveAsDefault) {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         } else {
                             MaterialTheme.colorScheme.onSurface
@@ -1258,6 +1259,7 @@ private fun EditFoodItemDialog(
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     label = { Text("Calories") },
+                    supportingText = { Text("Blank = use defaults") },
                 )
                 OutlinedTextField(
                     value = time,

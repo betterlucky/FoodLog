@@ -189,6 +189,11 @@ Current logged-item behavior:
 
 - Logged food items can be edited from the Today screen.
 - Editing supports item name, amount, unit, calories, consumed time, and notes.
+- If edited calories are present, the edit is treated as a single manual row update.
+- If edited calories are blank, FoodLog re-runs deterministic parsing on the edited item text:
+  - if every parsed part resolves to active shortcuts/defaults, the original row is replaced with one default-derived row per part
+  - if parsing cannot fully resolve, the original row is unchanged and the user must add calories or use known shortcuts
+- Default-reparse edits reuse the original row's raw entry and date, reuse the edited time for every replacement row, and update the raw entry text.
 - Consumed time is required for edited food rows and currently uses `HH:mm`.
 - Logged food items can be removed after confirmation.
 - Removing a logged item hard-deletes the `FoodItemEntity`; the raw entry remains.
@@ -196,6 +201,7 @@ Current logged-item behavior:
 Current pending-entry behavior:
 
 - Pending food entries can be manually resolved by the user from the Today screen.
+- The pending-entry `Save as shortcut` checkbox is disabled and unchecked while calories are blank.
 - The pending-entry dialog has one `Save` action:
   - if item name and valid calories are present, it resolves the entry into a food row
   - if calories are blank, it re-runs deterministic parsing on the edited text
@@ -347,7 +353,8 @@ Add focused tests for Phase 1 behavior:
 - Compound input with any unknown part stays pending and creates no food rows.
 - Pending entries can be removed with a hard delete while unresolved.
 - Daily total reflects active food rows.
-- Logged item edits update totals and exports.
+- Logged item manual edits update totals and exports.
+- Logged item blank-calorie edits can reparse known shortcuts/defaults into replacement food rows.
 - Logged item removal deletes the food row and updates totals/exports.
 - Daily weight can be saved, edited, exported as a `weight` row, and does not affect calorie totals.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.

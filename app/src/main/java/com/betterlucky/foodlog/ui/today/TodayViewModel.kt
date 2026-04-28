@@ -213,16 +213,21 @@ class TodayViewModel(
         onUpdated: () -> Unit,
     ) {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
-        val parsedCalories = calories.trim().toDoubleOrNull()
+        val parsedCalories = calories.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedTime = parseTimeOrNull(time)
 
-        if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
-            message.value = "Add an item name and calories to update the logged item."
+        if (name.isBlank()) {
+            message.value = "Add an item name to update the logged item."
             return
         }
 
         if (amount.isNotBlank() && parsedAmount == null) {
             message.value = "Amount must be a number."
+            return
+        }
+
+        if (calories.isNotBlank() && (parsedCalories == null || parsedCalories <= 0.0)) {
+            message.value = "Calories must be a positive number, or leave them blank to use defaults."
             return
         }
 
@@ -247,7 +252,12 @@ class TodayViewModel(
                     onUpdated()
                     "Updated logged item"
                 }
-                FoodLogRepository.FoodItemUpdateResult.InvalidInput -> "Add an item name and calories to update the logged item."
+                FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults -> {
+                    onUpdated()
+                    "Updated logged item from defaults"
+                }
+                FoodLogRepository.FoodItemUpdateResult.InvalidInput -> "Add an item name to update the logged item."
+                FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults -> "Add calories or use known shortcuts to update this item."
                 FoodLogRepository.FoodItemUpdateResult.NotFound -> "That logged item no longer exists."
             }
         }

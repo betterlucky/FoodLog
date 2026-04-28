@@ -207,7 +207,7 @@ class FoodLogRepository(
         name: String,
         amount: Double?,
         unit: String?,
-        calories: Double,
+        calories: Double?,
         consumedTime: LocalTime,
         notes: String?,
     ): FoodItemUpdateResult {
@@ -216,12 +216,56 @@ class FoodLogRepository(
         val normalizedUnit = unit?.trim().orEmpty().ifBlank { null }
         val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
 
-        if (trimmedName.isBlank() || calories <= 0.0) {
+        if (trimmedName.isBlank() || (calories != null && calories <= 0.0)) {
             return FoodItemUpdateResult.InvalidInput
         }
 
         val existing = foodItemDao.getById(id)
             ?: return FoodItemUpdateResult.NotFound
+
+        if (calories == null) {
+            val parsed = parser.parse(
+                input = trimmedName,
+                today = dateTimeProvider.today(),
+                defaultLogDate = existing.logDate,
+            )
+            val resolvedDefaults = parsed.parts
+                .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
+
+            if (resolvedDefaults.isEmpty() || resolvedDefaults.any { (_, default) -> default == null }) {
+                return FoodItemUpdateResult.UnresolvedDefaults
+            }
+
+            val createdAt = dateTimeProvider.nowInstant()
+            val overrideNotes = normalizedNotes?.takeIf { it != existing.notes }
+            foodItemDao.deleteById(existing.id)
+            resolvedDefaults.forEach { (part, default) ->
+                checkNotNull(default)
+                foodItemDao.insert(
+                    FoodItemEntity(
+                        rawEntryId = existing.rawEntryId,
+                        logDate = existing.logDate,
+                        consumedTime = consumedTime,
+                        name = default.name,
+                        amount = part.quantity,
+                        unit = default.unit,
+                        calories = default.calories * part.quantity,
+                        source = default.source,
+                        confidence = default.confidence,
+                        notes = overrideNotes ?: default.notes,
+                        createdAt = createdAt,
+                    ),
+                )
+            }
+            rawEntryDao.updatePendingDetails(
+                id = existing.rawEntryId,
+                logDate = existing.logDate,
+                rawText = trimmedName,
+                notes = null,
+            )
+            markFoodChanged(existing.logDate)
+            return FoodItemUpdateResult.UpdatedFromDefaults
+        }
 
         foodItemDao.update(
             existing.copy(
@@ -633,7 +677,9 @@ class FoodLogRepository(
 
     sealed interface FoodItemUpdateResult {
         data object Updated : FoodItemUpdateResult
+        data object UpdatedFromDefaults : FoodItemUpdateResult
         data object InvalidInput : FoodItemUpdateResult
+        data object UnresolvedDefaults : FoodItemUpdateResult
         data object NotFound : FoodItemUpdateResult
     }
 
