@@ -388,6 +388,7 @@ fun TodayScreen(
             ResolveLoggedFoodEditDialog(
                 resolution = resolution,
                 title = "Resolve pending meal",
+                contextText = entry.consumedTime?.let { "Time: $it" },
                 dismissLabel = "Keep pending",
                 errorMessage = pendingResolutionError,
                 onDismiss = { resolvingEntry = null },
@@ -1020,7 +1021,7 @@ private fun PendingEntryRow(
         ) {
             Text(text = entry.rawText, fontWeight = FontWeight.SemiBold)
             Text(
-                text = "Needs review",
+                text = listOfNotNull("Needs review", entry.consumedTime?.let { "Time: $it" }).joinToString(" - "),
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 style = MaterialTheme.typography.bodySmall,
             )
@@ -1474,7 +1475,9 @@ private fun ResolvePendingDialog(
     var name by remember(entry.id, draft?.name) { mutableStateOf(draft?.name ?: entry.rawText) }
     var amount by remember(entry.id, draft?.amount) { mutableStateOf(draft?.amount.orEmpty()) }
     var unit by remember(entry.id, draft?.unit) { mutableStateOf(draft?.unit.orEmpty()) }
-    var time by remember(entry.id, draft?.time) { mutableStateOf(draft?.time.orEmpty()) }
+    var time by remember(entry.id, draft?.time, entry.consumedTime) {
+        mutableStateOf(draft?.time ?: entry.consumedTime?.toString().orEmpty())
+    }
     var calories by remember(entry.id) { mutableStateOf("") }
     var notes by remember(entry.id) { mutableStateOf("") }
     var saveAsDefault by remember(entry.id) { mutableStateOf(false) }
@@ -1855,6 +1858,7 @@ private fun EditFoodItemDialog(
 private fun ResolveLoggedFoodEditDialog(
     resolution: LoggedFoodEditResolution,
     title: String = "Complete edited meal",
+    contextText: String? = null,
     dismissLabel: String = "Cancel",
     errorMessage: String?,
     onDismiss: () -> Unit,
@@ -1898,6 +1902,13 @@ private fun ResolveLoggedFoodEditDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                contextText?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 if (recognisedParts.isNotEmpty()) {
                     Text(
                         text = "Recognised: " + recognisedParts.joinToString(", ") {

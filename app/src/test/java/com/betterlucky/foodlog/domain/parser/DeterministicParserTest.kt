@@ -62,6 +62,14 @@ class DeterministicParserTest {
     }
 
     @Test
+    fun pmPrefixDoesNotNeedQuantity() {
+        val parsed = parser.parse("10pm yoghurt with chia and pumpkin seeds", today)
+
+        assertEquals(LocalTime.parse("22:00"), parsed.consumedTime)
+        assertEquals("yoghurt with chia and pumpkin seeds", parsed.normalizedFoodText)
+    }
+
+    @Test
     fun supportedDatePrefixesSetLogDate() {
         assertEquals(today, parser.parse("today tea", today).logDate)
         assertEquals(today.minusDays(1), parser.parse("yesterday tea", today).logDate)

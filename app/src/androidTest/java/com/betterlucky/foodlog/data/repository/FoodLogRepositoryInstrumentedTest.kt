@@ -137,6 +137,19 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pmPrefixUnsupportedCompoundStaysPendingWithParsedTime() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("10pm yoghurt with chia and pumpkin seeds")
+        val pendingEntry = repository.observePendingEntriesForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Pending)
+        assertEquals(LocalTime.parse("22:00"), pendingEntry.consumedTime)
+        assertEquals(LocalTime.parse("22:00"), rawEntry?.consumedTime)
+    }
+
+    @Test
     fun quantityOneDoesNotParseAsTime() = runTest {
         repository.seedDefaults()
 
