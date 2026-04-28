@@ -85,6 +85,8 @@ fun TodayScreen(
     var showingShortcuts by remember { mutableStateOf(false) }
     var addingShortcut by remember { mutableStateOf(false) }
     var pickingDate by remember { mutableStateOf(false) }
+    var loggedItemsViewMode by remember { mutableStateOf(LoggedItemsViewMode.Time) }
+    var expandedLoggedClumps by remember { mutableStateOf(emptySet<String>()) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val readiness = dailyReadiness(
@@ -241,11 +243,55 @@ fun TodayScreen(
                     EmptyState("No food logged for this day yet.")
                 }
             } else {
-                items(uiState.items) { item ->
-                    FoodItemRow(
-                        item = item,
-                        onClick = { editingFoodItem = item },
+                item {
+                    LoggedItemsViewControls(
+                        selectedMode = loggedItemsViewMode,
+                        onModeSelected = { mode ->
+                            loggedItemsViewMode = mode
+                            expandedLoggedClumps = emptySet()
+                        },
                     )
+                }
+                when (loggedItemsViewMode) {
+                    LoggedItemsViewMode.Time,
+                    LoggedItemsViewMode.Calories -> {
+                        items(uiState.items.sortedFor(loggedItemsViewMode)) { item ->
+                            FoodItemRow(
+                                item = item,
+                                onClick = { editingFoodItem = item },
+                            )
+                        }
+                    }
+                    LoggedItemsViewMode.Clumped -> {
+                        loggedItemClumps(uiState.items).forEach { clump ->
+                            val isExpanded = clump.key in expandedLoggedClumps
+                            item {
+                                ClumpedFoodItemRow(
+                                    clump = clump,
+                                    expanded = isExpanded,
+                                    onClick = {
+                                        if (clump.items.size == 1) {
+                                            editingFoodItem = clump.items.single()
+                                        } else {
+                                            expandedLoggedClumps = if (isExpanded) {
+                                                expandedLoggedClumps - clump.key
+                                            } else {
+                                                expandedLoggedClumps + clump.key
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                            if (isExpanded) {
+                                items(clump.items.sortedFor(LoggedItemsViewMode.Time)) { item ->
+                                    FoodItemRow(
+                                        item = item,
+                                        onClick = { editingFoodItem = item },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -633,6 +679,12 @@ private fun DailyReadiness.closePromptText(): String =
 
 private val FoodLogCardShape = RoundedCornerShape(8.dp)
 
+private enum class LoggedItemsViewMode(val label: String) {
+    Time("Time"),
+    Calories("Calories"),
+    Clumped("Clumped"),
+}
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(
@@ -641,6 +693,36 @@ private fun SectionTitle(text: String) {
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.titleMedium,
     )
+}
+
+@Composable
+private fun LoggedItemsViewControls(
+    selectedMode: LoggedItemsViewMode,
+    onModeSelected: (LoggedItemsViewMode) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        LoggedItemsViewMode.entries.forEach { mode ->
+            val selected = mode == selectedMode
+            if (selected) {
+                Button(
+                    onClick = { onModeSelected(mode) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(mode.label)
+                }
+            } else {
+                OutlinedButton(
+                    onClick = { onModeSelected(mode) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(mode.label)
+                }
+            }
+        }
+    }
 }
 
 private fun DailyStatusEntity?.exportText(
@@ -678,6 +760,13 @@ private fun DailyStatusEntity?.isLegacyExportCurrent(): Boolean {
 
 private fun Instant.displayTime(): String =
     atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
+
+private data class LoggedItemClump(
+    val key: String,
+    val name: String,
+    val quantity: String?,
+    val items: List<FoodItemEntity>,
+)
 
 @Composable
 private fun DailyWeightRow(
@@ -771,6 +860,110 @@ private fun quantityText(item: FoodItemEntity): String? =
         item.unit != null -> item.unit
         else -> null
     }
+
+@Composable
+private fun ClumpedFoodItemRow(
+    clump: LoggedItemClump,
+    expanded: Boolean,
+    onClick: () -> Unit,
+) {
+    val count = clump.items.size
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = FoodLogCardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (count == 1) clump.name else "${clump.name} x$count",
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = clumpDetailText(clump, expanded),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(
+                text = "${clump.items.sumOf { it.calories }.toInt()} kcal",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+private fun clumpDetailText(
+    clump: LoggedItemClump,
+    expanded: Boolean,
+): String {
+    val count = clump.items.size
+    val times = clump.items
+        .map { it.consumedTime?.toString() ?: "No time" }
+        .distinct()
+        .joinToString(", ")
+    val quantity = clump.quantity?.let { if (count == 1) it else "$it each" }
+    val action = if (count > 1) {
+        if (expanded) "tap to collapse" else "tap to expand"
+    } else {
+        "tap to edit"
+    }
+
+    return listOfNotNull(times, quantity, action).joinToString(" - ")
+}
+
+private fun List<FoodItemEntity>.sortedFor(mode: LoggedItemsViewMode): List<FoodItemEntity> =
+    when (mode) {
+        LoggedItemsViewMode.Time,
+        LoggedItemsViewMode.Clumped -> sortedWith(
+            compareBy<FoodItemEntity> { it.consumedTime }
+                .thenBy { it.createdAt }
+                .thenBy { it.id },
+        )
+        LoggedItemsViewMode.Calories -> sortedWith(
+            compareByDescending<FoodItemEntity> { it.calories }
+                .thenBy { it.consumedTime }
+                .thenBy { it.createdAt }
+                .thenBy { it.id },
+        )
+    }
+
+private fun loggedItemClumps(items: List<FoodItemEntity>): List<LoggedItemClump> =
+    items
+        .groupBy { item ->
+            listOf(
+                item.name.trim().lowercase(),
+                quantityText(item).orEmpty(),
+                item.calories.formatAmount(),
+            ).joinToString("|")
+        }
+        .map { (key, groupedItems) ->
+            val first = groupedItems.first()
+            LoggedItemClump(
+                key = key,
+                name = first.name,
+                quantity = quantityText(first),
+                items = groupedItems.sortedFor(LoggedItemsViewMode.Time),
+            )
+        }
+        .sortedWith(
+            compareBy<LoggedItemClump> { it.items.firstOrNull()?.consumedTime }
+                .thenBy { it.items.firstOrNull()?.createdAt }
+                .thenBy { it.name.lowercase() },
+        )
 
 private fun Double.formatAmount(): String =
     if (rem(1.0) == 0.0) toInt().toString() else toString()

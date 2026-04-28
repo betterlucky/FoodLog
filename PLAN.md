@@ -214,6 +214,7 @@ Current shortcut behavior:
 Current logged-item behavior:
 
 - Logged food items can be edited from the Today screen.
+- Logged food items can be viewed by time, by calories, or in a clumped view that groups identical rows while preserving access to individual edits.
 - Editing supports item name, amount, unit, calories, consumed time, and notes.
 - If edited calories are present, the edit is treated as a single manual row update.
 - If edited calories are blank, FoodLog re-runs deterministic parsing on the edited item text:
