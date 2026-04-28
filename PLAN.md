@@ -231,6 +231,7 @@ Current logged-item behavior:
 Current pending-entry behavior:
 
 - Pending food entries can be manually resolved by the user from the Today screen.
+- Pending rows and review dialogs show parsed time separately from the food text when an explicit time was entered.
 - Compound pending entries use the same itemised staged resolver as logged-item edits when any part already matches a shortcut/default.
 - Recognised staged parts are held in memory; unresolved parts are completed one at a time and can be saved as shortcuts/defaults.
 - Choosing `Keep pending` or dismissing the staged resolver leaves the original pending entry unchanged so Resolve can restart the staged flow later.

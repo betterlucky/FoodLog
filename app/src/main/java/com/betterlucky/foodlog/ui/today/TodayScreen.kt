@@ -1002,6 +1002,22 @@ private fun pluralizedUnit(
         else -> unit
     }
 
+private fun RawEntryEntity.displayFoodText(): String {
+    if (consumedTime == null) return rawText
+
+    val normalizedRawText = rawText.trim()
+    val timePattern = TimeTextParser.PATTERN
+    val prefixMatch = Regex("^($timePattern)\\s+(.+)$", RegexOption.IGNORE_CASE)
+        .matchEntire(normalizedRawText)
+    if (prefixMatch != null) {
+        return prefixMatch.groupValues[2]
+    }
+
+    val suffixMatch = Regex("^(.+?)\\s+(?:at\\s+)?($timePattern)$", RegexOption.IGNORE_CASE)
+        .matchEntire(normalizedRawText)
+    return suffixMatch?.groupValues?.get(1) ?: normalizedRawText
+}
+
 @Composable
 private fun PendingEntryRow(
     entry: RawEntryEntity,
@@ -1019,7 +1035,7 @@ private fun PendingEntryRow(
                 .fillMaxWidth()
                 .padding(12.dp),
         ) {
-            Text(text = entry.rawText, fontWeight = FontWeight.SemiBold)
+            Text(text = entry.displayFoodText(), fontWeight = FontWeight.SemiBold)
             Text(
                 text = listOfNotNull("Needs review", entry.consumedTime?.let { "Time: $it" }).joinToString(" - "),
                 color = MaterialTheme.colorScheme.onErrorContainer,
@@ -1472,7 +1488,7 @@ private fun ResolvePendingDialog(
         saveAsDefault: Boolean,
     ) -> Unit,
 ) {
-    var name by remember(entry.id, draft?.name) { mutableStateOf(draft?.name ?: entry.rawText) }
+    var name by remember(entry.id, draft?.name) { mutableStateOf(draft?.name ?: entry.displayFoodText()) }
     var amount by remember(entry.id, draft?.amount) { mutableStateOf(draft?.amount.orEmpty()) }
     var unit by remember(entry.id, draft?.unit) { mutableStateOf(draft?.unit.orEmpty()) }
     var time by remember(entry.id, draft?.time, entry.consumedTime) {
@@ -1489,7 +1505,7 @@ private fun ResolvePendingDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = entry.rawText,
+                    text = entry.displayFoodText(),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
