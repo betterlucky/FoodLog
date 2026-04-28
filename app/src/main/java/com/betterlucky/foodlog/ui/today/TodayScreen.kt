@@ -289,16 +289,19 @@ fun TodayScreen(
     resolvingEntry?.let { entry ->
         var pendingResolution by remember(entry.id) { mutableStateOf<LoggedFoodEditResolution?>(null) }
         var pendingResolutionError by remember(entry.id) { mutableStateOf<String?>(null) }
+        var pendingDraft by remember(entry.id) { mutableStateOf<PendingEntryDraft?>(null) }
         LaunchedEffect(entry.id) {
             viewModel.previewPendingEntryResolution(
                 rawEntryId = entry.id,
                 onReady = { pendingResolution = it },
+                onSinglePart = { pendingDraft = it },
             )
         }
         val resolution = pendingResolution
         if (resolution == null) {
             ResolvePendingDialog(
                 entry = entry,
+                draft = pendingDraft,
                 onDismiss = { resolvingEntry = null },
                 onRemove = {
                     viewModel.removePendingEntry(
@@ -306,13 +309,14 @@ fun TodayScreen(
                         onRemoved = { resolvingEntry = null },
                     )
                 },
-                onResolve = { name, amount, unit, calories, notes, saveAsDefault ->
+                onResolve = { name, amount, unit, calories, time, notes, saveAsDefault ->
                     viewModel.resolvePendingEntry(
                         rawEntryId = entry.id,
                         name = name,
                         amount = amount,
                         unit = unit,
                         calories = calories,
+                        time = time,
                         notes = notes,
                         saveAsDefault = saveAsDefault,
                         onResolved = { resolvingEntry = null },
@@ -1086,6 +1090,7 @@ private fun DailyWeightDialog(
 @Composable
 private fun ResolvePendingDialog(
     entry: RawEntryEntity,
+    draft: PendingEntryDraft?,
     onDismiss: () -> Unit,
     onRemove: () -> Unit,
     onResolve: (
@@ -1093,13 +1098,15 @@ private fun ResolvePendingDialog(
         amount: String,
         unit: String,
         calories: String,
+        time: String,
         notes: String,
         saveAsDefault: Boolean,
     ) -> Unit,
 ) {
-    var name by remember(entry.id) { mutableStateOf(entry.rawText) }
-    var amount by remember(entry.id) { mutableStateOf("") }
-    var unit by remember(entry.id) { mutableStateOf("") }
+    var name by remember(entry.id, draft?.name) { mutableStateOf(draft?.name ?: entry.rawText) }
+    var amount by remember(entry.id, draft?.amount) { mutableStateOf(draft?.amount.orEmpty()) }
+    var unit by remember(entry.id, draft?.unit) { mutableStateOf(draft?.unit.orEmpty()) }
+    var time by remember(entry.id, draft?.time) { mutableStateOf(draft?.time.orEmpty()) }
     var calories by remember(entry.id) { mutableStateOf("") }
     var notes by remember(entry.id) { mutableStateOf("") }
     var saveAsDefault by remember(entry.id) { mutableStateOf(false) }
@@ -1148,6 +1155,14 @@ private fun ResolvePendingDialog(
                     label = { Text("Calories") },
                 )
                 OutlinedTextField(
+                    value = time,
+                    onValueChange = { time = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Time") },
+                    placeholder = { Text("HH:mm") },
+                )
+                OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
                     modifier = Modifier
@@ -1179,7 +1194,7 @@ private fun ResolvePendingDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onResolve(name, amount, unit, calories, notes, saveAsDefault) }) {
+            Button(onClick = { onResolve(name, amount, unit, calories, time, notes, saveAsDefault) }) {
                 Text("Save")
             }
         },

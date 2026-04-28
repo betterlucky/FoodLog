@@ -114,6 +114,8 @@ Date behavior:
 - `createdAt` is always the actual timestamp when the entry is saved.
 - Explicit time prefixes/suffixes set `RawEntryEntity.consumedTime` and `FoodItemEntity.consumedTime`.
 - `consumedTime` defaults to the current local time when no explicit time is present.
+- Pending review pre-fills any deterministic parser hints it can extract, including item text, amount/unit, and consumed time.
+- Pending review lets the user edit the consumed time before resolving the row.
 - `logDate` defaults to the current local date when no supported date prefix is present.
 - The Today screen blocks free-text entries whose parsed date does not match the selected date; users should navigate to the intended date before adding prior-session entries.
 
@@ -381,6 +383,8 @@ Add focused tests for Phase 1 behavior:
 - Plus-separated compound pending input stages recognised parts separately, for example `150g sourdough with thin butter + tea`.
 - Per-gram shortcuts scale calories correctly for different gram amounts.
 - Per-unit shortcuts scale calories correctly for different parsed unit amounts, for example `2 slices sourdough`.
+- Single pending review for `13:45 10g fruit and nut mix` pre-fills `fruit and nut mix`, `10 g`, and `13:45`.
+- Manual pending resolution can override the parsed consumed time.
 - Pending entries can be removed with a hard delete while unresolved.
 - Daily total reflects active food rows.
 - Logged item manual edits update totals and exports.

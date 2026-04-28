@@ -45,6 +45,15 @@ class DeterministicParserTest {
     }
 
     @Test
+    fun fruitAndNutMixKeepsAndInsideItemName() {
+        val parsed = parser.parse("13:45 10g fruit and nut mix", today)
+
+        assertEquals(listOf("10g fruit and nut mix"), parsed.parts.map { it.normalizedFoodText })
+        assertEquals(listOf("fruit and nut mix"), parsed.parts.map { it.shortcutTrigger })
+        assertEquals(listOf(10.0), parsed.parts.map { it.quantity })
+    }
+
+    @Test
     fun supportedDatePrefixesSetLogDate() {
         assertEquals(today, parser.parse("today tea", today).logDate)
         assertEquals(today.minusDays(1), parser.parse("yesterday tea", today).logDate)

@@ -304,6 +304,7 @@ class FoodLogRepository(
                 id = existing.rawEntryId,
                 logDate = existing.logDate,
                 rawText = trimmedName,
+                consumedTime = consumedTime,
                 notes = null,
             )
             markFoodChanged(existing.logDate)
@@ -411,6 +412,7 @@ class FoodLogRepository(
                 id = existing.rawEntryId,
                 logDate = existing.logDate,
                 rawText = trimmedRawText,
+                consumedTime = consumedTime,
                 notes = null,
             )
             markFoodChanged(existing.logDate)
@@ -446,6 +448,7 @@ class FoodLogRepository(
         unit: String?,
         calories: Double?,
         notes: String?,
+        consumedTime: LocalTime? = null,
     ): PendingEntryUpdateResult =
         database.withTransaction {
             val trimmedRawText = rawText.trim()
@@ -474,6 +477,7 @@ class FoodLogRepository(
                 today = dateTimeProvider.today(),
                 defaultLogDate = rawEntry.logDate,
             )
+            val resolvedTime = consumedTime ?: parsed.consumedTime ?: rawEntry.consumedTime
             val resolvedDefaults = parsed.parts
                 .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
 
@@ -485,7 +489,7 @@ class FoodLogRepository(
                         FoodItemEntity(
                             rawEntryId = rawEntry.id,
                             logDate = parsed.logDate,
-                            consumedTime = rawEntry.consumedTime,
+                            consumedTime = resolvedTime,
                             name = default.name,
                             amount = part.quantity,
                             unit = default.unit,
@@ -501,6 +505,7 @@ class FoodLogRepository(
                     id = rawEntry.id,
                     logDate = parsed.logDate,
                     rawText = trimmedRawText,
+                    consumedTime = resolvedTime,
                     notes = null,
                 )
                 rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
@@ -515,6 +520,7 @@ class FoodLogRepository(
                 id = rawEntry.id,
                 logDate = rawEntry.logDate,
                 rawText = trimmedRawText,
+                consumedTime = resolvedTime,
                 notes = normalizedNotes,
             )
             PendingEntryUpdateResult.Updated
@@ -533,21 +539,25 @@ class FoodLogRepository(
             today = dateTimeProvider.today(),
             defaultLogDate = rawEntry.logDate,
         )
-        if (parsed.parts.size <= 1) {
-            return PendingEntryResolutionPreviewResult.SinglePart
+        val previewParts = parsed.parts.map { part ->
+            FoodItemDefaultEditPreviewPart(
+                inputText = part.normalizedFoodText,
+                trigger = part.shortcutTrigger,
+                quantity = part.quantity,
+                quantityUnit = part.quantityUnit,
+                default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
+            )
+        }
+        if (previewParts.size <= 1) {
+            return PendingEntryResolutionPreviewResult.SinglePart(
+                part = previewParts.singleOrNull(),
+                consumedTime = rawEntry.consumedTime,
+            )
         }
 
         return PendingEntryResolutionPreviewResult.Ready(
             rawText = rawEntry.rawText.trim(),
-            parts = parsed.parts.map { part ->
-                FoodItemDefaultEditPreviewPart(
-                    inputText = part.normalizedFoodText,
-                    trigger = part.shortcutTrigger,
-                    quantity = part.quantity,
-                    quantityUnit = part.quantityUnit,
-                    default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
-                )
-            },
+            parts = previewParts,
         )
     }
 
@@ -606,6 +616,7 @@ class FoodLogRepository(
                 id = rawEntry.id,
                 logDate = rawEntry.logDate,
                 rawText = trimmedRawText,
+                consumedTime = rawEntry.consumedTime,
                 notes = null,
             )
             rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
@@ -623,6 +634,7 @@ class FoodLogRepository(
         unit: String?,
         calories: Double,
         notes: String?,
+        consumedTime: LocalTime? = null,
         saveAsDefault: Boolean = false,
     ): ManualResolveResult =
         database.withTransaction {
@@ -642,11 +654,12 @@ class FoodLogRepository(
                 return@withTransaction ManualResolveResult.NotPending
             }
 
+            val resolvedTime = consumedTime ?: rawEntry.consumedTime
             val foodItemId = foodItemDao.insert(
                 FoodItemEntity(
                     rawEntryId = rawEntry.id,
                     logDate = rawEntry.logDate,
-                    consumedTime = rawEntry.consumedTime,
+                    consumedTime = resolvedTime,
                     name = trimmedName,
                     amount = normalizedAmount,
                     unit = normalizedUnit,
@@ -656,6 +669,13 @@ class FoodLogRepository(
                     notes = normalizedNotes,
                     createdAt = dateTimeProvider.nowInstant(),
                 ),
+            )
+            rawEntryDao.updatePendingDetails(
+                id = rawEntry.id,
+                logDate = rawEntry.logDate,
+                rawText = rawEntry.rawText,
+                consumedTime = resolvedTime,
+                notes = null,
             )
             rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
             markFoodChanged(rawEntry.logDate)
@@ -983,7 +1003,10 @@ class FoodLogRepository(
             val parts: List<FoodItemDefaultEditPreviewPart>,
         ) : PendingEntryResolutionPreviewResult
 
-        data object SinglePart : PendingEntryResolutionPreviewResult
+        data class SinglePart(
+            val part: FoodItemDefaultEditPreviewPart?,
+            val consumedTime: LocalTime?,
+        ) : PendingEntryResolutionPreviewResult
         data object NotFound : PendingEntryResolutionPreviewResult
         data object NotPending : PendingEntryResolutionPreviewResult
     }

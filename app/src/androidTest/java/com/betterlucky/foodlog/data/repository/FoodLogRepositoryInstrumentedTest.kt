@@ -419,6 +419,45 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun singlePendingGramEntryPreviewKeepsParsedQuantityAndTime() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("13:45 10g fruit and nut mix")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart
+
+        assertEquals("10g fruit and nut mix", preview.part?.inputText)
+        assertEquals("fruit and nut mix", preview.part?.trigger)
+        assertEquals(10.0, preview.part?.quantity ?: 0.0, 0.001)
+        assertEquals("g", preview.part?.quantityUnit)
+        assertEquals(LocalTime.parse("13:45"), preview.consumedTime)
+        assertEquals(null, preview.part?.default)
+    }
+
+    @Test
+    fun manualPendingResolutionCanOverrideParsedTime() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("13:45 10g fruit and nut mix")
+        val resolveResult = repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Fruit and nut mix",
+            amount = 10.0,
+            unit = "g",
+            calories = 52.0,
+            notes = null,
+            consumedTime = LocalTime.parse("14:10"),
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
+        assertEquals(LocalTime.parse("14:10"), foodItem.consumedTime)
+        assertEquals(LocalTime.parse("14:10"), rawEntry?.consumedTime)
+    }
+
+    @Test
     fun pendingCompoundEntryCanBeItemisedAndKeptPendingUntilCommitted() = runTest {
         repository.seedDefaults()
         val pendingResult = repository.submitText("tea, banana, satsuma")

@@ -104,11 +104,13 @@ class DeterministicParser {
         return TimedFoodText(foodText = foodText, consumedTime = null)
     }
 
-    private fun foodPartsFor(foodText: String): List<ParsedFoodPart> =
-        foodText
+    private fun foodPartsFor(foodText: String): List<ParsedFoodPart> {
+        val protectedFoodText = foodText.replace("fruit and nut mix", FRUIT_AND_NUT_MIX_TOKEN)
+        return protectedFoodText
             .split(Regex("\\s*(?:,|\\+|/|&|;|\\band\\b)\\s*"))
             .map { it.trim() }
             .filter { it.isNotBlank() }
+            .map { it.replace(FRUIT_AND_NUT_MIX_TOKEN, "fruit and nut mix") }
             .map { part ->
                 val shortcutTrigger = shortcutTriggerFor(part)
                 ParsedFoodPart(
@@ -118,6 +120,7 @@ class DeterministicParser {
                     quantityUnit = shortcutTrigger?.unit,
                 )
             }
+    }
 
     private fun shortcutTriggerFor(foodText: String): ShortcutMatch? {
         if (foodText.isBlank()) return null
@@ -238,5 +241,6 @@ class DeterministicParser {
     private companion object {
         private const val TIME_PATTERN = "(?:[01]?\\d|2[0-3]):[0-5]\\d|(?:0?[1-9]|1[0-2])(?::[0-5]\\d)?\\s*(?:am|pm)"
         private const val UNIT_PATTERN = "slices?|pieces?|servings?|portions?|pots?|cups?|crackers?|biscuits?|bars?|bowls?|spoons?|tablespoons?|teaspoons?"
+        private const val FRUIT_AND_NUT_MIX_TOKEN = "__fruit_nut_mix__"
     }
 }

@@ -48,6 +48,13 @@ data class LoggedFoodEditResolvedPartInput(
     val saveAsDefault: Boolean,
 )
 
+data class PendingEntryDraft(
+    val name: String,
+    val amount: String,
+    val unit: String,
+    val time: String,
+)
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TodayViewModel(
     private val repository: FoodLogRepository,
@@ -415,6 +422,7 @@ class TodayViewModel(
     fun previewPendingEntryResolution(
         rawEntryId: Long,
         onReady: (LoggedFoodEditResolution) -> Unit,
+        onSinglePart: (PendingEntryDraft) -> Unit,
     ) {
         viewModelScope.launch {
             when (val preview = repository.previewPendingEntryResolution(rawEntryId)) {
@@ -423,7 +431,8 @@ class TodayViewModel(
                         onReady(preview.toLoggedFoodEditResolution())
                     }
                 }
-                FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart -> Unit
+                is FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart ->
+                    preview.part?.toPendingEntryDraft(preview.consumedTime)?.let(onSinglePart)
                 FoodLogRepository.PendingEntryResolutionPreviewResult.NotFound ->
                     message.value = "That pending entry no longer exists."
                 FoodLogRepository.PendingEntryResolutionPreviewResult.NotPending ->
@@ -529,12 +538,14 @@ class TodayViewModel(
         amount: String,
         unit: String,
         calories: String,
+        time: String,
         notes: String,
         saveAsDefault: Boolean,
         onResolved: () -> Unit,
     ) {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedCalories = calories.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+        val parsedTime = time.trim().takeIf { it.isNotBlank() }?.let(::parseTimeOrNull)
 
         if (name.isBlank()) {
             message.value = "Add an item name to save the pending entry."
@@ -551,6 +562,11 @@ class TodayViewModel(
             return
         }
 
+        if (time.isNotBlank() && parsedTime == null) {
+            message.value = "Time must use HH:mm, such as 08:30."
+            return
+        }
+
         if (parsedCalories == null) {
             viewModelScope.launch {
                 message.value = when (
@@ -561,6 +577,7 @@ class TodayViewModel(
                         unit = unit,
                         calories = null,
                         notes = notes,
+                        consumedTime = parsedTime,
                     )
                 ) {
                     FoodLogRepository.PendingEntryUpdateResult.Updated -> {
@@ -587,6 +604,7 @@ class TodayViewModel(
                 unit = unit,
                 calories = parsedCalories,
                 notes = notes,
+                consumedTime = parsedTime,
                 saveAsDefault = saveAsDefault,
             )
             message.value = when (result) {
@@ -763,6 +781,20 @@ private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLogged
             )
         },
     )
+
+private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toPendingEntryDraft(consumedTime: LocalTime?): PendingEntryDraft =
+    PendingEntryDraft(
+        name = trigger?.takeIf { it.isNotBlank() } ?: inputText,
+        amount = quantity
+            .takeIf { quantityUnit != null || it != 1.0 }
+            ?.formatDraftAmount()
+            .orEmpty(),
+        unit = quantityUnit.orEmpty(),
+        time = consumedTime?.toString().orEmpty(),
+    )
+
+private fun Double.formatDraftAmount(): String =
+    if (rem(1.0) == 0.0) toInt().toString() else toString()
 
 class TodayViewModelFactory(
     private val repository: FoodLogRepository,

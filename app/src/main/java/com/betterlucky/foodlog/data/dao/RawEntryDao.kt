@@ -7,6 +7,7 @@ import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
+import java.time.LocalTime
 
 @Dao
 interface RawEntryDao {
@@ -19,11 +20,18 @@ interface RawEntryDao {
     @Query("UPDATE raw_entries SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: RawEntryStatus)
 
-    @Query("UPDATE raw_entries SET logDate = :logDate, rawText = :rawText, notes = :notes WHERE id = :id")
+    @Query(
+        """
+        UPDATE raw_entries
+        SET logDate = :logDate, rawText = :rawText, consumedTime = :consumedTime, notes = :notes
+        WHERE id = :id
+        """,
+    )
     suspend fun updatePendingDetails(
         id: Long,
         logDate: LocalDate,
         rawText: String,
+        consumedTime: LocalTime?,
         notes: String?,
     )
 
