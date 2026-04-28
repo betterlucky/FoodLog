@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -27,6 +29,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -135,39 +138,48 @@ fun TodayScreen(
         }
 
         uiState.message?.let {
-            Text(text = it)
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
-
-        OutlinedButton(
-            onClick = { showingShortcuts = true },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Shortcuts")
-        }
-
-        Text(
-            text = "Total: ${uiState.totalCalories.toInt()} kcal",
-            fontWeight = FontWeight.Bold,
-        )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            if (uiState.pendingEntries.isNotEmpty()) {
+            Button(
+                onClick = { showingShortcuts = true },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                ),
+            ) {
+                Text("Shortcuts")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "${uiState.pendingEntries.size} pending ${if (uiState.pendingEntries.size == 1) "entry" else "entries"} to resolve",
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = "${uiState.totalCalories.toInt()} kcal",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
                 )
-            } else {
-                Text(
-                    text = readiness.label,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (uiState.pendingEntries.isNotEmpty()) {
+                    Text(
+                        text = "${uiState.pendingEntries.size} pending ${if (uiState.pendingEntries.size == 1) "entry" else "entries"}",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text(
+                        text = readiness.label,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
             if (readiness != DailyReadiness.NoFoodLogged) {
                 TextButton(
@@ -540,6 +552,7 @@ private fun DailyClosePrompt(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
             containerColor = when (readiness) {
                 DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.errorContainer
@@ -597,12 +610,15 @@ private fun DailyReadiness.closePromptText(): String =
         DailyReadiness.AlreadyExported -> "Health Monitor export is current."
     }
 
+private val FoodLogCardShape = RoundedCornerShape(8.dp)
+
 @Composable
 private fun SectionTitle(text: String) {
     Text(
         text = text,
         fontWeight = FontWeight.Bold,
-        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.primary,
+        style = MaterialTheme.typography.titleMedium,
     )
 }
 
@@ -689,8 +705,9 @@ private fun FoodItemRow(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            containerColor = MaterialTheme.colorScheme.surface,
         ),
     ) {
         Row(
@@ -783,8 +800,9 @@ private fun PendingEntryRow(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            containerColor = MaterialTheme.colorScheme.errorContainer,
         ),
     ) {
         Column(
@@ -795,11 +813,15 @@ private fun PendingEntryRow(
             Text(text = entry.rawText, fontWeight = FontWeight.SemiBold)
             Text(
                 text = "Needs review",
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                color = MaterialTheme.colorScheme.onErrorContainer,
                 style = MaterialTheme.typography.bodySmall,
             )
             Button(
                 onClick = onResolve,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
                 modifier = Modifier
                     .align(Alignment.End)
                     .padding(top = 8.dp),
@@ -893,6 +915,7 @@ private fun ShortcutRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onLog),
+        shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
