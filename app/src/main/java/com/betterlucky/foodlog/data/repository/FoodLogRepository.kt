@@ -96,30 +96,35 @@ class FoodLogRepository(
                 ),
             )
 
-            val default = parsed.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) }
-            if (default == null) {
+            val resolvedDefaults = parsed.parts
+                .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
+
+            if (resolvedDefaults.isEmpty() || resolvedDefaults.any { (_, default) -> default == null }) {
                 SubmitResult.Pending(rawEntryId = rawEntryId, logDate = parsed.logDate)
             } else {
-                val foodItemId = foodItemDao.insert(
-                    FoodItemEntity(
-                        rawEntryId = rawEntryId,
-                        logDate = parsed.logDate,
-                        consumedTime = consumedTime,
-                        name = default.name,
-                        amount = parsed.quantity,
-                        unit = default.unit,
-                        calories = default.calories * parsed.quantity,
-                        source = default.source,
-                        confidence = default.confidence,
-                        notes = default.notes,
-                        createdAt = createdAt,
-                    ),
-                )
+                val foodItemIds = resolvedDefaults.map { (part, default) ->
+                    checkNotNull(default)
+                    foodItemDao.insert(
+                        FoodItemEntity(
+                            rawEntryId = rawEntryId,
+                            logDate = parsed.logDate,
+                            consumedTime = consumedTime,
+                            name = default.name,
+                            amount = part.quantity,
+                            unit = default.unit,
+                            calories = default.calories * part.quantity,
+                            source = default.source,
+                            confidence = default.confidence,
+                            notes = default.notes,
+                            createdAt = createdAt,
+                        ),
+                    )
+                }
                 rawEntryDao.updateStatus(rawEntryId, RawEntryStatus.PARSED)
                 markFoodChanged(parsed.logDate)
                 SubmitResult.Parsed(
                     rawEntryId = rawEntryId,
-                    foodItemId = foodItemId,
+                    foodItemIds = foodItemIds,
                     logDate = parsed.logDate,
                 )
             }
@@ -240,6 +245,19 @@ class FoodLogRepository(
         markFoodChanged(existing.logDate)
         return FoodItemRemoveResult.Removed
     }
+
+    suspend fun removePendingEntry(id: Long): PendingEntryRemoveResult =
+        database.withTransaction {
+            val existing = rawEntryDao.getById(id)
+                ?: return@withTransaction PendingEntryRemoveResult.NotFound
+
+            if (existing.status != RawEntryStatus.PENDING) {
+                return@withTransaction PendingEntryRemoveResult.NotPending
+            }
+
+            rawEntryDao.deleteById(existing.id)
+            PendingEntryRemoveResult.Removed
+        }
 
     suspend fun resolvePendingEntryManually(
         rawEntryId: Long,
@@ -484,9 +502,12 @@ class FoodLogRepository(
 
         data class Parsed(
             override val rawEntryId: Long,
-            val foodItemId: Long,
+            val foodItemIds: List<Long>,
             override val logDate: LocalDate,
-        ) : SubmitResult
+        ) : SubmitResult {
+            val foodItemId: Long
+                get() = foodItemIds.first()
+        }
 
         data class Pending(
             override val rawEntryId: Long,
@@ -538,6 +559,12 @@ class FoodLogRepository(
     sealed interface FoodItemRemoveResult {
         data object Removed : FoodItemRemoveResult
         data object NotFound : FoodItemRemoveResult
+    }
+
+    sealed interface PendingEntryRemoveResult {
+        data object Removed : PendingEntryRemoveResult
+        data object NotFound : PendingEntryRemoveResult
+        data object NotPending : PendingEntryRemoveResult
     }
 
     sealed interface DailyWeightResult {

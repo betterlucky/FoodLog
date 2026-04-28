@@ -46,6 +46,7 @@ Core behavior:
 - Totals and exports use active `FoodItemEntity` rows.
 - User-facing removal is called `Remove` and hard-deletes the selected `FoodItemEntity`.
 - Removing a food item does not delete the associated `RawEntryEntity` audit record.
+- Pending entries can be removed before resolution when the user chooses to enter the food another way; this hard-deletes only unresolved `RawEntryEntity` rows.
 
 Seed tea as the first `UserDefaultEntity`:
 
@@ -82,6 +83,14 @@ Supported date prefixes:
 - `today tea`
 - `yesterday tea`
 - `YYYY-MM-DD tea`
+
+Supported compound shortcut behavior:
+
+- Split obvious meal entries on commas and the word `and`, for example `banana, satsuma and tea`.
+- Resolve each part through the same shortcut/default mechanism.
+- If every part resolves, save one raw entry and create one `FoodItemEntity` per part.
+- If any part is unsupported, keep the whole raw entry pending and create no food rows.
+- Date prefixes apply to every resolved part in the compound entry.
 
 Date behavior:
 
@@ -191,6 +200,7 @@ Current pending-entry behavior:
 - Manual resolutions create `FoodItemEntity` rows with `source = MANUAL_OVERRIDE` and `confidence = HIGH`.
 - Resolving a pending entry marks the associated raw entry as `PARSED` without deleting the audit record.
 - Leaving an entry pending is the "keep pending" behavior; it remains unresolved and excluded from food exports until handled.
+- Removing a pending entry hard-deletes the unresolved raw entry and creates no food rows.
 - Manual resolutions can optionally be saved as reusable user defaults so future matching inputs can be logged deterministically.
 - Saved defaults represent calories per unit. If the user resolves `2 slices` as `190 kcal`, the stored shortcut is `95 kcal` per `slice`.
 - Active shortcuts can be reviewed from the Today screen, edited in place, or forgotten by soft-deactivating the default.
@@ -328,6 +338,9 @@ Add focused tests for Phase 1 behavior:
 - `today tea`, `yesterday tea`, and `YYYY-MM-DD tea` set the expected `logDate`.
 - `yesterday curry` creates a pending raw entry with yesterday's `logDate` and no food item.
 - Unsupported input creates a pending raw entry and no food item.
+- Compound shortcut input creates one raw entry and multiple food rows when all parts are known.
+- Compound input with any unknown part stays pending and creates no food rows.
+- Pending entries can be removed with a hard delete while unresolved.
 - Daily total reflects active food rows.
 - Logged item edits update totals and exports.
 - Logged item removal deletes the food row and updates totals/exports.

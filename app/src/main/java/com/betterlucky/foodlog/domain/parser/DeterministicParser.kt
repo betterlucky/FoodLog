@@ -6,6 +6,17 @@ data class ParsedSubmission(
     val rawText: String,
     val normalizedFoodText: String,
     val logDate: LocalDate,
+    val parts: List<ParsedFoodPart>,
+) {
+    val shortcutTrigger: String?
+        get() = parts.singleOrNull()?.shortcutTrigger
+
+    val quantity: Double
+        get() = parts.singleOrNull()?.quantity ?: 1.0
+}
+
+data class ParsedFoodPart(
+    val normalizedFoodText: String,
     val shortcutTrigger: String?,
     val quantity: Double = 1.0,
 )
@@ -22,14 +33,11 @@ class DeterministicParser {
             today = today,
             defaultLogDate = defaultLogDate,
         )
-        val shortcutTrigger = shortcutTriggerFor(dated.foodText)
-
         return ParsedSubmission(
             rawText = input,
             normalizedFoodText = dated.foodText,
             logDate = dated.logDate,
-            shortcutTrigger = shortcutTrigger?.trigger,
-            quantity = shortcutTrigger?.quantity ?: 1.0,
+            parts = foodPartsFor(dated.foodText),
         )
     }
 
@@ -70,6 +78,20 @@ class DeterministicParser {
             else -> DatedFoodText(foodText = normalized, logDate = defaultLogDate)
         }
     }
+
+    private fun foodPartsFor(foodText: String): List<ParsedFoodPart> =
+        foodText
+            .split(Regex("\\s*(?:,|\\band\\b)\\s*"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { part ->
+                val shortcutTrigger = shortcutTriggerFor(part)
+                ParsedFoodPart(
+                    normalizedFoodText = part,
+                    shortcutTrigger = shortcutTrigger?.trigger,
+                    quantity = shortcutTrigger?.quantity ?: 1.0,
+                )
+            }
 
     private fun shortcutTriggerFor(foodText: String): ShortcutMatch? {
         if (foodText.isBlank()) return null

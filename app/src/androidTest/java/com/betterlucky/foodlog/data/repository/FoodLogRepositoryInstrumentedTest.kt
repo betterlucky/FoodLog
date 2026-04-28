@@ -11,6 +11,7 @@ import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
+import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.util.DateTimeProvider
@@ -101,6 +102,40 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(50.0, foodItem.calories, 0.001)
         assertEquals(50.0, total, 0.001)
         assertTrue(csv.contains("2 cups,50"))
+    }
+
+    @Test
+    fun compoundShortcutSubmissionCreatesOneRawEntryAndMultipleFoodItems() = runTest {
+        repository.seedDefaults()
+        database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))
+        database.userDefaultDao().upsert(default(trigger = "satsuma", name = "Satsuma", calories = 35.0, unit = "each"))
+
+        val result = repository.submitText("banana, satsuma and tea")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+        val total = repository.observeCaloriesForDate(today).first()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(3, (result as FoodLogRepository.SubmitResult.Parsed).foodItemIds.size)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals(listOf("Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(listOf(result.rawEntryId), foodItems.map { it.rawEntryId }.distinct())
+        assertEquals(165.0, total, 0.001)
+    }
+
+    @Test
+    fun compoundSubmissionWithUnknownPartStaysPendingAndCreatesNoFoodItems() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("tea and curry")
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Pending)
+        assertEquals(listOf("tea and curry"), pendingEntries.map { it.rawText })
+        assertEquals(RawEntryStatus.PENDING, rawEntry?.status)
+        assertEquals(emptyList<FoodItemEntity>(), foodItems)
     }
 
     @Test
@@ -242,6 +277,32 @@ class FoodLogRepositoryInstrumentedTest {
 
         assertEquals(null, database.userDefaultDao().getActiveDefault("pear"))
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Pending)
+    }
+
+    @Test
+    fun pendingEntryCanBeRemovedWithHardDelete() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("apple")
+        val removeResult = repository.removePendingEntry(pendingResult.rawEntryId)
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertEquals(FoodLogRepository.PendingEntryRemoveResult.Removed, removeResult)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(null, rawEntry)
+    }
+
+    @Test
+    fun parsedEntryCannotBeRemovedAsPending() = runTest {
+        repository.seedDefaults()
+
+        val parsedResult = repository.submitText("tea")
+        val removeResult = repository.removePendingEntry(parsedResult.rawEntryId)
+        val rawEntry = database.rawEntryDao().getById(parsedResult.rawEntryId)
+
+        assertEquals(FoodLogRepository.PendingEntryRemoveResult.NotPending, removeResult)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
     }
 
     @Test
@@ -619,6 +680,19 @@ class FoodLogRepositoryInstrumentedTest {
             notes = "test",
             createdAt = now,
             voided = voided,
+        )
+
+    private fun default(
+        trigger: String,
+        name: String,
+        calories: Double,
+        unit: String,
+    ): UserDefaultEntity =
+        UserDefaultEntity(
+            trigger = trigger,
+            name = name,
+            calories = calories,
+            unit = unit,
         )
 
     private class MutableDateTimeProvider(

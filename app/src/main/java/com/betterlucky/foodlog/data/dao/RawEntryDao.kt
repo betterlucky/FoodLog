@@ -19,6 +19,9 @@ interface RawEntryDao {
     @Query("UPDATE raw_entries SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: RawEntryStatus)
 
+    @Query("DELETE FROM raw_entries WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT * FROM raw_entries WHERE logDate = :date ORDER BY createdAt ASC")
     fun observeRawEntriesForDate(date: LocalDate): Flow<List<RawEntryEntity>>
 

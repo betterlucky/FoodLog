@@ -228,6 +228,12 @@ fun TodayScreen(
         ResolvePendingDialog(
             entry = entry,
             onDismiss = { resolvingEntry = null },
+            onRemove = {
+                viewModel.removePendingEntry(
+                    id = entry.id,
+                    onRemoved = { resolvingEntry = null },
+                )
+            },
             onResolve = { name, amount, unit, calories, notes, saveAsDefault ->
                 viewModel.resolvePendingEntry(
                     rawEntryId = entry.id,
@@ -998,6 +1004,7 @@ private fun AddFoodItemDialog(
 private fun ResolvePendingDialog(
     entry: RawEntryEntity,
     onDismiss: () -> Unit,
+    onRemove: () -> Unit,
     onResolve: (
         name: String,
         amount: String,
@@ -1087,8 +1094,13 @@ private fun ResolvePendingDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row {
+                TextButton(onClick = onRemove) {
+                    Text("Remove")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         },
     )

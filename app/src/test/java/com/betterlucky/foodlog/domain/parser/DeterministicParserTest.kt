@@ -35,6 +35,16 @@ class DeterministicParserTest {
     }
 
     @Test
+    fun compoundEntriesSplitOnCommasAndAnd() {
+        val parsed = parser.parse("banana, satsuma and 2 teas", today)
+
+        assertEquals(listOf("banana", "satsuma", "2 teas"), parsed.parts.map { it.normalizedFoodText })
+        assertEquals(listOf("banana", "satsuma", "tea"), parsed.parts.map { it.shortcutTrigger })
+        assertEquals(listOf(1.0, 1.0, 2.0), parsed.parts.map { it.quantity })
+        assertEquals(null, parsed.shortcutTrigger)
+    }
+
+    @Test
     fun supportedDatePrefixesSetLogDate() {
         assertEquals(today, parser.parse("today tea", today).logDate)
         assertEquals(today.minusDays(1), parser.parse("yesterday tea", today).logDate)

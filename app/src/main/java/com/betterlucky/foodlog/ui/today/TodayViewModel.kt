@@ -92,7 +92,12 @@ class TodayViewModel(
                 inputText.value = ""
             }
             message.value = when (result) {
-                is FoodLogRepository.SubmitResult.Parsed -> "Logged for ${result.logDate}"
+                is FoodLogRepository.SubmitResult.Parsed ->
+                    if (result.foodItemIds.size == 1) {
+                        "Logged for ${result.logDate}"
+                    } else {
+                        "Logged ${result.foodItemIds.size} items for ${result.logDate}"
+                    }
                 is FoodLogRepository.SubmitResult.Pending -> "Saved as pending for ${result.logDate}"
                 is FoodLogRepository.SubmitResult.NonFood -> result.intent.placeholderMessage()
             }
@@ -253,6 +258,22 @@ class TodayViewModel(
             message.value = when (repository.removeFoodItem(id)) {
                 FoodLogRepository.FoodItemRemoveResult.Removed -> "Removed logged item"
                 FoodLogRepository.FoodItemRemoveResult.NotFound -> "That logged item no longer exists."
+            }
+        }
+    }
+
+    fun removePendingEntry(
+        id: Long,
+        onRemoved: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            message.value = when (repository.removePendingEntry(id)) {
+                FoodLogRepository.PendingEntryRemoveResult.Removed -> {
+                    onRemoved()
+                    "Removed pending entry"
+                }
+                FoodLogRepository.PendingEntryRemoveResult.NotFound -> "That pending entry no longer exists."
+                FoodLogRepository.PendingEntryRemoveResult.NotPending -> "That entry has already been handled."
             }
         }
     }
