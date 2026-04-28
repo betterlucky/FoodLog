@@ -19,6 +19,13 @@ interface RawEntryDao {
     @Query("UPDATE raw_entries SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: RawEntryStatus)
 
+    @Query("UPDATE raw_entries SET rawText = :rawText, notes = :notes WHERE id = :id")
+    suspend fun updatePendingDetails(
+        id: Long,
+        rawText: String,
+        notes: String?,
+    )
+
     @Query("DELETE FROM raw_entries WHERE id = :id")
     suspend fun deleteById(id: Long)
 

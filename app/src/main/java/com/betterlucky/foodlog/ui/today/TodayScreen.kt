@@ -1023,7 +1023,7 @@ private fun ResolvePendingDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Resolve pending entry") },
+        title = { Text("Review pending entry") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -1080,9 +1080,15 @@ private fun ResolvePendingDialog(
                     Checkbox(
                         checked = saveAsDefault,
                         onCheckedChange = { saveAsDefault = it },
+                        enabled = calories.isNotBlank(),
                     )
                     Text(
                         text = "Save as shortcut",
+                        color = if (calories.isBlank()) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

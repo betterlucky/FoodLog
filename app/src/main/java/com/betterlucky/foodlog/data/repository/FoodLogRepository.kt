@@ -259,6 +259,44 @@ class FoodLogRepository(
             PendingEntryRemoveResult.Removed
         }
 
+    suspend fun updatePendingEntry(
+        rawEntryId: Long,
+        rawText: String,
+        amount: Double?,
+        unit: String?,
+        calories: Double?,
+        notes: String?,
+    ): PendingEntryUpdateResult =
+        database.withTransaction {
+            val trimmedRawText = rawText.trim()
+            val normalizedAmount = amount?.takeIf { it > 0.0 }
+            val normalizedUnit = unit?.trim().orEmpty().ifBlank { null }
+            val normalizedNotes = pendingNotes(
+                amount = normalizedAmount,
+                unit = normalizedUnit,
+                calories = calories?.takeIf { it > 0.0 },
+                notes = notes,
+            )
+
+            if (trimmedRawText.isBlank()) {
+                return@withTransaction PendingEntryUpdateResult.InvalidInput
+            }
+
+            val rawEntry = rawEntryDao.getById(rawEntryId)
+                ?: return@withTransaction PendingEntryUpdateResult.NotFound
+
+            if (rawEntry.status != RawEntryStatus.PENDING) {
+                return@withTransaction PendingEntryUpdateResult.NotPending
+            }
+
+            rawEntryDao.updatePendingDetails(
+                id = rawEntry.id,
+                rawText = trimmedRawText,
+                notes = normalizedNotes,
+            )
+            PendingEntryUpdateResult.Updated
+        }
+
     suspend fun resolvePendingEntryManually(
         rawEntryId: Long,
         name: String,
@@ -567,6 +605,13 @@ class FoodLogRepository(
         data object NotPending : PendingEntryRemoveResult
     }
 
+    sealed interface PendingEntryUpdateResult {
+        data object Updated : PendingEntryUpdateResult
+        data object InvalidInput : PendingEntryUpdateResult
+        data object NotFound : PendingEntryUpdateResult
+        data object NotPending : PendingEntryUpdateResult
+    }
+
     sealed interface DailyWeightResult {
         data object Saved : DailyWeightResult
         data object InvalidInput : DailyWeightResult
@@ -628,3 +673,21 @@ private fun String.shortcutTrigger(): String =
     trim()
         .lowercase()
         .replace(Regex("\\s+"), " ")
+
+private fun pendingNotes(
+    amount: Double?,
+    unit: String?,
+    calories: Double?,
+    notes: String?,
+): String? {
+    val details = buildList {
+        val quantity = listOfNotNull(amount?.formatDraftNumber(), unit).joinToString(" ").ifBlank { null }
+        if (quantity != null) add("Draft quantity: $quantity")
+        if (calories != null) add("Draft calories: ${calories.formatDraftNumber()}")
+        notes?.trim()?.takeIf { it.isNotBlank() }?.let(::add)
+    }
+    return details.joinToString("\n").ifBlank { null }
+}
+
+private fun Double.formatDraftNumber(): String =
+    if (rem(1.0) == 0.0) toInt().toString() else toString()

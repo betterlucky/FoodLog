@@ -344,15 +344,44 @@ class TodayViewModel(
         onResolved: () -> Unit,
     ) {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
-        val parsedCalories = calories.trim().toDoubleOrNull()
+        val parsedCalories = calories.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
 
-        if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
-            message.value = "Add an item name and calories to resolve the pending entry."
+        if (name.isBlank()) {
+            message.value = "Add an item name to save the pending entry."
             return
         }
 
         if (amount.isNotBlank() && parsedAmount == null) {
             message.value = "Amount must be a number."
+            return
+        }
+
+        if (calories.isNotBlank() && (parsedCalories == null || parsedCalories <= 0.0)) {
+            message.value = "Calories must be a positive number, or leave them blank to keep pending."
+            return
+        }
+
+        if (parsedCalories == null) {
+            viewModelScope.launch {
+                message.value = when (
+                    repository.updatePendingEntry(
+                        rawEntryId = rawEntryId,
+                        rawText = name,
+                        amount = parsedAmount,
+                        unit = unit,
+                        calories = null,
+                        notes = notes,
+                    )
+                ) {
+                    FoodLogRepository.PendingEntryUpdateResult.Updated -> {
+                        onResolved()
+                        "Saved pending entry"
+                    }
+                    FoodLogRepository.PendingEntryUpdateResult.InvalidInput -> "Add an item name to save the pending entry."
+                    FoodLogRepository.PendingEntryUpdateResult.NotFound -> "That pending entry no longer exists."
+                    FoodLogRepository.PendingEntryUpdateResult.NotPending -> "That entry has already been handled."
+                }
+            }
             return
         }
 

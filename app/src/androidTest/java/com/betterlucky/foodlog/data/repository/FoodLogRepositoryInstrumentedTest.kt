@@ -294,6 +294,30 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingEntryCanBeEditedAndKeptPending() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("banana cake")
+        val updateResult = repository.updatePendingEntry(
+            rawEntryId = pendingResult.rawEntryId,
+            rawText = "Banana cake slice",
+            amount = 1.0,
+            unit = "slice",
+            calories = null,
+            notes = "Need calories later",
+        )
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertEquals(FoodLogRepository.PendingEntryUpdateResult.Updated, updateResult)
+        assertEquals(listOf("Banana cake slice"), pendingEntries.map { it.rawText })
+        assertEquals(RawEntryStatus.PENDING, rawEntry?.status)
+        assertEquals("Draft quantity: 1 slice\nNeed calories later", rawEntry?.notes)
+        assertEquals(emptyList<FoodItemEntity>(), foodItems)
+    }
+
+    @Test
     fun parsedEntryCannotBeRemovedAsPending() = runTest {
         repository.seedDefaults()
 
