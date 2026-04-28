@@ -278,10 +278,13 @@ fun TodayScreen(
     }
 
     editingFoodItem?.let { item ->
+        var editFoodError by remember(item.id) { mutableStateOf<String?>(null) }
         EditFoodItemDialog(
             item = item,
+            errorMessage = editFoodError,
             onDismiss = { editingFoodItem = null },
             onSave = { name, amount, unit, calories, time, notes ->
+                editFoodError = null
                 viewModel.updateFoodItem(
                     id = item.id,
                     name = name,
@@ -291,6 +294,7 @@ fun TodayScreen(
                     time = time,
                     notes = notes,
                     onUpdated = { editingFoodItem = null },
+                    onError = { editFoodError = it },
                 )
             },
         )
@@ -1213,6 +1217,7 @@ private fun ForgetShortcutDialog(
 @Composable
 private fun EditFoodItemDialog(
     item: FoodItemEntity,
+    errorMessage: String?,
     onDismiss: () -> Unit,
     onSave: (name: String, amount: String, unit: String, calories: String, time: String, notes: String) -> Unit,
 ) {
@@ -1288,6 +1293,13 @@ private fun EditFoodItemDialog(
                     maxLines = 3,
                     label = { Text("Notes") },
                 )
+                errorMessage?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         },
         confirmButton = {

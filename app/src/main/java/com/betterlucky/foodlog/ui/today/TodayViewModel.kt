@@ -211,43 +211,43 @@ class TodayViewModel(
         time: String,
         notes: String,
         onUpdated: () -> Unit,
+        onError: (String) -> Unit,
     ) {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedCalories = calories.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedTime = parseTimeOrNull(time)
 
         if (name.isBlank()) {
-            message.value = "Add an item name to update the logged item."
+            onError("Add an item name to update the logged item.")
             return
         }
 
         if (amount.isNotBlank() && parsedAmount == null) {
-            message.value = "Amount must be a number."
+            onError("Amount must be a number.")
             return
         }
 
         if (calories.isNotBlank() && (parsedCalories == null || parsedCalories <= 0.0)) {
-            message.value = "Calories must be a positive number, or leave them blank to use defaults."
+            onError("Calories must be a positive number, or leave them blank to use defaults.")
             return
         }
 
         if (parsedTime == null) {
-            message.value = "Time must use HH:mm, such as 08:30."
+            onError("Time must use HH:mm, such as 08:30.")
             return
         }
 
         viewModelScope.launch {
-            message.value = when (
-                repository.updateFoodItem(
-                    id = id,
-                    name = name,
-                    amount = parsedAmount,
-                    unit = unit,
-                    calories = parsedCalories,
-                    consumedTime = parsedTime,
-                    notes = notes,
-                )
-            ) {
+            val result = repository.updateFoodItem(
+                id = id,
+                name = name,
+                amount = parsedAmount,
+                unit = unit,
+                calories = parsedCalories,
+                consumedTime = parsedTime,
+                notes = notes,
+            )
+            val resultMessage = when (result) {
                 FoodLogRepository.FoodItemUpdateResult.Updated -> {
                     onUpdated()
                     "Updated logged item"
@@ -257,8 +257,22 @@ class TodayViewModel(
                     "Updated logged item from defaults"
                 }
                 FoodLogRepository.FoodItemUpdateResult.InvalidInput -> "Add an item name to update the logged item."
-                FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults -> "Add calories or use known shortcuts to update this item."
+                is FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults -> {
+                    val missing = result.missingTriggers.joinToString(", ")
+                    if (missing.isBlank()) {
+                        "Add calories or use known shortcuts to update this item."
+                    } else {
+                        "Add calories or save shortcuts for: $missing."
+                    }
+                }
                 FoodLogRepository.FoodItemUpdateResult.NotFound -> "That logged item no longer exists."
+            }
+            message.value = resultMessage
+            if (
+                result != FoodLogRepository.FoodItemUpdateResult.Updated &&
+                result != FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults
+            ) {
+                onError(resultMessage)
             }
         }
     }

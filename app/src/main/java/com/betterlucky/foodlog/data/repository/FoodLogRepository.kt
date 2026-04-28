@@ -233,7 +233,12 @@ class FoodLogRepository(
                 .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
 
             if (resolvedDefaults.isEmpty() || resolvedDefaults.any { (_, default) -> default == null }) {
-                return FoodItemUpdateResult.UnresolvedDefaults
+                return FoodItemUpdateResult.UnresolvedDefaults(
+                    missingTriggers = resolvedDefaults
+                        .filter { (_, default) -> default == null }
+                        .mapNotNull { (part, _) -> part.shortcutTrigger }
+                        .distinct(),
+                )
             }
 
             val createdAt = dateTimeProvider.nowInstant()
@@ -679,7 +684,9 @@ class FoodLogRepository(
         data object Updated : FoodItemUpdateResult
         data object UpdatedFromDefaults : FoodItemUpdateResult
         data object InvalidInput : FoodItemUpdateResult
-        data object UnresolvedDefaults : FoodItemUpdateResult
+        data class UnresolvedDefaults(
+            val missingTriggers: List<String>,
+        ) : FoodItemUpdateResult
         data object NotFound : FoodItemUpdateResult
     }
 

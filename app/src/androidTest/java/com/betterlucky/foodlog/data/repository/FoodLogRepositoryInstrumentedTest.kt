@@ -608,7 +608,10 @@ class FoodLogRepositoryInstrumentedTest {
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
         val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
 
-        assertEquals(FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults, updateResult)
+        assertEquals(
+            FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults(listOf("curry")),
+            updateResult,
+        )
         assertEquals("Tea", foodItem.name)
         assertEquals(25.0, foodItem.calories, 0.001)
         assertEquals(localTime, foodItem.consumedTime)
