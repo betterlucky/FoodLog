@@ -117,9 +117,14 @@ class TodayViewModel(
         clearInput: Boolean,
     ) {
         viewModelScope.launch {
-            val result = repository.submitText(text)
+            val result = repository.submitText(
+                input = text,
+                targetLogDate = selectedDate.value,
+            )
             if (clearInput) {
-                inputText.value = ""
+                if (result !is FoodLogRepository.SubmitResult.DateMismatch) {
+                    inputText.value = ""
+                }
             }
             message.value = when (result) {
                 is FoodLogRepository.SubmitResult.Parsed ->
@@ -130,6 +135,8 @@ class TodayViewModel(
                     }
                 is FoodLogRepository.SubmitResult.Pending -> "Saved as pending for ${result.logDate}"
                 is FoodLogRepository.SubmitResult.NonFood -> result.intent.placeholderMessage()
+                is FoodLogRepository.SubmitResult.DateMismatch ->
+                    "Switch to ${result.requestedLogDate} before adding that entry."
             }
         }
     }

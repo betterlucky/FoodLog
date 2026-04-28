@@ -1,11 +1,13 @@
 package com.betterlucky.foodlog.domain.parser
 
 import java.time.LocalDate
+import java.time.LocalTime
 
 data class ParsedSubmission(
     val rawText: String,
     val normalizedFoodText: String,
     val logDate: LocalDate,
+    val consumedTime: LocalTime?,
     val parts: List<ParsedFoodPart>,
 ) {
     val shortcutTrigger: String?
@@ -33,11 +35,13 @@ class DeterministicParser {
             today = today,
             defaultLogDate = defaultLogDate,
         )
+        val timed = extractTime(dated.foodText)
         return ParsedSubmission(
             rawText = input,
-            normalizedFoodText = dated.foodText,
+            normalizedFoodText = timed.foodText,
             logDate = dated.logDate,
-            parts = foodPartsFor(dated.foodText),
+            consumedTime = timed.consumedTime,
+            parts = foodPartsFor(timed.foodText),
         )
     }
 
@@ -77,6 +81,26 @@ class DeterministicParser {
 
             else -> DatedFoodText(foodText = normalized, logDate = defaultLogDate)
         }
+    }
+
+    private fun extractTime(foodText: String): TimedFoodText {
+        val prefixMatch = Regex("^(${TIME_PATTERN})\\s+(.+)$").matchEntire(foodText)
+        if (prefixMatch != null) {
+            return TimedFoodText(
+                foodText = prefixMatch.groupValues[2],
+                consumedTime = parseTimeText(prefixMatch.groupValues[1]),
+            )
+        }
+
+        val suffixMatch = Regex("^(.+?)\\s+(?:at\\s+)?(${TIME_PATTERN})$").matchEntire(foodText)
+        if (suffixMatch != null) {
+            return TimedFoodText(
+                foodText = suffixMatch.groupValues[1],
+                consumedTime = parseTimeText(suffixMatch.groupValues[2]),
+            )
+        }
+
+        return TimedFoodText(foodText = foodText, consumedTime = null)
     }
 
     private fun foodPartsFor(foodText: String): List<ParsedFoodPart> =
@@ -145,4 +169,32 @@ class DeterministicParser {
         val foodText: String,
         val logDate: LocalDate,
     )
+
+    private data class TimedFoodText(
+        val foodText: String,
+        val consumedTime: LocalTime?,
+    )
+
+    private fun parseTimeText(value: String): LocalTime {
+        val compact = value.replace(" ", "")
+        val meridiem = when {
+            compact.endsWith("am") -> "am"
+            compact.endsWith("pm") -> "pm"
+            else -> ""
+        }
+        val timeText = compact.removeSuffix("am").removeSuffix("pm")
+        val parts = timeText.split(":")
+        val hour = parts[0].toInt()
+        val minute = parts.getOrNull(1)?.toInt() ?: 0
+        val resolvedHour = when (meridiem) {
+            "am" -> if (hour == 12) 0 else hour
+            "pm" -> if (hour == 12) 12 else hour + 12
+            else -> hour
+        }
+        return LocalTime.of(resolvedHour, minute)
+    }
+
+    private companion object {
+        private const val TIME_PATTERN = "(?:[01]?\\d|2[0-3]):[0-5]\\d|(?:0?[1-9]|1[0-2])(?::[0-5]\\d)?\\s*(?:am|pm)"
+    }
 }

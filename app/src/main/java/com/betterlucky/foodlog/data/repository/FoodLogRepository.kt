@@ -49,22 +49,32 @@ class FoodLogRepository(
         }
     }
 
-    suspend fun submitText(input: String): SubmitResult =
+    suspend fun submitText(
+        input: String,
+        targetLogDate: LocalDate? = null,
+    ): SubmitResult =
         database.withTransaction {
             val intent = intentClassifier.classify(input)
             val calendarToday = dateTimeProvider.today()
             val localTime = dateTimeProvider.localTime()
-            val defaultLogDate = currentFoodDate(
-                calendarToday = calendarToday,
-                localTime = localTime,
-            )
+            val defaultLogDate = targetLogDate
+                ?: currentFoodDate(
+                    calendarToday = calendarToday,
+                    localTime = localTime,
+                )
             val parsed = parser.parse(
                 input = input,
                 today = calendarToday,
                 defaultLogDate = defaultLogDate,
             )
+            if (targetLogDate != null && parsed.logDate != targetLogDate) {
+                return@withTransaction SubmitResult.DateMismatch(
+                    requestedLogDate = parsed.logDate,
+                    selectedLogDate = targetLogDate,
+                )
+            }
             val createdAt = dateTimeProvider.nowInstant()
-            val consumedTime = localTime
+            val consumedTime = parsed.consumedTime ?: localTime
 
             if (intent != EntryIntent.FOOD_LOG) {
                 val rawEntryId = rawEntryDao.insert(
@@ -864,6 +874,14 @@ class FoodLogRepository(
             override val logDate: LocalDate,
             val intent: EntryIntent,
         ) : SubmitResult
+
+        data class DateMismatch(
+            val requestedLogDate: LocalDate,
+            val selectedLogDate: LocalDate,
+        ) : SubmitResult {
+            override val rawEntryId: Long = 0
+            override val logDate: LocalDate = requestedLogDate
+        }
     }
 
     sealed interface ManualResolveResult {

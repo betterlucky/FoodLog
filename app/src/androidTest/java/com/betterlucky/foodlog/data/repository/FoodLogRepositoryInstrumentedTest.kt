@@ -105,6 +105,69 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun explicitTimeInSubmissionOverridesCurrentTime() = runTest {
+        repository.seedDefaults()
+
+        repository.submitText("1pm tea")
+        repository.submitText("13:15 tea")
+        repository.submitText("tea at 1:30pm")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals(
+            listOf(
+                LocalTime.parse("13:00"),
+                LocalTime.parse("13:15"),
+                LocalTime.parse("13:30"),
+            ),
+            foodItems.map { it.consumedTime },
+        )
+    }
+
+    @Test
+    fun explicitTimeInPendingSubmissionIsPreservedForResolution() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("1pm curry")
+        val pendingEntry = repository.observePendingEntriesForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Pending)
+        assertEquals(LocalTime.parse("13:00"), pendingEntry.consumedTime)
+        assertEquals(LocalTime.parse("13:00"), rawEntry?.consumedTime)
+    }
+
+    @Test
+    fun quantityOneDoesNotParseAsTime() = runTest {
+        repository.seedDefaults()
+
+        repository.submitText("1 tea")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(1.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals(localTime, foodItem.consumedTime)
+    }
+
+    @Test
+    fun selectedDateGuardBlocksDatedSubmissionForAnotherDay() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText(
+            input = "yesterday tea",
+            targetLogDate = today,
+        )
+
+        assertEquals(
+            FoodLogRepository.SubmitResult.DateMismatch(
+                requestedLogDate = today.minusDays(1),
+                selectedLogDate = today,
+            ),
+            result,
+        )
+        assertEquals(emptyList<FoodItemEntity>(), repository.observeFoodItemsForDate(today).first())
+        assertEquals(emptyList<RawEntryEntity>(), repository.observePendingEntries().first())
+    }
+
+    @Test
     fun compoundShortcutSubmissionCreatesOneRawEntryAndMultipleFoodItems() = runTest {
         repository.seedDefaults()
         database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))

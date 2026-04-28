@@ -84,6 +84,13 @@ Supported date prefixes:
 - `yesterday tea`
 - `YYYY-MM-DD tea`
 
+Supported time prefixes/suffixes:
+
+- `1pm tea`
+- `13:00 tea`
+- `tea at 1pm`
+- `tea 13:00`
+
 Supported compound shortcut behavior:
 
 - Split obvious meal entries on commas and the word `and`, for example `banana, satsuma and tea`.
@@ -97,8 +104,10 @@ Date behavior:
 - Date prefixes set `RawEntryEntity.logDate` and `FoodItemEntity.logDate`.
 - If a date prefix is present but the remaining phrase is unsupported, save a pending raw entry using the parsed `logDate`.
 - `createdAt` is always the actual timestamp when the entry is saved.
-- `consumedTime` defaults to the current local time for parsed food items unless a later phase adds explicit time parsing.
+- Explicit time prefixes/suffixes set `RawEntryEntity.consumedTime` and `FoodItemEntity.consumedTime`.
+- `consumedTime` defaults to the current local time when no explicit time is present.
 - `logDate` defaults to the current local date when no supported date prefix is present.
+- The Today screen blocks free-text entries whose parsed date does not match the selected date; users should navigate to the intended date before adding prior-session entries.
 
 Examples:
 
@@ -108,6 +117,8 @@ Examples:
 | `a tea` | parsed raw entry and one Tea food item for today |
 | `cup of tea` | parsed raw entry and one Tea food item for today |
 | `1 tea` | parsed raw entry and one Tea food item for today |
+| `1pm tea` | parsed raw entry and one Tea food item at 13:00 |
+| `tea at 13:00` | parsed raw entry and one Tea food item at 13:00 |
 | `yesterday tea` | parsed raw entry and one Tea food item for yesterday |
 | `2026-04-23 tea` | parsed raw entry and one Tea food item for 2026-04-23 |
 | `yesterday curry` | pending raw entry for yesterday, no food item |
@@ -352,6 +363,9 @@ Add focused tests for Phase 1 behavior:
 - `tea`, `a tea`, `cup of tea`, and `1 tea` create parsed raw entries and one food item.
 - Tea food item has `25 kcal`, `source = USER_DEFAULT`, and `confidence = HIGH`.
 - `today tea`, `yesterday tea`, and `YYYY-MM-DD tea` set the expected `logDate`.
+- `1pm tea`, `13:00 tea`, `tea at 1pm`, and `tea 13:00` set the expected `consumedTime`.
+- `1 tea` remains a quantity shortcut and does not parse as 01:00.
+- UI submissions with an explicit date outside the selected date are blocked with a switch-date prompt message.
 - `yesterday curry` creates a pending raw entry with yesterday's `logDate` and no food item.
 - Unsupported input creates a pending raw entry and no food item.
 - Compound shortcut input creates one raw entry and multiple food rows when all parts are known.
