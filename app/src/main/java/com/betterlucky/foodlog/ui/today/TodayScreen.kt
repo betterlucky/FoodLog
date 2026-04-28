@@ -313,12 +313,6 @@ fun TodayScreen(
             }
 
             item {
-                OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
-                    Text("Export Health Monitor CSV")
-                }
-            }
-
-            item {
                 DailyClosePrompt(
                     dailyStatus = uiState.dailyStatus,
                     pendingCount = uiState.pendingEntries.size,

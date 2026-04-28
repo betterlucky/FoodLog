@@ -192,7 +192,7 @@ Create a mobile-first Compose Today screen with:
 - today's logged food items
 - today's calorie total
 - pending entries section
-- export CSV controls
+- daily-close/export status and action
 - logged item edit/remove controls
 - daily weight control near the close-day/export section
 
@@ -299,6 +299,7 @@ Daily export status is tracked locally with a date-keyed status row:
   - resolve pending entries before Health Monitor export when pending entries remain
   - export the Health Monitor CSV when confirmed rows or a daily weight exist and the Health Monitor export is missing or stale
   - confirm the Health Monitor export is current after export
+- Daily close is the only main-screen Health Monitor export action; avoid showing a second standalone export button.
 - The audit exporter is retained for developer/data tracing, but is not shown on the main Today screen.
 
 ### Daily Weight
