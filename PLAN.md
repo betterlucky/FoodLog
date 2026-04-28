@@ -193,6 +193,7 @@ Current logged-item behavior:
 - If edited calories are blank, FoodLog re-runs deterministic parsing on the edited item text:
   - if every parsed part resolves to active shortcuts/defaults, the original row is replaced with one default-derived row per part
   - if some parts resolve and some do not, the edit dialog stages the recognised parts in memory and asks for only the unresolved parts one at a time
+  - each manually completed staged part can be saved as a shortcut/default for future entries
   - the original row is not replaced until every part has been completed; cancelling the dialog leaves the original logged row unchanged
 - The edit dialog clears the prefilled calories when the item name changes unless the user has manually edited the calories field.
 - Default-reparse edits reuse the original row's raw entry and date, reuse the edited time for every replacement row, and update the raw entry text.

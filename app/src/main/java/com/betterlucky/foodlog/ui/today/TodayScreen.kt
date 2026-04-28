@@ -1456,7 +1456,7 @@ private fun ResolveLoggedFoodEditDialog(
                             enabled = canSaveAsDefault,
                         )
                         Text(
-                            text = "Save as shortcut",
+                            text = "Save ${currentDraft.inputText} as shortcut",
                             color = if (!canSaveAsDefault) {
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             } else {

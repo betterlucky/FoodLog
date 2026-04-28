@@ -673,6 +673,7 @@ class FoodLogRepositoryInstrumentedTest {
         val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
         val total = repository.observeCaloriesForDate(today).first()
         val satsumaDefault = database.userDefaultDao().getActiveDefault("satsuma")
+        val bananaDefault = database.userDefaultDao().getActiveDefault("banana")
 
         assertEquals(FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults, updateResult)
         assertEquals(null, database.foodItemDao().getById(result.foodItemId))
@@ -682,6 +683,16 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(165.0, total, 0.001)
         assertEquals("Satsuma", satsumaDefault?.name)
         assertEquals(35.0, satsumaDefault?.calories ?: 0.0, 0.001)
+        assertEquals(null, bananaDefault)
+
+        val nextResult = repository.submitText("satsuma")
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        val nextParsedResult = nextResult as FoodLogRepository.SubmitResult.Parsed
+        val nextFoodItem = repository.observeFoodItemsForDate(today).first()
+            .single { it.rawEntryId == nextParsedResult.rawEntryId }
+
+        assertEquals("Satsuma", nextFoodItem.name)
+        assertEquals(35.0, nextFoodItem.calories, 0.001)
     }
 
     @Test
