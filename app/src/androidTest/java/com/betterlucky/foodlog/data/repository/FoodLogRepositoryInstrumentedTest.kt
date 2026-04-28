@@ -619,6 +619,72 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun loggedFoodEditPreviewCanBeCommittedAfterManualMissingPartsAreCompleted() = runTest {
+        repository.seedDefaults()
+        val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        val preview = repository.previewFoodItemDefaultEdit(
+            id = result.foodItemId,
+            name = "tea, satsuma, banana",
+        ) as FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready
+        val unchangedItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals("tea, satsuma, banana", preview.rawText)
+        assertEquals(listOf("tea", "satsuma", "banana"), preview.parts.map { it.inputText })
+        assertEquals(listOf(true, false, false), preview.parts.map { it.default != null })
+        assertEquals(listOf("Tea"), unchangedItems.map { it.name })
+
+        val updateResult = repository.replaceFoodItemWithResolvedEditParts(
+            id = result.foodItemId,
+            rawText = preview.rawText,
+            consumedTime = LocalTime.parse("08:45"),
+            parts = listOf(
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Tea",
+                    amount = 1.0,
+                    unit = "cup",
+                    calories = 25.0,
+                    source = FoodItemSource.USER_DEFAULT,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = FoodLogRepository.DEFAULT_TEA.notes,
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Satsuma",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 35.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                    saveDefaultTrigger = "satsuma",
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Banana",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 105.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                ),
+            ),
+        )
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+        val total = repository.observeCaloriesForDate(today).first()
+        val satsumaDefault = database.userDefaultDao().getActiveDefault("satsuma")
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults, updateResult)
+        assertEquals(null, database.foodItemDao().getById(result.foodItemId))
+        assertEquals("tea, satsuma, banana", rawEntry?.rawText)
+        assertEquals(listOf("Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(listOf(LocalTime.parse("08:45")), foodItems.map { it.consumedTime }.distinct())
+        assertEquals(165.0, total, 0.001)
+        assertEquals("Satsuma", satsumaDefault?.name)
+        assertEquals(35.0, satsumaDefault?.calories ?: 0.0, 0.001)
+    }
+
+    @Test
     fun explicitCaloriesKeepLoggedFoodEditAsSingleManualRow() = runTest {
         repository.seedDefaults()
         database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))

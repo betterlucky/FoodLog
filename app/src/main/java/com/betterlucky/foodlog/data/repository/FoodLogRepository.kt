@@ -286,6 +286,98 @@ class FoodLogRepository(
         return FoodItemUpdateResult.Updated
     }
 
+    suspend fun previewFoodItemDefaultEdit(
+        id: Long,
+        name: String,
+    ): FoodItemDefaultEditPreviewResult {
+        val trimmedName = name.trim()
+        if (trimmedName.isBlank()) {
+            return FoodItemDefaultEditPreviewResult.InvalidInput
+        }
+
+        val existing = foodItemDao.getById(id)
+            ?: return FoodItemDefaultEditPreviewResult.NotFound
+
+        val parsed = parser.parse(
+            input = trimmedName,
+            today = dateTimeProvider.today(),
+            defaultLogDate = existing.logDate,
+        )
+        if (parsed.parts.isEmpty()) {
+            return FoodItemDefaultEditPreviewResult.InvalidInput
+        }
+
+        return FoodItemDefaultEditPreviewResult.Ready(
+            rawText = trimmedName,
+            parts = parsed.parts.map { part ->
+                FoodItemDefaultEditPreviewPart(
+                    inputText = part.normalizedFoodText,
+                    trigger = part.shortcutTrigger,
+                    quantity = part.quantity,
+                    default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
+                )
+            },
+        )
+    }
+
+    suspend fun replaceFoodItemWithResolvedEditParts(
+        id: Long,
+        rawText: String,
+        consumedTime: LocalTime,
+        parts: List<FoodItemEditReplacementPart>,
+    ): FoodItemUpdateResult =
+        database.withTransaction {
+            val trimmedRawText = rawText.trim()
+            if (trimmedRawText.isBlank() || parts.isEmpty() || parts.any { it.name.isBlank() || it.calories <= 0.0 }) {
+                return@withTransaction FoodItemUpdateResult.InvalidInput
+            }
+
+            val existing = foodItemDao.getById(id)
+                ?: return@withTransaction FoodItemUpdateResult.NotFound
+
+            val createdAt = dateTimeProvider.nowInstant()
+            foodItemDao.deleteById(existing.id)
+            parts.forEach { part ->
+                foodItemDao.insert(
+                    FoodItemEntity(
+                        rawEntryId = existing.rawEntryId,
+                        logDate = existing.logDate,
+                        consumedTime = consumedTime,
+                        name = part.name.trim(),
+                        amount = part.amount?.takeIf { it > 0.0 },
+                        unit = part.unit?.trim().orEmpty().ifBlank { null },
+                        calories = part.calories,
+                        source = part.source,
+                        confidence = part.confidence,
+                        notes = part.notes?.trim().orEmpty().ifBlank { null },
+                        createdAt = createdAt,
+                    ),
+                )
+                part.saveDefaultTrigger
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.also { trigger ->
+                        userDefaultDao.upsert(
+                            UserDefaultEntity(
+                                trigger = trigger,
+                                name = part.name.trim(),
+                                calories = part.calories / (part.amount?.takeIf { it > 0.0 } ?: 1.0),
+                                unit = part.unit?.trim().orEmpty().ifBlank { "serving" },
+                                notes = part.notes?.trim().orEmpty().ifBlank { null },
+                            ),
+                        )
+                    }
+            }
+            rawEntryDao.updatePendingDetails(
+                id = existing.rawEntryId,
+                logDate = existing.logDate,
+                rawText = trimmedRawText,
+                notes = null,
+            )
+            markFoodChanged(existing.logDate)
+            FoodItemUpdateResult.UpdatedFromDefaults
+        }
+
     suspend fun removeFoodItem(id: Long): FoodItemRemoveResult {
         val existing = foodItemDao.getById(id)
             ?: return FoodItemRemoveResult.NotFound
@@ -689,6 +781,34 @@ class FoodLogRepository(
         ) : FoodItemUpdateResult
         data object NotFound : FoodItemUpdateResult
     }
+
+    sealed interface FoodItemDefaultEditPreviewResult {
+        data class Ready(
+            val rawText: String,
+            val parts: List<FoodItemDefaultEditPreviewPart>,
+        ) : FoodItemDefaultEditPreviewResult
+
+        data object InvalidInput : FoodItemDefaultEditPreviewResult
+        data object NotFound : FoodItemDefaultEditPreviewResult
+    }
+
+    data class FoodItemDefaultEditPreviewPart(
+        val inputText: String,
+        val trigger: String?,
+        val quantity: Double,
+        val default: UserDefaultEntity?,
+    )
+
+    data class FoodItemEditReplacementPart(
+        val name: String,
+        val amount: Double?,
+        val unit: String?,
+        val calories: Double,
+        val source: FoodItemSource,
+        val confidence: ConfidenceLevel,
+        val notes: String?,
+        val saveDefaultTrigger: String? = null,
+    )
 
     sealed interface FoodItemRemoveResult {
         data object Removed : FoodItemRemoveResult

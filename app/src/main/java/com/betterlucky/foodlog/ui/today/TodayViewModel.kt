@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.betterlucky.foodlog.data.entities.AppSettingsEntity
+import com.betterlucky.foodlog.data.entities.ConfidenceLevel
+import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.intent.EntryIntent
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,34 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeParseException
+
+data class LoggedFoodEditResolution(
+    val rawText: String,
+    val parts: List<LoggedFoodEditResolutionPart>,
+)
+
+data class LoggedFoodEditResolutionPart(
+    val inputText: String,
+    val trigger: String?,
+    val resolvedByDefault: Boolean,
+    val name: String,
+    val amount: Double?,
+    val unit: String,
+    val calories: Double?,
+    val notes: String,
+)
+
+data class LoggedFoodEditResolvedPartInput(
+    val inputText: String,
+    val trigger: String?,
+    val resolvedByDefault: Boolean,
+    val name: String,
+    val amount: String,
+    val unit: String,
+    val calories: String,
+    val notes: String,
+    val saveAsDefault: Boolean,
+)
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TodayViewModel(
@@ -212,6 +242,7 @@ class TodayViewModel(
         notes: String,
         onUpdated: () -> Unit,
         onError: (String) -> Unit,
+        onNeedsDefaultResolution: (LoggedFoodEditResolution) -> Unit,
     ) {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedCalories = calories.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
@@ -238,6 +269,30 @@ class TodayViewModel(
         }
 
         viewModelScope.launch {
+            if (parsedCalories == null) {
+                when (val preview = repository.previewFoodItemDefaultEdit(id = id, name = name)) {
+                    is FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready -> {
+                        if (preview.parts.any { it.default == null }) {
+                            onNeedsDefaultResolution(preview.toLoggedFoodEditResolution())
+                            message.value = "Complete the remaining items before saving."
+                            return@launch
+                        }
+                    }
+                    FoodLogRepository.FoodItemDefaultEditPreviewResult.InvalidInput -> {
+                        val resultMessage = "Add calories or use known shortcuts to update this item."
+                        message.value = resultMessage
+                        onError(resultMessage)
+                        return@launch
+                    }
+                    FoodLogRepository.FoodItemDefaultEditPreviewResult.NotFound -> {
+                        val resultMessage = "That logged item no longer exists."
+                        message.value = resultMessage
+                        onError(resultMessage)
+                        return@launch
+                    }
+                }
+            }
+
             val result = repository.updateFoodItem(
                 id = id,
                 name = name,
@@ -265,6 +320,82 @@ class TodayViewModel(
                         "Add calories or save shortcuts for: $missing."
                     }
                 }
+                FoodLogRepository.FoodItemUpdateResult.NotFound -> "That logged item no longer exists."
+            }
+            message.value = resultMessage
+            if (
+                result != FoodLogRepository.FoodItemUpdateResult.Updated &&
+                result != FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults
+            ) {
+                onError(resultMessage)
+            }
+        }
+    }
+
+    fun saveResolvedFoodItemEdit(
+        id: Long,
+        rawText: String,
+        time: String,
+        parts: List<LoggedFoodEditResolvedPartInput>,
+        onUpdated: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        val parsedTime = parseTimeOrNull(time)
+        if (parsedTime == null) {
+            onError("Time must use HH:mm, such as 08:30.")
+            return
+        }
+
+        if (parts.isEmpty()) {
+            onError("Add at least one item to update the logged item.")
+            return
+        }
+
+        val replacementParts = mutableListOf<FoodLogRepository.FoodItemEditReplacementPart>()
+        parts.forEach { part ->
+            val parsedAmount = part.amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+            val parsedCalories = part.calories.trim().toDoubleOrNull()
+
+            if (part.name.isBlank()) {
+                onError("Add an item name for ${part.inputText}.")
+                return
+            }
+            if (part.amount.isNotBlank() && parsedAmount == null) {
+                onError("Amount must be a number for ${part.inputText}.")
+                return
+            }
+            if (parsedCalories == null || parsedCalories <= 0.0) {
+                onError("Add calories for ${part.inputText}.")
+                return
+            }
+
+            replacementParts += FoodLogRepository.FoodItemEditReplacementPart(
+                name = part.name,
+                amount = parsedAmount,
+                unit = part.unit,
+                calories = parsedCalories,
+                source = if (part.resolvedByDefault) FoodItemSource.USER_DEFAULT else FoodItemSource.MANUAL_OVERRIDE,
+                confidence = ConfidenceLevel.HIGH,
+                notes = part.notes,
+                saveDefaultTrigger = part.trigger.takeIf { part.saveAsDefault && !part.resolvedByDefault },
+            )
+        }
+
+        viewModelScope.launch {
+            val result = repository.replaceFoodItemWithResolvedEditParts(
+                id = id,
+                rawText = rawText,
+                consumedTime = parsedTime,
+                parts = replacementParts,
+            )
+            val resultMessage = when (result) {
+                FoodLogRepository.FoodItemUpdateResult.Updated,
+                FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults -> {
+                    onUpdated()
+                    "Updated logged item"
+                }
+                FoodLogRepository.FoodItemUpdateResult.InvalidInput -> "Add item names and calories to update the logged item."
+                is FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults -> "Add calories for every item before saving."
                 FoodLogRepository.FoodItemUpdateResult.NotFound -> "That logged item no longer exists."
             }
             message.value = resultMessage
@@ -499,6 +630,24 @@ private fun EntryIntent.placeholderMessage(): String =
         EntryIntent.UNKNOWN -> "Saved for later review."
         EntryIntent.FOOD_LOG -> "Saved."
     }
+
+private fun FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready.toLoggedFoodEditResolution(): LoggedFoodEditResolution =
+    LoggedFoodEditResolution(
+        rawText = rawText,
+        parts = parts.map { part ->
+            val default = part.default
+            LoggedFoodEditResolutionPart(
+                inputText = part.inputText,
+                trigger = part.trigger,
+                resolvedByDefault = default != null,
+                name = default?.name ?: part.inputText,
+                amount = part.quantity,
+                unit = default?.unit.orEmpty(),
+                calories = default?.calories?.times(part.quantity),
+                notes = default?.notes.orEmpty(),
+            )
+        },
+    )
 
 class TodayViewModelFactory(
     private val repository: FoodLogRepository,

@@ -279,25 +279,51 @@ fun TodayScreen(
 
     editingFoodItem?.let { item ->
         var editFoodError by remember(item.id) { mutableStateOf<String?>(null) }
-        EditFoodItemDialog(
-            item = item,
-            errorMessage = editFoodError,
-            onDismiss = { editingFoodItem = null },
-            onSave = { name, amount, unit, calories, time, notes ->
-                editFoodError = null
-                viewModel.updateFoodItem(
-                    id = item.id,
-                    name = name,
-                    amount = amount,
-                    unit = unit,
-                    calories = calories,
-                    time = time,
-                    notes = notes,
-                    onUpdated = { editingFoodItem = null },
-                    onError = { editFoodError = it },
-                )
-            },
-        )
+        var editResolution by remember(item.id) { mutableStateOf<LoggedFoodEditResolution?>(null) }
+        var editResolutionTime by remember(item.id) { mutableStateOf(item.consumedTime?.toString().orEmpty()) }
+        val resolution = editResolution
+        if (resolution == null) {
+            EditFoodItemDialog(
+                item = item,
+                errorMessage = editFoodError,
+                onDismiss = { editingFoodItem = null },
+                onSave = { name, amount, unit, calories, time, notes ->
+                    editFoodError = null
+                    viewModel.updateFoodItem(
+                        id = item.id,
+                        name = name,
+                        amount = amount,
+                        unit = unit,
+                        calories = calories,
+                        time = time,
+                        notes = notes,
+                        onUpdated = { editingFoodItem = null },
+                        onError = { editFoodError = it },
+                        onNeedsDefaultResolution = {
+                            editResolutionTime = time
+                            editResolution = it
+                        },
+                    )
+                },
+            )
+        } else {
+            ResolveLoggedFoodEditDialog(
+                resolution = resolution,
+                errorMessage = editFoodError,
+                onDismiss = { editingFoodItem = null },
+                onSave = { parts ->
+                    editFoodError = null
+                    viewModel.saveResolvedFoodItemEdit(
+                        id = item.id,
+                        rawText = resolution.rawText,
+                        time = editResolutionTime,
+                        parts = parts,
+                        onUpdated = { editingFoodItem = null },
+                        onError = { editFoodError = it },
+                    )
+                },
+            )
+        }
     }
 
     removingFoodItem?.let { item ->
@@ -1305,6 +1331,186 @@ private fun EditFoodItemDialog(
         confirmButton = {
             Button(onClick = { onSave(name, amount, unit, calories, time, notes) }) {
                 Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun ResolveLoggedFoodEditDialog(
+    resolution: LoggedFoodEditResolution,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onSave: (parts: List<LoggedFoodEditResolvedPartInput>) -> Unit,
+) {
+    var drafts by remember(resolution.rawText) {
+        mutableStateOf(
+            resolution.parts.map { part ->
+                LoggedFoodEditResolvedPartInput(
+                    inputText = part.inputText,
+                    trigger = part.trigger,
+                    resolvedByDefault = part.resolvedByDefault,
+                    name = part.name,
+                    amount = part.amount?.formatAmount().orEmpty(),
+                    unit = part.unit,
+                    calories = part.calories?.formatAmount().orEmpty(),
+                    notes = part.notes,
+                    saveAsDefault = false,
+                )
+            },
+        )
+    }
+    val unresolvedIndices = drafts.withIndex()
+        .filter { !it.value.resolvedByDefault }
+        .map { it.index }
+    var unresolvedPosition by remember(resolution.rawText) { mutableStateOf(0) }
+    val currentIndex = unresolvedIndices.getOrNull(unresolvedPosition)
+    val currentDraft = currentIndex?.let { drafts[it] }
+    var name by remember(currentIndex) { mutableStateOf(currentDraft?.name.orEmpty()) }
+    var amount by remember(currentIndex) { mutableStateOf(currentDraft?.amount.orEmpty()) }
+    var unit by remember(currentIndex) { mutableStateOf(currentDraft?.unit.orEmpty()) }
+    var calories by remember(currentIndex) { mutableStateOf(currentDraft?.calories.orEmpty()) }
+    var notes by remember(currentIndex) { mutableStateOf(currentDraft?.notes.orEmpty()) }
+    var saveAsDefault by remember(currentIndex) { mutableStateOf(currentDraft?.saveAsDefault ?: false) }
+    var localError by remember(currentIndex) { mutableStateOf<String?>(null) }
+    val canSaveAsDefault = calories.isNotBlank()
+    val recognisedParts = drafts.filter { it.resolvedByDefault }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Complete edited meal") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (recognisedParts.isNotEmpty()) {
+                    Text(
+                        text = "Recognised: " + recognisedParts.joinToString(", ") {
+                            "${it.name} (${it.calories} kcal)"
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (currentDraft != null) {
+                    Text(
+                        text = "Item ${currentIndex + 1} of ${drafts.size}: ${currentDraft.inputText}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Item") },
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = amount,
+                            onValueChange = { amount = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            label = { Text("Amount") },
+                        )
+                        OutlinedTextField(
+                            value = unit,
+                            onValueChange = { unit = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("Unit") },
+                        )
+                    }
+                    OutlinedTextField(
+                        value = calories,
+                        onValueChange = {
+                            calories = it
+                            if (it.isBlank()) saveAsDefault = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Calories") },
+                    )
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 72.dp),
+                        minLines = 2,
+                        maxLines = 3,
+                        label = { Text("Notes") },
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            checked = saveAsDefault && canSaveAsDefault,
+                            onCheckedChange = { saveAsDefault = it },
+                            enabled = canSaveAsDefault,
+                        )
+                        Text(
+                            text = "Save as shortcut",
+                            color = if (!canSaveAsDefault) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+                (localError ?: errorMessage)?.let {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val current = currentIndex
+                    if (current == null) {
+                        onSave(drafts)
+                        return@Button
+                    }
+                    when {
+                        name.isBlank() -> localError = "Add an item name for ${drafts[current].inputText}."
+                        amount.isNotBlank() && amount.toDoubleOrNull() == null ->
+                            localError = "Amount must be a number for ${drafts[current].inputText}."
+                        calories.toDoubleOrNull()?.takeIf { it > 0.0 } == null ->
+                            localError = "Add calories for ${drafts[current].inputText}."
+                        else -> {
+                            localError = null
+                            val updatedDrafts = drafts.toMutableList()
+                            updatedDrafts[current] = drafts[current].copy(
+                                name = name,
+                                amount = amount,
+                                unit = unit,
+                                calories = calories,
+                                notes = notes,
+                                saveAsDefault = saveAsDefault && canSaveAsDefault,
+                            )
+                            drafts = updatedDrafts
+                            if (unresolvedPosition < unresolvedIndices.lastIndex) {
+                                unresolvedPosition += 1
+                            } else {
+                                onSave(updatedDrafts)
+                            }
+                        }
+                    }
+                },
+            ) {
+                Text(if (unresolvedPosition < unresolvedIndices.lastIndex) "Next" else "Save")
             }
         },
         dismissButton = {
