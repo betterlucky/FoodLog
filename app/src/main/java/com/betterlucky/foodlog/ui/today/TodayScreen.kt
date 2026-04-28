@@ -1,6 +1,7 @@
 package com.betterlucky.foodlog.ui.today
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1015,26 +1016,27 @@ private fun TimeTextField(
 ) {
     var pickingTime by remember { mutableStateOf(false) }
 
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        modifier = modifier.fillMaxWidth(),
-        enabled = enabled,
-        singleLine = true,
-        isError = isError,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-        label = { Text(label) },
-        placeholder = { Text("HH:mm or 1pm") },
-        supportingText = supportingText?.let { { Text(it) } },
-        trailingIcon = {
-            TextButton(
-                onClick = { pickingTime = true },
-                enabled = enabled,
-            ) {
-                Text("Pick")
-            }
-        },
-    )
+    Box(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            modifier = Modifier.fillMaxWidth(),
+            enabled = enabled,
+            readOnly = true,
+            singleLine = true,
+            isError = isError,
+            label = { Text(label) },
+            placeholder = { Text("HH:mm") },
+            supportingText = supportingText?.let { { Text(it) } },
+        )
+        if (enabled) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clickable { pickingTime = true },
+            )
+        }
+    }
 
     if (pickingTime) {
         TimeChoiceDialog(
@@ -1064,6 +1066,13 @@ private fun TimeChoiceDialog(
         is24Hour = true,
     )
     var textInput by remember { mutableStateOf(false) }
+    var selectedHour by remember { mutableStateOf(initialTime.hour) }
+    var selectedMinute by remember { mutableStateOf(initialTime.minute) }
+
+    LaunchedEffect(timePickerState.hour, timePickerState.minute) {
+        selectedHour = timePickerState.hour
+        selectedMinute = timePickerState.minute
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1092,7 +1101,7 @@ private fun TimeChoiceDialog(
             Button(
                 onClick = {
                     onTimeSelected(
-                        LocalTime.of(timePickerState.hour, timePickerState.minute)
+                        LocalTime.of(selectedHour, selectedMinute)
                             .format(DateTimeFormatter.ofPattern("HH:mm")),
                     )
                 },
