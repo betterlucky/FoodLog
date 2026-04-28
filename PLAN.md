@@ -167,6 +167,7 @@ Create a mobile-first Compose Today screen with:
 - current selected date
 - chat-style text input
 - submit/log button
+- shortcut picker opened from the input area
 - today's logged food items
 - today's calorie total
 - pending entries section
@@ -175,6 +176,13 @@ Create a mobile-first Compose Today screen with:
 - daily weight control near the close-day/export section
 
 The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data. Direct manual add is not exposed in the main UI; known-calorie manual resolution should happen through pending/staged resolution flows.
+
+Current shortcut behavior:
+
+- Shortcuts are opened from a button near the food input instead of listed inline in the daily scroll.
+- The shortcut picker supports search/filtering.
+- Tapping a shortcut logs it immediately and keeps the picker open for multi-item meals.
+- The picker includes edit, forget, and add-shortcut actions.
 
 Current logged-item behavior:
 

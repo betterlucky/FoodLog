@@ -68,6 +68,8 @@ fun TodayScreen(
     var removingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var editingBoundary by remember { mutableStateOf(false) }
     var editingWeight by remember { mutableStateOf(false) }
+    var showingShortcuts by remember { mutableStateOf(false) }
+    var addingShortcut by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val readiness = dailyReadiness(
@@ -134,6 +136,13 @@ fun TodayScreen(
 
         uiState.message?.let {
             Text(text = it)
+        }
+
+        OutlinedButton(
+            onClick = { showingShortcuts = true },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Shortcuts")
         }
 
         Text(
@@ -217,25 +226,6 @@ fun TodayScreen(
 
             item {
                 Spacer(modifier = Modifier.height(12.dp))
-                SectionTitle("Shortcuts")
-            }
-            if (uiState.userDefaults.isEmpty()) {
-                item {
-                    EmptyState("No shortcuts saved yet.")
-                }
-            } else {
-                items(uiState.userDefaults) { userDefault ->
-                    ShortcutRow(
-                        userDefault = userDefault,
-                        onLog = { viewModel.logShortcut(userDefault.trigger) },
-                        onEdit = { editingDefault = userDefault },
-                        onForget = { forgettingDefault = userDefault },
-                    )
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
                 DailyWeightRow(
                     dailyWeight = uiState.dailyWeight,
                     onEdit = { editingWeight = true },
@@ -267,6 +257,23 @@ fun TodayScreen(
                 )
             }
         }
+    }
+
+    if (showingShortcuts) {
+        ShortcutPickerDialog(
+            userDefaults = uiState.userDefaults,
+            onDismiss = { showingShortcuts = false },
+            onAdd = { addingShortcut = true },
+            onLog = { userDefault ->
+                viewModel.logShortcut(userDefault.trigger)
+            },
+            onEdit = { userDefault ->
+                editingDefault = userDefault
+            },
+            onForget = { userDefault ->
+                forgettingDefault = userDefault
+            },
+        )
     }
 
     resolvingEntry?.let { entry ->
@@ -335,6 +342,22 @@ fun TodayScreen(
                     unit = unit,
                     notes = notes,
                     onUpdated = { editingDefault = null },
+                )
+            },
+        )
+    }
+
+    if (addingShortcut) {
+        AddShortcutDialog(
+            onDismiss = { addingShortcut = false },
+            onSave = { trigger, name, calories, unit, notes ->
+                viewModel.addShortcut(
+                    trigger = trigger,
+                    name = name,
+                    calories = calories,
+                    unit = unit,
+                    notes = notes,
+                    onAdded = { addingShortcut = false },
                 )
             },
         )
@@ -788,6 +811,78 @@ private fun PendingEntryRow(
 }
 
 @Composable
+private fun ShortcutPickerDialog(
+    userDefaults: List<UserDefaultEntity>,
+    onDismiss: () -> Unit,
+    onAdd: () -> Unit,
+    onLog: (UserDefaultEntity) -> Unit,
+    onEdit: (UserDefaultEntity) -> Unit,
+    onForget: (UserDefaultEntity) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var lastLogged by remember { mutableStateOf<String?>(null) }
+    val filteredDefaults = userDefaults.filter { userDefault ->
+        val normalizedQuery = query.trim()
+        normalizedQuery.isBlank() ||
+            userDefault.trigger.contains(normalizedQuery, ignoreCase = true) ||
+            userDefault.name.contains(normalizedQuery, ignoreCase = true)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Shortcuts") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Search shortcuts") },
+                )
+                lastLogged?.let {
+                    Text(
+                        text = "Logged $it",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (filteredDefaults.isEmpty()) {
+                    EmptyState("No matching shortcuts.")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(filteredDefaults) { userDefault ->
+                            ShortcutRow(
+                                userDefault = userDefault,
+                                onLog = {
+                                    onLog(userDefault)
+                                    lastLogged = userDefault.name
+                                },
+                                onEdit = { onEdit(userDefault) },
+                                onForget = { onForget(userDefault) },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onAdd) {
+                Text("Add shortcut")
+            }
+        },
+    )
+}
+
+@Composable
 private fun ShortcutRow(
     userDefault: UserDefaultEntity,
     onLog: () -> Unit,
@@ -1152,6 +1247,78 @@ private fun EditShortcutDialog(
         },
         confirmButton = {
             Button(onClick = { onSave(name, calories, unit, notes) }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun AddShortcutDialog(
+    onDismiss: () -> Unit,
+    onSave: (trigger: String, name: String, calories: String, unit: String, notes: String) -> Unit,
+) {
+    var trigger by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var calories by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add shortcut") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = trigger,
+                    onValueChange = { trigger = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Shortcut") },
+                )
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Item") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = calories,
+                        onValueChange = { calories = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Calories") },
+                    )
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = { unit = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Unit") },
+                    )
+                }
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    minLines = 2,
+                    maxLines = 3,
+                    label = { Text("Notes") },
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(trigger, name, calories, unit, notes) }) {
                 Text("Save")
             }
         },

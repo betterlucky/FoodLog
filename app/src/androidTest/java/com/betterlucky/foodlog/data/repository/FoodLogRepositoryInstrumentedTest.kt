@@ -478,6 +478,30 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun shortcutCanBeAddedDirectlyForFutureSubmissions() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addDefault(
+            trigger = "  Banana  ",
+            name = "Banana",
+            calories = 105.0,
+            unit = "each",
+            notes = "Shortcut picker",
+        )
+        val default = database.userDefaultDao().getActiveDefault("banana")
+        val nextResult = repository.submitText("banana")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.Updated, addResult)
+        assertEquals("Banana", default?.name)
+        assertEquals(105.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("each", default?.unit)
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Banana", foodItem.name)
+        assertEquals(105.0, foodItem.calories, 0.001)
+    }
+
+    @Test
     fun dailyWeightDoesNotAffectCalorieTotalAndExportsWeightRow() = runTest {
         val result = repository.upsertDailyWeight(
             logDate = today,

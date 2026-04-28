@@ -202,6 +202,34 @@ class FoodLogRepository(
         return DefaultUpdateResult.Updated
     }
 
+    suspend fun addDefault(
+        trigger: String,
+        name: String,
+        calories: Double,
+        unit: String,
+        notes: String?,
+    ): DefaultUpdateResult {
+        val normalizedTrigger = trigger.shortcutTrigger()
+        val trimmedName = name.trim()
+        val trimmedUnit = unit.trim()
+        val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
+
+        if (normalizedTrigger.isBlank() || trimmedName.isBlank() || trimmedUnit.isBlank() || calories <= 0.0) {
+            return DefaultUpdateResult.InvalidInput
+        }
+
+        userDefaultDao.upsert(
+            UserDefaultEntity(
+                trigger = normalizedTrigger,
+                name = trimmedName,
+                calories = calories,
+                unit = trimmedUnit,
+                notes = normalizedNotes,
+            ),
+        )
+        return DefaultUpdateResult.Updated
+    }
+
     suspend fun updateFoodItem(
         id: Long,
         name: String,

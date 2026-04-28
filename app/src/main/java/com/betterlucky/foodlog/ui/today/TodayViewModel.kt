@@ -630,6 +630,32 @@ class TodayViewModel(
             }
         }
     }
+
+    fun addShortcut(
+        trigger: String,
+        name: String,
+        calories: String,
+        unit: String,
+        notes: String,
+        onAdded: () -> Unit,
+    ) {
+        val parsedCalories = calories.trim().toDoubleOrNull()
+        if (trigger.isBlank() || name.isBlank() || unit.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
+            message.value = "Add a trigger, name, unit, and calories to create a shortcut."
+            return
+        }
+
+        viewModelScope.launch {
+            message.value = when (repository.addDefault(trigger, name, parsedCalories, unit, notes)) {
+                FoodLogRepository.DefaultUpdateResult.Updated -> {
+                    onAdded()
+                    "Saved shortcut '${trigger.trim().lowercase()}'"
+                }
+                FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a trigger, name, unit, and calories to create a shortcut."
+                FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
+            }
+        }
+    }
 }
 
 private fun parseTimeOrNull(value: String): LocalTime? {
