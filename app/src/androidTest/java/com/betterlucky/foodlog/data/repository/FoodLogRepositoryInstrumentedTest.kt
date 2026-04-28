@@ -343,6 +343,71 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingCompoundEntryCanBeItemisedAndKeptPendingUntilCommitted() = runTest {
+        repository.seedDefaults()
+        val pendingResult = repository.submitText("tea, banana, satsuma")
+
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.Ready
+        val stillPending = repository.observePendingEntriesForDate(today).first()
+        val noFoodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals("tea, banana, satsuma", preview.rawText)
+        assertEquals(listOf("tea", "banana", "satsuma"), preview.parts.map { it.inputText })
+        assertEquals(listOf(true, false, false), preview.parts.map { it.default != null })
+        assertEquals(listOf("tea, banana, satsuma"), stillPending.map { it.rawText })
+        assertEquals(emptyList<FoodItemEntity>(), noFoodItems)
+
+        val updateResult = repository.resolvePendingEntryParts(
+            rawEntryId = pendingResult.rawEntryId,
+            rawText = preview.rawText,
+            parts = listOf(
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Tea",
+                    amount = 1.0,
+                    unit = "cup",
+                    calories = 25.0,
+                    source = FoodItemSource.USER_DEFAULT,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = FoodLogRepository.DEFAULT_TEA.notes,
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Banana",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 105.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                    saveDefaultTrigger = "banana",
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Satsuma",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 35.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                ),
+            ),
+        )
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+        val bananaDefault = database.userDefaultDao().getActiveDefault("banana")
+
+        assertTrue(updateResult is FoodLogRepository.PendingEntryUpdateResult.Parsed)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals(listOf("Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(listOf(pendingResult.rawEntryId), foodItems.map { it.rawEntryId }.distinct())
+        assertEquals("Banana", bananaDefault?.name)
+        assertEquals(105.0, bananaDefault?.calories ?: 0.0, 0.001)
+    }
+
+    @Test
     fun parsedEntryCannotBeRemovedAsPending() = runTest {
         repository.seedDefaults()
 

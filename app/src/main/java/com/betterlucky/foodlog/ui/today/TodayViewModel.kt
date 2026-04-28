@@ -351,35 +351,7 @@ class TodayViewModel(
             return
         }
 
-        val replacementParts = mutableListOf<FoodLogRepository.FoodItemEditReplacementPart>()
-        parts.forEach { part ->
-            val parsedAmount = part.amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
-            val parsedCalories = part.calories.trim().toDoubleOrNull()
-
-            if (part.name.isBlank()) {
-                onError("Add an item name for ${part.inputText}.")
-                return
-            }
-            if (part.amount.isNotBlank() && parsedAmount == null) {
-                onError("Amount must be a number for ${part.inputText}.")
-                return
-            }
-            if (parsedCalories == null || parsedCalories <= 0.0) {
-                onError("Add calories for ${part.inputText}.")
-                return
-            }
-
-            replacementParts += FoodLogRepository.FoodItemEditReplacementPart(
-                name = part.name,
-                amount = parsedAmount,
-                unit = part.unit,
-                calories = parsedCalories,
-                source = if (part.resolvedByDefault) FoodItemSource.USER_DEFAULT else FoodItemSource.MANUAL_OVERRIDE,
-                confidence = ConfidenceLevel.HIGH,
-                notes = part.notes,
-                saveDefaultTrigger = part.trigger.takeIf { part.saveAsDefault && !part.resolvedByDefault },
-            )
-        }
+        val replacementParts = replacementPartsOrNull(parts, onError) ?: return
 
         viewModelScope.launch {
             val result = repository.replaceFoodItemWithResolvedEditParts(
@@ -429,6 +401,62 @@ class TodayViewModel(
                 }
                 FoodLogRepository.PendingEntryRemoveResult.NotFound -> "That pending entry no longer exists."
                 FoodLogRepository.PendingEntryRemoveResult.NotPending -> "That entry has already been handled."
+            }
+        }
+    }
+
+    fun previewPendingEntryResolution(
+        rawEntryId: Long,
+        onReady: (LoggedFoodEditResolution) -> Unit,
+    ) {
+        viewModelScope.launch {
+            when (val preview = repository.previewPendingEntryResolution(rawEntryId)) {
+                is FoodLogRepository.PendingEntryResolutionPreviewResult.Ready -> {
+                    if (preview.parts.any { it.default != null }) {
+                        onReady(preview.toLoggedFoodEditResolution())
+                    }
+                }
+                FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart -> Unit
+                FoodLogRepository.PendingEntryResolutionPreviewResult.NotFound ->
+                    message.value = "That pending entry no longer exists."
+                FoodLogRepository.PendingEntryResolutionPreviewResult.NotPending ->
+                    message.value = "That entry has already been handled."
+            }
+        }
+    }
+
+    fun saveResolvedPendingEntry(
+        rawEntryId: Long,
+        rawText: String,
+        parts: List<LoggedFoodEditResolvedPartInput>,
+        onResolved: () -> Unit,
+        onError: (String) -> Unit,
+    ) {
+        if (parts.isEmpty()) {
+            onError("Add at least one item to resolve the pending entry.")
+            return
+        }
+
+        val replacementParts = replacementPartsOrNull(parts, onError) ?: return
+        viewModelScope.launch {
+            val result = repository.resolvePendingEntryParts(
+                rawEntryId = rawEntryId,
+                rawText = rawText,
+                parts = replacementParts,
+            )
+            val resultMessage = when (result) {
+                FoodLogRepository.PendingEntryUpdateResult.Updated -> "Saved pending entry"
+                is FoodLogRepository.PendingEntryUpdateResult.Parsed -> {
+                    onResolved()
+                    "Logged edited entry"
+                }
+                FoodLogRepository.PendingEntryUpdateResult.InvalidInput -> "Add item names and calories to resolve the pending entry."
+                FoodLogRepository.PendingEntryUpdateResult.NotFound -> "That pending entry no longer exists."
+                FoodLogRepository.PendingEntryUpdateResult.NotPending -> "That entry has already been handled."
+            }
+            message.value = resultMessage
+            if (result !is FoodLogRepository.PendingEntryUpdateResult.Parsed) {
+                onError(resultMessage)
             }
         }
     }
@@ -621,6 +649,42 @@ private fun stonePoundsToKg(
 ): Double =
     ((stone * 14.0) + pounds) * 0.45359237
 
+private fun replacementPartsOrNull(
+    parts: List<LoggedFoodEditResolvedPartInput>,
+    onError: (String) -> Unit,
+): List<FoodLogRepository.FoodItemEditReplacementPart>? {
+    val replacementParts = mutableListOf<FoodLogRepository.FoodItemEditReplacementPart>()
+    parts.forEach { part ->
+        val parsedAmount = part.amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+        val parsedCalories = part.calories.trim().toDoubleOrNull()
+
+        if (part.name.isBlank()) {
+            onError("Add an item name for ${part.inputText}.")
+            return null
+        }
+        if (part.amount.isNotBlank() && parsedAmount == null) {
+            onError("Amount must be a number for ${part.inputText}.")
+            return null
+        }
+        if (parsedCalories == null || parsedCalories <= 0.0) {
+            onError("Add calories for ${part.inputText}.")
+            return null
+        }
+
+        replacementParts += FoodLogRepository.FoodItemEditReplacementPart(
+            name = part.name,
+            amount = parsedAmount,
+            unit = part.unit,
+            calories = parsedCalories,
+            source = if (part.resolvedByDefault) FoodItemSource.USER_DEFAULT else FoodItemSource.MANUAL_OVERRIDE,
+            confidence = ConfidenceLevel.HIGH,
+            notes = part.notes,
+            saveDefaultTrigger = part.trigger.takeIf { part.saveAsDefault && !part.resolvedByDefault },
+        )
+    }
+    return replacementParts
+}
+
 private fun EntryIntent.placeholderMessage(): String =
     when (this) {
         EntryIntent.QUERY -> "Saved as a chat question. AI summaries will come later."
@@ -632,6 +696,24 @@ private fun EntryIntent.placeholderMessage(): String =
     }
 
 private fun FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready.toLoggedFoodEditResolution(): LoggedFoodEditResolution =
+    LoggedFoodEditResolution(
+        rawText = rawText,
+        parts = parts.map { part ->
+            val default = part.default
+            LoggedFoodEditResolutionPart(
+                inputText = part.inputText,
+                trigger = part.trigger,
+                resolvedByDefault = default != null,
+                name = default?.name ?: part.inputText,
+                amount = part.quantity,
+                unit = default?.unit.orEmpty(),
+                calories = default?.calories?.times(part.quantity),
+                notes = default?.notes.orEmpty(),
+            )
+        },
+    )
+
+private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLoggedFoodEditResolution(): LoggedFoodEditResolution =
     LoggedFoodEditResolution(
         rawText = rawText,
         parts = parts.map { part ->

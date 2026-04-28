@@ -27,6 +27,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -225,28 +226,57 @@ fun TodayScreen(
     }
 
     resolvingEntry?.let { entry ->
-        ResolvePendingDialog(
-            entry = entry,
-            onDismiss = { resolvingEntry = null },
-            onRemove = {
-                viewModel.removePendingEntry(
-                    id = entry.id,
-                    onRemoved = { resolvingEntry = null },
-                )
-            },
-            onResolve = { name, amount, unit, calories, notes, saveAsDefault ->
-                viewModel.resolvePendingEntry(
-                    rawEntryId = entry.id,
-                    name = name,
-                    amount = amount,
-                    unit = unit,
-                    calories = calories,
-                    notes = notes,
-                    saveAsDefault = saveAsDefault,
-                    onResolved = { resolvingEntry = null },
-                )
-            },
-        )
+        var pendingResolution by remember(entry.id) { mutableStateOf<LoggedFoodEditResolution?>(null) }
+        var pendingResolutionError by remember(entry.id) { mutableStateOf<String?>(null) }
+        LaunchedEffect(entry.id) {
+            viewModel.previewPendingEntryResolution(
+                rawEntryId = entry.id,
+                onReady = { pendingResolution = it },
+            )
+        }
+        val resolution = pendingResolution
+        if (resolution == null) {
+            ResolvePendingDialog(
+                entry = entry,
+                onDismiss = { resolvingEntry = null },
+                onRemove = {
+                    viewModel.removePendingEntry(
+                        id = entry.id,
+                        onRemoved = { resolvingEntry = null },
+                    )
+                },
+                onResolve = { name, amount, unit, calories, notes, saveAsDefault ->
+                    viewModel.resolvePendingEntry(
+                        rawEntryId = entry.id,
+                        name = name,
+                        amount = amount,
+                        unit = unit,
+                        calories = calories,
+                        notes = notes,
+                        saveAsDefault = saveAsDefault,
+                        onResolved = { resolvingEntry = null },
+                    )
+                },
+            )
+        } else {
+            ResolveLoggedFoodEditDialog(
+                resolution = resolution,
+                title = "Resolve pending meal",
+                dismissLabel = "Keep pending",
+                errorMessage = pendingResolutionError,
+                onDismiss = { resolvingEntry = null },
+                onSave = { parts ->
+                    pendingResolutionError = null
+                    viewModel.saveResolvedPendingEntry(
+                        rawEntryId = entry.id,
+                        rawText = resolution.rawText,
+                        parts = parts,
+                        onResolved = { resolvingEntry = null },
+                        onError = { pendingResolutionError = it },
+                    )
+                },
+            )
+        }
     }
 
     editingDefault?.let { userDefault ->
@@ -1344,6 +1374,8 @@ private fun EditFoodItemDialog(
 @Composable
 private fun ResolveLoggedFoodEditDialog(
     resolution: LoggedFoodEditResolution,
+    title: String = "Complete edited meal",
+    dismissLabel: String = "Cancel",
     errorMessage: String?,
     onDismiss: () -> Unit,
     onSave: (parts: List<LoggedFoodEditResolvedPartInput>) -> Unit,
@@ -1383,7 +1415,7 @@ private fun ResolveLoggedFoodEditDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Complete edited meal") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (recognisedParts.isNotEmpty()) {
@@ -1515,7 +1547,7 @@ private fun ResolveLoggedFoodEditDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(dismissLabel)
             }
         },
     )

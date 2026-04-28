@@ -481,6 +481,101 @@ class FoodLogRepository(
             PendingEntryUpdateResult.Updated
         }
 
+    suspend fun previewPendingEntryResolution(rawEntryId: Long): PendingEntryResolutionPreviewResult {
+        val rawEntry = rawEntryDao.getById(rawEntryId)
+            ?: return PendingEntryResolutionPreviewResult.NotFound
+
+        if (rawEntry.status != RawEntryStatus.PENDING) {
+            return PendingEntryResolutionPreviewResult.NotPending
+        }
+
+        val parsed = parser.parse(
+            input = rawEntry.rawText,
+            today = dateTimeProvider.today(),
+            defaultLogDate = rawEntry.logDate,
+        )
+        if (parsed.parts.size <= 1) {
+            return PendingEntryResolutionPreviewResult.SinglePart
+        }
+
+        return PendingEntryResolutionPreviewResult.Ready(
+            rawText = rawEntry.rawText.trim(),
+            parts = parsed.parts.map { part ->
+                FoodItemDefaultEditPreviewPart(
+                    inputText = part.normalizedFoodText,
+                    trigger = part.shortcutTrigger,
+                    quantity = part.quantity,
+                    default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
+                )
+            },
+        )
+    }
+
+    suspend fun resolvePendingEntryParts(
+        rawEntryId: Long,
+        rawText: String,
+        parts: List<FoodItemEditReplacementPart>,
+    ): PendingEntryUpdateResult =
+        database.withTransaction {
+            val trimmedRawText = rawText.trim()
+            if (trimmedRawText.isBlank() || parts.isEmpty() || parts.any { it.name.isBlank() || it.calories <= 0.0 }) {
+                return@withTransaction PendingEntryUpdateResult.InvalidInput
+            }
+
+            val rawEntry = rawEntryDao.getById(rawEntryId)
+                ?: return@withTransaction PendingEntryUpdateResult.NotFound
+
+            if (rawEntry.status != RawEntryStatus.PENDING) {
+                return@withTransaction PendingEntryUpdateResult.NotPending
+            }
+
+            val createdAt = dateTimeProvider.nowInstant()
+            val foodItemIds = parts.map { part ->
+                val foodItemId = foodItemDao.insert(
+                    FoodItemEntity(
+                        rawEntryId = rawEntry.id,
+                        logDate = rawEntry.logDate,
+                        consumedTime = rawEntry.consumedTime,
+                        name = part.name.trim(),
+                        amount = part.amount?.takeIf { it > 0.0 },
+                        unit = part.unit?.trim().orEmpty().ifBlank { null },
+                        calories = part.calories,
+                        source = part.source,
+                        confidence = part.confidence,
+                        notes = part.notes?.trim().orEmpty().ifBlank { null },
+                        createdAt = createdAt,
+                    ),
+                )
+                part.saveDefaultTrigger
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.also { trigger ->
+                        userDefaultDao.upsert(
+                            UserDefaultEntity(
+                                trigger = trigger,
+                                name = part.name.trim(),
+                                calories = part.calories / (part.amount?.takeIf { it > 0.0 } ?: 1.0),
+                                unit = part.unit?.trim().orEmpty().ifBlank { "serving" },
+                                notes = part.notes?.trim().orEmpty().ifBlank { null },
+                            ),
+                        )
+                    }
+                foodItemId
+            }
+            rawEntryDao.updatePendingDetails(
+                id = rawEntry.id,
+                logDate = rawEntry.logDate,
+                rawText = trimmedRawText,
+                notes = null,
+            )
+            rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
+            markFoodChanged(rawEntry.logDate)
+            PendingEntryUpdateResult.Parsed(
+                foodItemIds = foodItemIds,
+                logDate = rawEntry.logDate,
+            )
+        }
+
     suspend fun resolvePendingEntryManually(
         rawEntryId: Long,
         name: String,
@@ -831,6 +926,17 @@ class FoodLogRepository(
         data object InvalidInput : PendingEntryUpdateResult
         data object NotFound : PendingEntryUpdateResult
         data object NotPending : PendingEntryUpdateResult
+    }
+
+    sealed interface PendingEntryResolutionPreviewResult {
+        data class Ready(
+            val rawText: String,
+            val parts: List<FoodItemDefaultEditPreviewPart>,
+        ) : PendingEntryResolutionPreviewResult
+
+        data object SinglePart : PendingEntryResolutionPreviewResult
+        data object NotFound : PendingEntryResolutionPreviewResult
+        data object NotPending : PendingEntryResolutionPreviewResult
     }
 
     sealed interface DailyWeightResult {
