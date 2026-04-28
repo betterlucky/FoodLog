@@ -198,6 +198,12 @@ Create a mobile-first Compose Today screen with:
 
 The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data. Direct manual add is not exposed in the main UI; known-calorie manual resolution should happen through pending/staged resolution flows.
 
+Date and time input behavior:
+
+- The selected date control opens a calendar picker with Material's calendar/text-entry mode toggle.
+- Time fields remain editable as text and also offer a picker action.
+- Time text fields should use the shared time parser, so typed values such as `13:45`, `1pm`, and `8:05am` behave consistently with free-text log parsing.
+
 Current shortcut behavior:
 
 - Shortcuts are opened from a button near the food input instead of listed inline in the daily scroll.
@@ -217,7 +223,7 @@ Current logged-item behavior:
   - the original row is not replaced until every part has been completed; cancelling the dialog leaves the original logged row unchanged
 - The edit dialog clears the prefilled calories when the item name changes unless the user has manually edited the calories field.
 - Default-reparse edits reuse the original row's raw entry and date, reuse the edited time for every replacement row, and update the raw entry text.
-- Consumed time is required for edited food rows and currently uses `HH:mm`.
+- Consumed time is required for edited food rows; users may type supported time text or use the time picker.
 - Logged food items can be removed after confirmation.
 - Removing a logged item hard-deletes the `FoodItemEntity`; the raw entry remains.
 
@@ -285,7 +291,7 @@ Daily export status is tracked locally with a date-keyed status row:
 - The Today screen exposes the day-boundary setting with:
   - a compact boundary status row
   - an early-morning boundary toggle
-  - an `HH:mm` boundary time field, defaulting to `03:00` when enabled
+  - a boundary time field with text entry and picker support, defaulting to `03:00` when enabled
 - The Today screen shows a daily close prompt:
   - no export needed when the selected day is empty
   - resolve pending entries before Health Monitor export when pending entries remain

@@ -22,6 +22,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DisplayMode
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -30,6 +34,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,14 +57,17 @@ import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
+import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import kotlin.math.floor
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TodayScreen(
     viewModel: TodayViewModel,
@@ -72,6 +83,7 @@ fun TodayScreen(
     var editingWeight by remember { mutableStateOf(false) }
     var showingShortcuts by remember { mutableStateOf(false) }
     var addingShortcut by remember { mutableStateOf(false) }
+    var pickingDate by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val readiness = dailyReadiness(
@@ -96,11 +108,13 @@ fun TodayScreen(
             TextButton(onClick = viewModel::previousDay) {
                 Text("Prev")
             }
-            Text(
-                text = uiState.selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.headlineSmall,
-            )
+            OutlinedButton(onClick = { pickingDate = true }) {
+                Text(
+                    text = uiState.selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
             TextButton(onClick = viewModel::nextDay) {
                 Text("Next")
             }
@@ -463,6 +477,17 @@ fun TodayScreen(
                     time = time,
                     onSaved = { editingWeight = false },
                 )
+            },
+        )
+    }
+
+    if (pickingDate) {
+        LogDatePickerDialog(
+            selectedDate = uiState.selectedDate,
+            onDismiss = { pickingDate = false },
+            onDateSelected = { date ->
+                viewModel.selectDate(date)
+                pickingDate = false
             },
         )
     }
@@ -940,6 +965,149 @@ private fun ShortcutRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LogDatePickerDialog(
+    selectedDate: LocalDate,
+    onDismiss: () -> Unit,
+    onDateSelected: (LocalDate) -> Unit,
+) {
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = selectedDate.toEpochMillis(),
+        initialDisplayMode = DisplayMode.Picker,
+    )
+
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = {
+                    datePickerState.selectedDateMillis
+                        ?.toLocalDate()
+                        ?.let(onDateSelected)
+                },
+            ) {
+                Text("Select")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    ) {
+        DatePicker(
+            state = datePickerState,
+            showModeToggle = true,
+        )
+    }
+}
+
+@Composable
+private fun TimeTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    supportingText: String? = null,
+    isError: Boolean = false,
+) {
+    var pickingTime by remember { mutableStateOf(false) }
+
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
+        singleLine = true,
+        isError = isError,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+        label = { Text(label) },
+        placeholder = { Text("HH:mm or 1pm") },
+        supportingText = supportingText?.let { { Text(it) } },
+        trailingIcon = {
+            TextButton(
+                onClick = { pickingTime = true },
+                enabled = enabled,
+            ) {
+                Text("Pick")
+            }
+        },
+    )
+
+    if (pickingTime) {
+        TimeChoiceDialog(
+            value = value,
+            onDismiss = { pickingTime = false },
+            onTimeSelected = { selected ->
+                onValueChange(selected)
+                pickingTime = false
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimeChoiceDialog(
+    value: String,
+    onDismiss: () -> Unit,
+    onTimeSelected: (String) -> Unit,
+) {
+    val initialTime = remember(value) {
+        TimeTextParser.parseOrNull(value) ?: LocalTime.now()
+    }
+    val timePickerState = rememberTimePickerState(
+        initialHour = initialTime.hour,
+        initialMinute = initialTime.minute,
+        is24Hour = true,
+    )
+    var textInput by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose time") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { textInput = false }) {
+                        Text("Clock")
+                    }
+                    OutlinedButton(onClick = { textInput = true }) {
+                        Text("Text")
+                    }
+                }
+                if (textInput) {
+                    TimeInput(state = timePickerState)
+                } else {
+                    TimePicker(state = timePickerState)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onTimeSelected(
+                        LocalTime.of(timePickerState.hour, timePickerState.minute)
+                            .format(DateTimeFormatter.ofPattern("HH:mm")),
+                    )
+                },
+            ) {
+                Text("Set")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
 @Composable
 private fun DayBoundaryDialog(
     currentBoundary: LocalTime?,
@@ -971,16 +1139,14 @@ private fun DayBoundaryDialog(
                         onCheckedChange = { enabled = it },
                     )
                 }
-                OutlinedTextField(
+                TimeTextField(
                     value = boundaryTime,
                     onValueChange = { boundaryTime = it },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = enabled,
-                    singleLine = true,
                     isError = timeError != null,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    label = { Text("Boundary time") },
-                    supportingText = timeError?.let { { Text(it) } },
+                    label = "Boundary time",
+                    supportingText = timeError,
                 )
             }
         },
@@ -1015,11 +1181,13 @@ private fun DayBoundaryDialog(
 }
 
 private fun String.parseLocalTimeOrNull(): LocalTime? =
-    try {
-        LocalTime.parse(trim())
-    } catch (_: DateTimeParseException) {
-        null
-    }
+    TimeTextParser.parseOrNull(this)
+
+private fun LocalDate.toEpochMillis(): Long =
+    atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+private fun Long.toLocalDate(): LocalDate =
+    Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
 @Composable
 private fun DailyWeightDialog(
@@ -1063,14 +1231,12 @@ private fun DailyWeightDialog(
                         label = { Text("Pounds") },
                     )
                 }
-                OutlinedTextField(
+                TimeTextField(
                     value = time,
                     onValueChange = { time = it },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Time") },
-                    placeholder = { Text("HH:mm") },
-                    supportingText = { Text("Blank = now") },
+                    label = "Time",
+                    supportingText = "Blank = now",
                 )
             }
         },
@@ -1154,13 +1320,11 @@ private fun ResolvePendingDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     label = { Text("Calories") },
                 )
-                OutlinedTextField(
+                TimeTextField(
                     value = time,
                     onValueChange = { time = it },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Time") },
-                    placeholder = { Text("HH:mm") },
+                    label = "Time",
                 )
                 OutlinedTextField(
                     value = notes,
@@ -1442,13 +1606,11 @@ private fun EditFoodItemDialog(
                     label = { Text("Calories") },
                     supportingText = { Text("Blank = use defaults") },
                 )
-                OutlinedTextField(
+                TimeTextField(
                     value = time,
                     onValueChange = { time = it },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Time") },
-                    placeholder = { Text("HH:mm") },
+                    label = "Time",
                 )
                 OutlinedTextField(
                     value = notes,
