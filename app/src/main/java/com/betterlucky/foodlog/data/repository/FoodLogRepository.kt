@@ -352,6 +352,7 @@ class FoodLogRepository(
                     inputText = part.normalizedFoodText,
                     trigger = part.shortcutTrigger,
                     quantity = part.quantity,
+                    quantityUnit = part.quantityUnit,
                     default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
                 )
             },
@@ -543,6 +544,7 @@ class FoodLogRepository(
                     inputText = part.normalizedFoodText,
                     trigger = part.shortcutTrigger,
                     quantity = part.quantity,
+                    quantityUnit = part.quantityUnit,
                     default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
                 )
             },
@@ -937,6 +939,7 @@ class FoodLogRepository(
         val inputText: String,
         val trigger: String?,
         val quantity: Double,
+        val quantityUnit: String?,
         val default: UserDefaultEntity?,
     )
 

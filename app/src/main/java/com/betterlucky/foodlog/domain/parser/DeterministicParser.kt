@@ -21,6 +21,7 @@ data class ParsedFoodPart(
     val normalizedFoodText: String,
     val shortcutTrigger: String?,
     val quantity: Double = 1.0,
+    val quantityUnit: String? = null,
 )
 
 class DeterministicParser {
@@ -105,7 +106,7 @@ class DeterministicParser {
 
     private fun foodPartsFor(foodText: String): List<ParsedFoodPart> =
         foodText
-            .split(Regex("\\s*(?:,|\\band\\b)\\s*"))
+            .split(Regex("\\s*(?:,|\\+|\\band\\b)\\s*"))
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .map { part ->
@@ -114,17 +115,28 @@ class DeterministicParser {
                     normalizedFoodText = part,
                     shortcutTrigger = shortcutTrigger?.trigger,
                     quantity = shortcutTrigger?.quantity ?: 1.0,
+                    quantityUnit = shortcutTrigger?.unit,
                 )
             }
 
     private fun shortcutTriggerFor(foodText: String): ShortcutMatch? {
         if (foodText.isBlank()) return null
 
+        val gramMatch = Regex("^(\\d+(?:\\.\\d+)?)\\s*g\\s+(.+)$").matchEntire(foodText)
+        if (gramMatch != null) {
+            return ShortcutMatch(
+                trigger = singularizeShortcut(gramMatch.groupValues[2]),
+                quantity = gramMatch.groupValues[1].toDouble(),
+                unit = "g",
+            )
+        }
+
         val numericMatch = Regex("^(\\d+(?:\\.\\d+)?)\\s+(.+)$").matchEntire(foodText)
         if (numericMatch != null) {
             return ShortcutMatch(
                 trigger = singularizeShortcut(numericMatch.groupValues[2]),
                 quantity = numericMatch.groupValues[1].toDouble(),
+                unit = null,
             )
         }
 
@@ -133,6 +145,7 @@ class DeterministicParser {
             return ShortcutMatch(
                 trigger = singularizeShortcut(wordQuantityMatch.groupValues[2]),
                 quantity = wordQuantityMatch.groupValues[1].wordQuantity(),
+                unit = null,
             )
         }
 
@@ -141,7 +154,7 @@ class DeterministicParser {
             foodText.startsWith("cup of ") -> foodText.removePrefix("cup of ")
             else -> foodText
         }
-        return ShortcutMatch(trigger = singularizeShortcut(trigger), quantity = 1.0)
+        return ShortcutMatch(trigger = singularizeShortcut(trigger), quantity = 1.0, unit = null)
             .takeIf { it.trigger.isNotBlank() }
     }
 
@@ -163,6 +176,7 @@ class DeterministicParser {
     private data class ShortcutMatch(
         val trigger: String,
         val quantity: Double,
+        val unit: String?,
     )
 
     private data class DatedFoodText(

@@ -471,6 +471,27 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun plusSeparatedPendingEntryStagesRecognisedPartsAndGramQuantity() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("1pm 150g sourdough with thin butter + tea")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.Ready
+        val pendingEntry = repository.observePendingEntriesForDate(today).first().single()
+
+        assertEquals(LocalTime.parse("13:00"), pendingEntry.consumedTime)
+        assertEquals(
+            listOf("150g sourdough with thin butter", "tea"),
+            preview.parts.map { it.inputText },
+        )
+        assertEquals(listOf(null, "Tea"), preview.parts.map { it.default?.name })
+        assertEquals(150.0, preview.parts.first().quantity, 0.001)
+        assertEquals("g", preview.parts.first().quantityUnit)
+        assertEquals("sourdough with thin butter", preview.parts.first().trigger)
+    }
+
+    @Test
     fun parsedEntryCannotBeRemovedAsPending() = runTest {
         repository.seedDefaults()
 
@@ -562,6 +583,27 @@ class FoodLogRepositoryInstrumentedTest {
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
         assertEquals("Banana", foodItem.name)
         assertEquals(105.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun gramShortcutScalesCaloriesByParsedWeight() = runTest {
+        repository.seedDefaults()
+
+        repository.addDefault(
+            trigger = "sourdough with thin butter",
+            name = "Sourdough with thin butter",
+            calories = 2.4,
+            unit = "g",
+            notes = null,
+        )
+        val result = repository.submitText("100g sourdough with thin butter")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Sourdough with thin butter", foodItem.name)
+        assertEquals(100.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals("g", foodItem.unit)
+        assertEquals(240.0, foodItem.calories, 0.001)
     }
 
     @Test

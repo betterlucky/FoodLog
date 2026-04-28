@@ -739,7 +739,7 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready.toLoggedFoo
                 resolvedByDefault = default != null,
                 name = default?.name ?: part.inputText,
                 amount = part.quantity,
-                unit = default?.unit.orEmpty(),
+                unit = default?.unit ?: part.quantityUnit.orEmpty(),
                 calories = default?.calories?.times(part.quantity),
                 notes = default?.notes.orEmpty(),
             )
@@ -757,7 +757,7 @@ private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLogged
                 resolvedByDefault = default != null,
                 name = default?.name ?: part.inputText,
                 amount = part.quantity,
-                unit = default?.unit.orEmpty(),
+                unit = default?.unit ?: part.quantityUnit.orEmpty(),
                 calories = default?.calories?.times(part.quantity),
                 notes = default?.notes.orEmpty(),
             )
