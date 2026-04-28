@@ -1222,6 +1222,7 @@ private fun EditFoodItemDialog(
     var calories by remember(item.id) { mutableStateOf(item.calories.formatAmount()) }
     var time by remember(item.id) { mutableStateOf(item.consumedTime?.toString().orEmpty()) }
     var notes by remember(item.id) { mutableStateOf(item.notes.orEmpty()) }
+    var caloriesEdited by remember(item.id) { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1230,7 +1231,12 @@ private fun EditFoodItemDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = {
+                        name = it
+                        if (!caloriesEdited && it.trim() != item.name) {
+                            calories = ""
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("Item") },
@@ -1254,7 +1260,10 @@ private fun EditFoodItemDialog(
                 }
                 OutlinedTextField(
                     value = calories,
-                    onValueChange = { calories = it },
+                    onValueChange = {
+                        calories = it
+                        caloriesEdited = true
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
