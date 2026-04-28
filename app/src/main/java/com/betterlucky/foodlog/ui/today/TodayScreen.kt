@@ -68,7 +68,6 @@ fun TodayScreen(
     var editingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
     var forgettingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
     var editingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
-    var removingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var editingBoundary by remember { mutableStateOf(false) }
     var editingWeight by remember { mutableStateOf(false) }
     var showingShortcuts by remember { mutableStateOf(false) }
@@ -230,8 +229,7 @@ fun TodayScreen(
                 items(uiState.items) { item ->
                     FoodItemRow(
                         item = item,
-                        onEdit = { editingFoodItem = item },
-                        onRemove = { removingFoodItem = item },
+                        onClick = { editingFoodItem = item },
                     )
                 }
             }
@@ -396,6 +394,10 @@ fun TodayScreen(
                 item = item,
                 errorMessage = editFoodError,
                 onDismiss = { editingFoodItem = null },
+                onRemove = {
+                    viewModel.removeFoodItem(item.id)
+                    editingFoodItem = null
+                },
                 onSave = { name, amount, unit, calories, time, notes ->
                     editFoodError = null
                     viewModel.updateFoodItem(
@@ -433,17 +435,6 @@ fun TodayScreen(
                 },
             )
         }
-    }
-
-    removingFoodItem?.let { item ->
-        RemoveFoodItemDialog(
-            item = item,
-            onDismiss = { removingFoodItem = null },
-            onConfirm = {
-                viewModel.removeFoodItem(item.id)
-                removingFoodItem = null
-            },
-        )
     }
 
     if (editingBoundary) {
@@ -700,11 +691,12 @@ private fun EmptyState(text: String) {
 @Composable
 private fun FoodItemRow(
     item: FoodItemEntity,
-    onEdit: () -> Unit,
-    onRemove: () -> Unit,
+    onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface,
@@ -713,12 +705,17 @@ private fun FoodItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column {
-                Text(text = item.name, fontWeight = FontWeight.SemiBold)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.name,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 Text(
                     text = listOfNotNull(
                         item.consumedTime?.toString() ?: "No time",
@@ -731,20 +728,8 @@ private fun FoodItemRow(
             Text(
                 text = "${item.calories.toInt()} kcal",
                 fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyMedium,
             )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            TextButton(onClick = onEdit) {
-                Text("Edit")
-            }
-            TextButton(onClick = onRemove) {
-                Text("Remove")
-            }
         }
     }
 }
@@ -1385,6 +1370,7 @@ private fun EditFoodItemDialog(
     item: FoodItemEntity,
     errorMessage: String?,
     onDismiss: () -> Unit,
+    onRemove: () -> Unit,
     onSave: (name: String, amount: String, unit: String, calories: String, time: String, notes: String) -> Unit,
 ) {
     var name by remember(item.id) { mutableStateOf(item.name) }
@@ -1474,8 +1460,13 @@ private fun EditFoodItemDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row {
+                TextButton(onClick = onRemove) {
+                    Text("Remove")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         },
     )
@@ -1658,33 +1649,6 @@ private fun ResolveLoggedFoodEditDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(dismissLabel)
-            }
-        },
-    )
-}
-
-@Composable
-private fun RemoveFoodItemDialog(
-    item: FoodItemEntity,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Remove logged item?") },
-        text = {
-            Text(
-                text = "${item.name} at ${item.calories.formatAmount()} kcal will be removed from this report.",
-            )
-        },
-        confirmButton = {
-            Button(onClick = onConfirm) {
-                Text("Remove")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
             }
         },
     )
