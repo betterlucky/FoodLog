@@ -172,18 +172,9 @@ Create a mobile-first Compose Today screen with:
 - pending entries section
 - export CSV controls
 - logged item edit/remove controls
-- direct manual add control for known food/calorie entries
+- daily weight control near the close-day/export section
 
-The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data.
-
-Current manual-add behavior:
-
-- Users can add a confirmed food item directly without first creating a pending entry.
-- Manual add supports item name, amount, unit, calories, consumed time, notes, and optional shortcut saving.
-- Item name and calories are required.
-- If consumed time is left blank, FoodLog uses the current local time.
-- Manual add creates a parsed raw audit entry and a `FoodItemEntity` in one transaction.
-- Manual add marks the selected day as changed so Health Monitor export status becomes stale when appropriate.
+The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data. Direct manual add is not exposed in the main UI; known-calorie manual resolution should happen through pending/staged resolution flows.
 
 Current logged-item behavior:
 

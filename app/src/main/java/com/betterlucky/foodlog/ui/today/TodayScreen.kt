@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -32,6 +33,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +52,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import kotlin.math.floor
+import kotlinx.coroutines.launch
 
 @Composable
 fun TodayScreen(
@@ -64,8 +67,15 @@ fun TodayScreen(
     var editingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var removingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
     var editingBoundary by remember { mutableStateOf(false) }
-    var addingFoodItem by remember { mutableStateOf(false) }
     var editingWeight by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val readiness = dailyReadiness(
+        dailyStatus = uiState.dailyStatus,
+        pendingCount = uiState.pendingEntries.size,
+        foodItemCount = uiState.items.size,
+        hasDailyWeight = uiState.dailyWeight != null,
+    )
 
     Column(
         modifier = Modifier
@@ -131,64 +141,47 @@ fun TodayScreen(
             fontWeight = FontWeight.Bold,
         )
 
-        DailyWeightRow(
-            dailyWeight = uiState.dailyWeight,
-            onEdit = { editingWeight = true },
-        )
-
-        OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
-            Text("Export Health Monitor CSV")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            if (uiState.pendingEntries.isNotEmpty()) {
+                Text(
+                    text = "${uiState.pendingEntries.size} pending ${if (uiState.pendingEntries.size == 1) "entry" else "entries"} to resolve",
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            } else {
+                Text(
+                    text = readiness.label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (readiness != DailyReadiness.NoFoodLogged) {
+                TextButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            val lastIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
+                            listState.animateScrollToItem(lastIndex)
+                        }
+                    },
+                ) {
+                    Text("Close day")
+                }
+            }
         }
-
-        ExportStatus(
-            dailyStatus = uiState.dailyStatus,
-            pendingCount = uiState.pendingEntries.size,
-            foodItemCount = uiState.items.size,
-            hasDailyWeight = uiState.dailyWeight != null,
-        )
-
-        DailyClosePrompt(
-            dailyStatus = uiState.dailyStatus,
-            pendingCount = uiState.pendingEntries.size,
-            foodItemCount = uiState.items.size,
-            hasDailyWeight = uiState.dailyWeight != null,
-            onExportLegacy = { viewModel.exportLegacyCsv(onShareCsv) },
-        )
 
         HorizontalDivider()
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
+            state = listState,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    SectionTitle("Logged Items")
-                    TextButton(onClick = { addingFoodItem = true }) {
-                        Text("Add item")
-                    }
-                }
-            }
-            if (uiState.items.isEmpty()) {
-                item {
-                    EmptyState("No food logged for this day yet.")
-                }
-            } else {
-                items(uiState.items) { item ->
-                    FoodItemRow(
-                        item = item,
-                        onEdit = { editingFoodItem = item },
-                        onRemove = { removingFoodItem = item },
-                    )
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
                 SectionTitle("Pending")
             }
             if (uiState.pendingEntries.isEmpty()) {
@@ -200,6 +193,24 @@ fun TodayScreen(
                     PendingEntryRow(
                         entry = entry,
                         onResolve = { resolvingEntry = entry },
+                    )
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                SectionTitle("Logged Items")
+            }
+            if (uiState.items.isEmpty()) {
+                item {
+                    EmptyState("No food logged for this day yet.")
+                }
+            } else {
+                items(uiState.items) { item ->
+                    FoodItemRow(
+                        item = item,
+                        onEdit = { editingFoodItem = item },
+                        onRemove = { removingFoodItem = item },
                     )
                 }
             }
@@ -221,6 +232,39 @@ fun TodayScreen(
                         onForget = { forgettingDefault = userDefault },
                     )
                 }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(12.dp))
+                DailyWeightRow(
+                    dailyWeight = uiState.dailyWeight,
+                    onEdit = { editingWeight = true },
+                )
+            }
+
+            item {
+                ExportStatus(
+                    dailyStatus = uiState.dailyStatus,
+                    pendingCount = uiState.pendingEntries.size,
+                    foodItemCount = uiState.items.size,
+                    hasDailyWeight = uiState.dailyWeight != null,
+                )
+            }
+
+            item {
+                OutlinedButton(onClick = { viewModel.exportLegacyCsv(onShareCsv) }) {
+                    Text("Export Health Monitor CSV")
+                }
+            }
+
+            item {
+                DailyClosePrompt(
+                    dailyStatus = uiState.dailyStatus,
+                    pendingCount = uiState.pendingEntries.size,
+                    foodItemCount = uiState.items.size,
+                    hasDailyWeight = uiState.dailyWeight != null,
+                    onExportLegacy = { viewModel.exportLegacyCsv(onShareCsv) },
+                )
             }
         }
     }
@@ -374,24 +418,6 @@ fun TodayScreen(
             onSave = { boundary ->
                 viewModel.updateDayBoundaryTime(boundary)
                 editingBoundary = false
-            },
-        )
-    }
-
-    if (addingFoodItem) {
-        AddFoodItemDialog(
-            onDismiss = { addingFoodItem = false },
-            onSave = { name, amount, unit, calories, time, notes, saveAsDefault ->
-                viewModel.addFoodItemManually(
-                    name = name,
-                    amount = amount,
-                    unit = unit,
-                    calories = calories,
-                    time = time,
-                    notes = notes,
-                    saveAsDefault = saveAsDefault,
-                    onAdded = { addingFoodItem = false },
-                )
             },
         )
     }
@@ -943,112 +969,6 @@ private fun DailyWeightDialog(
         },
         confirmButton = {
             Button(onClick = { onSave(stone, pounds, time) }) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
-}
-
-@Composable
-private fun AddFoodItemDialog(
-    onDismiss: () -> Unit,
-    onSave: (
-        name: String,
-        amount: String,
-        unit: String,
-        calories: String,
-        time: String,
-        notes: String,
-        saveAsDefault: Boolean,
-    ) -> Unit,
-) {
-    var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var unit by remember { mutableStateOf("") }
-    var calories by remember { mutableStateOf("") }
-    var time by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var saveAsDefault by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add logged item") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Item") },
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = amount,
-                        onValueChange = { amount = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        label = { Text("Amount") },
-                    )
-                    OutlinedTextField(
-                        value = unit,
-                        onValueChange = { unit = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        label = { Text("Unit") },
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = calories,
-                        onValueChange = { calories = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        label = { Text("Calories") },
-                    )
-                    OutlinedTextField(
-                        value = time,
-                        onValueChange = { time = it },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        label = { Text("Time") },
-                        supportingText = { Text("Blank = now") },
-                    )
-                }
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 72.dp),
-                    minLines = 2,
-                    maxLines = 3,
-                    label = { Text("Notes") },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(
-                        checked = saveAsDefault,
-                        onCheckedChange = { saveAsDefault = it },
-                    )
-                    Text(
-                        text = "Save as shortcut",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onSave(name, amount, unit, calories, time, notes, saveAsDefault) }) {
                 Text("Save")
             }
         },
