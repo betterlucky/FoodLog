@@ -3,6 +3,7 @@ package com.betterlucky.foodlog.domain.parser
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
+import java.time.LocalTime
 
 class DeterministicParserTest {
     private val parser = DeterministicParser()
@@ -51,6 +52,13 @@ class DeterministicParserTest {
         assertEquals(listOf("10g fruit and nut mix"), parsed.parts.map { it.normalizedFoodText })
         assertEquals(listOf("fruit and nut mix"), parsed.parts.map { it.shortcutTrigger })
         assertEquals(listOf(10.0), parsed.parts.map { it.quantity })
+    }
+
+    @Test
+    fun sharedTimeParserSupportsLogAndEditTimeFormats() {
+        assertEquals(LocalTime.parse("13:00"), TimeTextParser.parseOrNull("1pm"))
+        assertEquals(LocalTime.parse("13:45"), TimeTextParser.parseOrNull("13:45"))
+        assertEquals(LocalTime.parse("08:05"), TimeTextParser.parseOrNull("8:05am"))
     }
 
     @Test

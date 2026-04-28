@@ -8,6 +8,7 @@ import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.intent.EntryIntent
+import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.format.DateTimeParseException
 
 data class LoggedFoodEditResolution(
     val rawText: String,
@@ -684,14 +684,7 @@ class TodayViewModel(
 }
 
 private fun parseTimeOrNull(value: String): LocalTime? {
-    val trimmed = value.trim()
-    if (trimmed.isBlank()) return null
-
-    return try {
-        LocalTime.parse(trimmed)
-    } catch (_: DateTimeParseException) {
-        null
-    }
+    return TimeTextParser.parseOrNull(value)
 }
 
 private fun stonePoundsToKg(

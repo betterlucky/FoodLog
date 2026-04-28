@@ -18,6 +18,7 @@ import com.betterlucky.foodlog.domain.dayboundary.FoodDayPolicy
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.intent.EntryIntent
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
+import com.betterlucky.foodlog.domain.parser.ParsedFoodPart
 import com.betterlucky.foodlog.util.DateTimeProvider
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
@@ -106,8 +107,7 @@ class FoodLogRepository(
                 ),
             )
 
-            val resolvedDefaults = parsed.parts
-                .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
+            val resolvedDefaults = resolveDefaults(parsed.parts)
 
             if (resolvedDefaults.isEmpty() || resolvedDefaults.any { (_, default) -> default == null }) {
                 SubmitResult.Pending(rawEntryId = rawEntryId, logDate = parsed.logDate)
@@ -267,8 +267,7 @@ class FoodLogRepository(
                 today = dateTimeProvider.today(),
                 defaultLogDate = existing.logDate,
             )
-            val resolvedDefaults = parsed.parts
-                .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
+            val resolvedDefaults = resolveDefaults(parsed.parts)
 
             if (resolvedDefaults.isEmpty() || resolvedDefaults.any { (_, default) -> default == null }) {
                 return FoodItemUpdateResult.UnresolvedDefaults(
@@ -349,13 +348,7 @@ class FoodLogRepository(
         return FoodItemDefaultEditPreviewResult.Ready(
             rawText = trimmedName,
             parts = parsed.parts.map { part ->
-                FoodItemDefaultEditPreviewPart(
-                    inputText = part.normalizedFoodText,
-                    trigger = part.shortcutTrigger,
-                    quantity = part.quantity,
-                    quantityUnit = part.quantityUnit,
-                    default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
-                )
+                part.toPreviewPart()
             },
         )
     }
@@ -478,8 +471,7 @@ class FoodLogRepository(
                 defaultLogDate = rawEntry.logDate,
             )
             val resolvedTime = consumedTime ?: parsed.consumedTime ?: rawEntry.consumedTime
-            val resolvedDefaults = parsed.parts
-                .map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
+            val resolvedDefaults = resolveDefaults(parsed.parts)
 
             if (resolvedDefaults.isNotEmpty() && resolvedDefaults.all { (_, default) -> default != null }) {
                 val createdAt = dateTimeProvider.nowInstant()
@@ -539,15 +531,7 @@ class FoodLogRepository(
             today = dateTimeProvider.today(),
             defaultLogDate = rawEntry.logDate,
         )
-        val previewParts = parsed.parts.map { part ->
-            FoodItemDefaultEditPreviewPart(
-                inputText = part.normalizedFoodText,
-                trigger = part.shortcutTrigger,
-                quantity = part.quantity,
-                quantityUnit = part.quantityUnit,
-                default = part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
-            )
-        }
+        val previewParts = parsed.parts.map { part -> part.toPreviewPart() }
         if (previewParts.size <= 1) {
             return PendingEntryResolutionPreviewResult.SinglePart(
                 part = previewParts.singleOrNull(),
@@ -871,6 +855,18 @@ class FoodLogRepository(
             calendarDate = calendarToday,
             localTime = localTime,
             dayBoundaryTime = appSettingsDao.getById()?.dayBoundaryTime,
+        )
+
+    private suspend fun resolveDefaults(parts: List<ParsedFoodPart>): List<Pair<ParsedFoodPart, UserDefaultEntity?>> =
+        parts.map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
+
+    private suspend fun ParsedFoodPart.toPreviewPart(): FoodItemDefaultEditPreviewPart =
+        FoodItemDefaultEditPreviewPart(
+            inputText = normalizedFoodText,
+            trigger = shortcutTrigger,
+            quantity = quantity,
+            quantityUnit = quantityUnit,
+            default = shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
         )
 
     sealed interface SubmitResult {

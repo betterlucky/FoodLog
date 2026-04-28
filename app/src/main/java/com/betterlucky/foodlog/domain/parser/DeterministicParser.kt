@@ -89,7 +89,7 @@ class DeterministicParser {
         if (prefixMatch != null) {
             return TimedFoodText(
                 foodText = prefixMatch.groupValues[2],
-                consumedTime = parseTimeText(prefixMatch.groupValues[1]),
+                consumedTime = TimeTextParser.parse(prefixMatch.groupValues[1]),
             )
         }
 
@@ -97,7 +97,7 @@ class DeterministicParser {
         if (suffixMatch != null) {
             return TimedFoodText(
                 foodText = suffixMatch.groupValues[1],
-                consumedTime = parseTimeText(suffixMatch.groupValues[2]),
+                consumedTime = TimeTextParser.parse(suffixMatch.groupValues[2]),
             )
         }
 
@@ -219,27 +219,8 @@ class DeterministicParser {
         val consumedTime: LocalTime?,
     )
 
-    private fun parseTimeText(value: String): LocalTime {
-        val compact = value.replace(" ", "")
-        val meridiem = when {
-            compact.endsWith("am") -> "am"
-            compact.endsWith("pm") -> "pm"
-            else -> ""
-        }
-        val timeText = compact.removeSuffix("am").removeSuffix("pm")
-        val parts = timeText.split(":")
-        val hour = parts[0].toInt()
-        val minute = parts.getOrNull(1)?.toInt() ?: 0
-        val resolvedHour = when (meridiem) {
-            "am" -> if (hour == 12) 0 else hour
-            "pm" -> if (hour == 12) 12 else hour + 12
-            else -> hour
-        }
-        return LocalTime.of(resolvedHour, minute)
-    }
-
     private companion object {
-        private const val TIME_PATTERN = "(?:[01]?\\d|2[0-3]):[0-5]\\d|(?:0?[1-9]|1[0-2])(?::[0-5]\\d)?\\s*(?:am|pm)"
+        private const val TIME_PATTERN = TimeTextParser.PATTERN
         private const val UNIT_PATTERN = "slices?|pieces?|servings?|portions?|pots?|cups?|crackers?|biscuits?|bars?|bowls?|spoons?|tablespoons?|teaspoons?"
         private const val FRUIT_AND_NUT_MIX_TOKEN = "__fruit_nut_mix__"
     }
