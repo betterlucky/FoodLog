@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -45,7 +44,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,7 +64,6 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlin.math.floor
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,8 +84,9 @@ fun TodayScreen(
     var pickingDate by remember { mutableStateOf(false) }
     var loggedItemsViewMode by remember { mutableStateOf(LoggedItemsViewMode.Time) }
     var expandedLoggedClumps by remember { mutableStateOf(emptySet<String>()) }
+    var pendingExpanded by remember(uiState.selectedDate) { mutableStateOf(uiState.pendingEntries.isNotEmpty()) }
+    var loggedExpanded by remember(uiState.selectedDate) { mutableStateOf(uiState.items.isNotEmpty()) }
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val readiness = dailyReadiness(
         dailyStatus = uiState.dailyStatus,
         pendingCount = uiState.pendingEntries.size,
@@ -128,28 +126,62 @@ fun TodayScreen(
             onEdit = { editingBoundary = true },
         )
 
-        Row(
+        LaunchedEffect(uiState.pendingEntries.size) {
+            if (uiState.pendingEntries.isNotEmpty()) {
+                pendingExpanded = true
+            }
+        }
+
+        LaunchedEffect(uiState.items.size) {
+            if (uiState.items.isNotEmpty()) {
+                loggedExpanded = true
+            }
+        }
+
+        TodayStatusSummary(
+            totalCalories = uiState.totalCalories,
+            pendingCount = uiState.pendingEntries.size,
+            dailyStatus = uiState.dailyStatus,
+            readiness = readiness,
+        )
+
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             OutlinedTextField(
                 value = uiState.inputText,
                 onValueChange = viewModel::onInputChanged,
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxWidth()
                     .heightIn(min = 96.dp, max = 180.dp),
                 minLines = 2,
                 maxLines = 5,
                 label = { Text("Type food naturally") },
             )
-            Button(
-                onClick = {
-                    focusManager.clearFocus()
-                    viewModel.submit()
-                },
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Log")
+                Button(
+                    onClick = {
+                        focusManager.clearFocus()
+                        viewModel.submit()
+                    },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Log")
+                }
+                Button(
+                    onClick = { showingShortcuts = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    ),
+                ) {
+                    Text("Shortcuts")
+                }
             }
         }
 
@@ -161,56 +193,6 @@ fun TodayScreen(
             )
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Button(
-                onClick = { showingShortcuts = true },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                ),
-            ) {
-                Text("Shortcuts")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "${uiState.totalCalories.toInt()} kcal",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                if (uiState.pendingEntries.isNotEmpty()) {
-                    Text(
-                        text = "${uiState.pendingEntries.size} pending ${if (uiState.pendingEntries.size == 1) "entry" else "entries"}",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else {
-                    Text(
-                        text = readiness.label,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-            if (readiness != DailyReadiness.NoFoodLogged) {
-                TextButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            val lastIndex = (listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)
-                            listState.animateScrollToItem(lastIndex)
-                        }
-                    },
-                ) {
-                    Text("Close day")
-                }
-            }
-        }
-
         HorizontalDivider()
 
         LazyColumn(
@@ -219,13 +201,18 @@ fun TodayScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
-                SectionTitle("Pending")
+                CollapsibleSectionHeader(
+                    title = "Pending (${uiState.pendingEntries.size})",
+                    detail = pendingCountText(uiState.pendingEntries.size),
+                    expanded = pendingExpanded,
+                    onToggle = { pendingExpanded = !pendingExpanded },
+                )
             }
-            if (uiState.pendingEntries.isEmpty()) {
+            if (pendingExpanded && uiState.pendingEntries.isEmpty()) {
                 item {
                     EmptyState("No pending entries for this day.")
                 }
-            } else {
+            } else if (pendingExpanded) {
                 items(uiState.pendingEntries) { entry ->
                     PendingEntryRow(
                         entry = entry,
@@ -236,13 +223,21 @@ fun TodayScreen(
 
             item {
                 Spacer(modifier = Modifier.height(12.dp))
-                SectionTitle("Logged Items")
+                CollapsibleSectionHeader(
+                    title = "Logged (${uiState.items.size})",
+                    detail = loggedItemsSummary(
+                        itemCount = uiState.items.size,
+                        totalCalories = uiState.totalCalories,
+                    ),
+                    expanded = loggedExpanded,
+                    onToggle = { loggedExpanded = !loggedExpanded },
+                )
             }
-            if (uiState.items.isEmpty()) {
+            if (loggedExpanded && uiState.items.isEmpty()) {
                 item {
                     EmptyState("No food logged for this day yet.")
                 }
-            } else {
+            } else if (loggedExpanded) {
                 item {
                     LoggedItemsViewControls(
                         selectedMode = loggedItemsViewMode,
@@ -300,15 +295,6 @@ fun TodayScreen(
                 DailyWeightRow(
                     dailyWeight = uiState.dailyWeight,
                     onEdit = { editingWeight = true },
-                )
-            }
-
-            item {
-                ExportStatus(
-                    dailyStatus = uiState.dailyStatus,
-                    pendingCount = uiState.pendingEntries.size,
-                    foodItemCount = uiState.items.size,
-                    hasDailyWeight = uiState.dailyWeight != null,
                 )
             }
 
@@ -557,47 +543,6 @@ private fun FoodDaySettingsRow(
 }
 
 @Composable
-private fun ExportStatus(
-    dailyStatus: DailyStatusEntity?,
-    pendingCount: Int,
-    foodItemCount: Int,
-    hasDailyWeight: Boolean,
-) {
-    val readiness = dailyReadiness(
-        dailyStatus = dailyStatus,
-        pendingCount = pendingCount,
-        foodItemCount = foodItemCount,
-        hasDailyWeight = hasDailyWeight,
-    )
-
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(
-            text = "Daily status: ${readiness.label}",
-            color = when (readiness) {
-                DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.error
-                DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary
-                DailyReadiness.NoFoodLogged,
-                DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            fontWeight = FontWeight.SemiBold,
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Text(
-            text = "Health Monitor: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt, dailyStatus?.legacyExportFileName)}",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (pendingCount > 0) {
-            Text(
-                text = "$pendingCount pending ${if (pendingCount == 1) "entry" else "entries"} before export",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-}
-
-@Composable
 private fun DailyClosePrompt(
     dailyStatus: DailyStatusEntity?,
     pendingCount: Int,
@@ -672,6 +617,23 @@ private fun DailyReadiness.closePromptText(): String =
         DailyReadiness.AlreadyExported -> "Health Monitor export is current."
     }
 
+private fun pendingCountText(count: Int): String =
+    when (count) {
+        0 -> "all clear"
+        1 -> "1 item"
+        else -> "$count items"
+    }
+
+private fun loggedItemsSummary(
+    itemCount: Int,
+    totalCalories: Double,
+): String =
+    when (itemCount) {
+        0 -> "empty"
+        1 -> "1 item - ${totalCalories.toInt()} kcal"
+        else -> "$itemCount items - ${totalCalories.toInt()} kcal"
+    }
+
 private val FoodLogCardShape = RoundedCornerShape(8.dp)
 
 private enum class LoggedItemsViewMode(val label: String) {
@@ -681,13 +643,110 @@ private enum class LoggedItemsViewMode(val label: String) {
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text = text,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.titleMedium,
-    )
+private fun TodayStatusSummary(
+    totalCalories: Double,
+    pendingCount: Int,
+    dailyStatus: DailyStatusEntity?,
+    readiness: DailyReadiness,
+) {
+    val color = when (readiness) {
+        DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.error
+        DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary
+        DailyReadiness.NoFoodLogged,
+        DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = FoodLogCardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column {
+                    Text(
+                        text = "Today",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = "${totalCalories.toInt()} kcal",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "$pendingCount pending",
+                        color = if (pendingCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (pendingCount > 0) FontWeight.SemiBold else FontWeight.Normal,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = readiness.label,
+                        color = color,
+                        fontWeight = if (readiness == DailyReadiness.ReadyToExport) FontWeight.SemiBold else FontWeight.Normal,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            if (readiness != DailyReadiness.NoFoodLogged) {
+                Text(
+                    text = "Health Monitor: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt, dailyStatus?.legacyExportFileName)}",
+                    color = color,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollapsibleSectionHeader(
+    title: String,
+    detail: String? = null,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        detail?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text(
+            text = if (expanded) "Hide" else "Show",
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
 }
 
 @Composable
@@ -1018,35 +1077,40 @@ private fun PendingEntryRow(
     onResolve: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onResolve),
         shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
         ),
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = entry.displayFoodText(), fontWeight = FontWeight.SemiBold)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = entry.displayFoodText(),
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = listOfNotNull("Needs review", entry.consumedTime?.let { "Time: $it" }).joinToString(" - "),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             Text(
-                text = listOfNotNull("Needs review", entry.consumedTime?.let { "Time: $it" }).joinToString(" - "),
-                color = MaterialTheme.colorScheme.onErrorContainer,
+                text = "Review",
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.bodySmall,
             )
-            Button(
-                onClick = onResolve,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-                modifier = Modifier
-                    .align(Alignment.End)
-                    .padding(top = 8.dp),
-            ) {
-                Text("Resolve")
-            }
         }
     }
 }
