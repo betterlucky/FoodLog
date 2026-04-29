@@ -8,6 +8,7 @@ import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.intent.EntryIntent
+import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -62,11 +63,56 @@ data class BarcodeProductReview(
     val packageSizeGrams: Double?,
     val packageItemCount: Double?,
     val kcalPer100g: Double?,
+    val kcalPerServing: Double?,
+    val servingUnit: String?,
     val servingSizeGrams: Double?,
     val lastLoggedGrams: Double?,
+    val proteinPer100g: Double?,
+    val fiberPer100g: Double?,
+    val carbsPer100g: Double?,
+    val fatPer100g: Double?,
+    val sugarsPer100g: Double?,
+    val saltPer100g: Double?,
+    val labelDerived: Boolean = false,
     val note: String?,
     val requiresManualNutrition: Boolean,
-)
+) {
+    fun withLabelFacts(facts: LabelNutritionFacts): BarcodeProductReview {
+        val labelNote = buildString {
+            append(if (facts.isPartial) "Label read partially; check values before logging." else "Label values applied; check before logging.")
+            if (facts.prepared) append(" Prepared serving detected.")
+            if (facts.kcalPerServing != null && kcalPerServing != null && kotlin.math.abs(facts.kcalPerServing - kcalPerServing) > 1.0) {
+                append(" Label: ${facts.kcalPerServing.formatForMessage()} kcal")
+                facts.servingUnit?.let { append(" per $it") }
+                append("; barcode: ${kcalPerServing.formatForMessage()} kcal.")
+            }
+        }
+        return copy(
+            packageSizeGrams = facts.packageSizeGrams ?: packageSizeGrams,
+            packageItemCount = facts.packageItemCount ?: packageItemCount,
+            kcalPer100g = facts.kcalPer100g ?: kcalPer100g,
+            kcalPerServing = facts.kcalPerServing ?: kcalPerServing,
+            servingUnit = facts.servingUnit ?: servingUnit,
+            servingSizeGrams = facts.servingSizeGrams ?: servingSizeGrams,
+            proteinPer100g = facts.proteinPer100g ?: proteinPer100g,
+            fiberPer100g = facts.fiberPer100g ?: fiberPer100g,
+            carbsPer100g = facts.carbsPer100g ?: carbsPer100g,
+            fatPer100g = facts.fatPer100g ?: fatPer100g,
+            sugarsPer100g = facts.sugarsPer100g ?: sugarsPer100g,
+            saltPer100g = facts.saltPer100g ?: saltPer100g,
+            labelDerived = true,
+            note = labelNote,
+            requiresManualNutrition = facts.kcalPer100g == null && facts.kcalPerServing == null,
+        )
+    }
+}
+
+private fun Double.formatForMessage(): String =
+    if (this % 1.0 == 0.0) {
+        toInt().toString()
+    } else {
+        String.format(java.util.Locale.US, "%.1f", this)
+    }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TodayViewModel(
@@ -163,6 +209,9 @@ class TodayViewModel(
         packageItemCount: String,
         consumedItemCount: String,
         kcalPer100g: String,
+        kcalPerServing: String,
+        servingUnit: String,
+        consumedServingCount: String,
         grams: String,
         time: String,
         onLogged: () -> Unit,
@@ -172,6 +221,8 @@ class TodayViewModel(
             val parsedPackageItemCount = packageItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
             val parsedConsumedItemCount = consumedItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
             val parsedKcalPer100g = kcalPer100g.toDoubleOrNull()?.takeIf { it > 0.0 }
+            val parsedKcalPerServing = kcalPerServing.toDoubleOrNull()?.takeIf { it > 0.0 }
+            val parsedConsumedServingCount = consumedServingCount.toDoubleOrNull()?.takeIf { it > 0.0 }
             val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 }
             val parsedTime = time.takeIf { it.isNotBlank() }?.let(TimeTextParser::parseOrNull)
             val result = repository.logBarcodeProduct(
@@ -186,7 +237,17 @@ class TodayViewModel(
                     consumedItemCount = parsedConsumedItemCount,
                     servingSizeGrams = review.servingSizeGrams,
                     kcalPer100g = parsedKcalPer100g,
+                    kcalPerServing = parsedKcalPerServing,
+                    servingUnit = servingUnit,
+                    consumedServingCount = parsedConsumedServingCount,
                     grams = parsedGrams,
+                    proteinPer100g = review.proteinPer100g,
+                    fiberPer100g = review.fiberPer100g,
+                    carbsPer100g = review.carbsPer100g,
+                    fatPer100g = review.fatPer100g,
+                    sugarsPer100g = review.sugarsPer100g,
+                    saltPer100g = review.saltPer100g,
+                    labelDerived = review.labelDerived,
                 ),
             )
             message.value = when (result) {
@@ -195,7 +256,7 @@ class TodayViewModel(
                     "Logged barcode product for ${result.logDate}"
                 }
                 FoodLogRepository.BarcodeLogResult.InvalidInput ->
-                    "Add product name, kcal per 100g, and amount or package size."
+                    "Add product name, calories, and an amount."
             }
         }
     }
@@ -772,8 +833,16 @@ private fun FoodLogRepository.BarcodeProductDraft.toReview(): BarcodeProductRevi
         packageSizeGrams = packageSizeGrams,
         packageItemCount = packageItemCount,
         kcalPer100g = kcalPer100g,
+        kcalPerServing = kcalPerServing,
+        servingUnit = servingUnit,
         servingSizeGrams = servingSizeGrams,
         lastLoggedGrams = lastLoggedGrams,
+        proteinPer100g = null,
+        fiberPer100g = null,
+        carbsPer100g = null,
+        fatPer100g = null,
+        sugarsPer100g = null,
+        saltPer100g = null,
         note = note,
         requiresManualNutrition = requiresManualNutrition,
     )

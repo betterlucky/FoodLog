@@ -56,6 +56,7 @@ import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
+import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import java.time.Instant
 import java.time.LocalDate
@@ -71,6 +72,8 @@ fun TodayScreen(
     viewModel: TodayViewModel,
     onShareCsv: (String, String) -> Unit,
     onScanBarcode: ((String) -> Unit, (String) -> Unit) -> Unit,
+    onTakeLabelPhoto: ((LabelNutritionFacts) -> Unit, (String) -> Unit) -> Unit,
+    onChooseLabelImage: ((LabelNutritionFacts) -> Unit, (String) -> Unit) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
@@ -85,6 +88,7 @@ fun TodayScreen(
     var pickingDate by remember { mutableStateOf(false) }
     var enteringBarcode by remember { mutableStateOf(false) }
     var reviewingBarcode by remember { mutableStateOf<BarcodeProductReview?>(null) }
+    var choosingLabelImage by remember { mutableStateOf(false) }
     var loggedItemsViewMode by remember { mutableStateOf(LoggedItemsViewMode.Time) }
     var expandedLoggedClumps by remember { mutableStateOf(emptySet<String>()) }
     var pendingExpanded by remember(uiState.selectedDate) { mutableStateOf(uiState.pendingEntries.isNotEmpty()) }
@@ -556,6 +560,7 @@ fun TodayScreen(
         BarcodeProductReviewDialog(
             review = review,
             onDismiss = { reviewingBarcode = null },
+            onUseLabel = { choosingLabelImage = true },
             onRefresh = {
                 viewModel.prepareBarcodeReview(
                     barcode = review.barcode,
@@ -564,7 +569,7 @@ fun TodayScreen(
                     onManualRequired = { reviewingBarcode = it },
                 )
             },
-            onLog = { name, brand, packageSizeGrams, packageItemCount, consumedItemCount, kcalPer100g, grams, time ->
+            onLog = { name, brand, packageSizeGrams, packageItemCount, consumedItemCount, kcalPer100g, kcalPerServing, servingUnit, consumedServingCount, grams, time ->
                 viewModel.logBarcodeProduct(
                     review = review,
                     name = name,
@@ -573,9 +578,32 @@ fun TodayScreen(
                     packageItemCount = packageItemCount,
                     consumedItemCount = consumedItemCount,
                     kcalPer100g = kcalPer100g,
+                    kcalPerServing = kcalPerServing,
+                    servingUnit = servingUnit,
+                    consumedServingCount = consumedServingCount,
                     grams = grams,
                     time = time,
                     onLogged = { reviewingBarcode = null },
+                )
+            },
+        )
+    }
+
+    if (choosingLabelImage) {
+        LabelImageSourceDialog(
+            onDismiss = { choosingLabelImage = false },
+            onTakePhoto = {
+                choosingLabelImage = false
+                onTakeLabelPhoto(
+                    { facts -> reviewingBarcode = reviewingBarcode?.withLabelFacts(facts) },
+                    { /* Message is surfaced by MainActivity for now. */ },
+                )
+            },
+            onChooseImage = {
+                choosingLabelImage = false
+                onChooseLabelImage(
+                    { facts -> reviewingBarcode = reviewingBarcode?.withLabelFacts(facts) },
+                    { /* Message is surfaced by MainActivity for now. */ },
                 )
             },
         )
@@ -1146,6 +1174,69 @@ private fun RawEntryEntity.displayFoodText(): String {
     return suffixMatch?.groupValues?.get(1) ?: normalizedRawText
 }
 
+private fun BarcodeProductReview.preferredBarcodeDefaultGrams(): Double? {
+    val servingDefault = servingSizeGrams?.takeIf { it > 0.0 && kcalPerServing != null }
+    val packageDefault = packageSizeGrams?.takeIf { it > 0.0 }
+    val previousDefault = lastLoggedGrams?.takeIf { it > 0.0 }
+    val previousLooksLikeDryPack = previousDefault != null &&
+        packageDefault != null &&
+        servingDefault != null &&
+        kotlin.math.abs(previousDefault - packageDefault) < 0.01 &&
+        servingDefault > packageDefault * 2.0
+
+    return when {
+        previousLooksLikeDryPack -> servingDefault
+        previousDefault != null -> previousDefault
+        servingDefault != null -> servingDefault
+        else -> packageDefault
+    }
+}
+
+private fun BarcodeProductReview.defaultAmountText(
+    parsedPackageGrams: Double,
+    grams: String,
+): String? {
+    val displayedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
+    val servingDefault = servingSizeGrams?.takeIf { it > 0.0 && kcalPerServing != null }
+    return when {
+        servingDefault != null && kotlin.math.abs(displayedGrams - servingDefault) < 0.01 ->
+            "Default: serving - ${servingDefault.formatAmount()}g"
+        lastLoggedGrams != null && kotlin.math.abs(displayedGrams - lastLoggedGrams) < 0.01 ->
+            "Default: last amount - ${lastLoggedGrams.formatAmount()}g"
+        kotlin.math.abs(displayedGrams - parsedPackageGrams) < 0.01 ->
+            "Default: whole package - ${parsedPackageGrams.formatAmount()}g"
+        else -> null
+    }
+}
+
+@Composable
+private fun LabelImageSourceDialog(
+    onDismiss: () -> Unit,
+    onTakePhoto: () -> Unit,
+    onChooseImage: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Use label") },
+        text = { Text("Use one clear photo of the nutrition label. You can check and edit the values before logging.") },
+        confirmButton = {
+            Button(onClick = onTakePhoto) {
+                Text("Take photo")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onChooseImage) {
+                    Text("Choose image")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        },
+    )
+}
+
 @Composable
 private fun ManualBarcodeDialog(
     onDismiss: () -> Unit,
@@ -1181,8 +1272,9 @@ private fun ManualBarcodeDialog(
 private fun BarcodeProductReviewDialog(
     review: BarcodeProductReview,
     onDismiss: () -> Unit,
+    onUseLabel: () -> Unit,
     onRefresh: () -> Unit,
-    onLog: (String, String, String, String, String, String, String, String) -> Unit,
+    onLog: (String, String, String, String, String, String, String, String, String, String, String) -> Unit,
 ) {
     var name by remember(review.barcode, review.name) { mutableStateOf(review.name) }
     var brand by remember(review.barcode, review.brand) { mutableStateOf(review.brand) }
@@ -1200,21 +1292,35 @@ private fun BarcodeProductReviewDialog(
     var kcalPer100g by remember(review.barcode, review.kcalPer100g) {
         mutableStateOf(review.kcalPer100g?.formatAmount().orEmpty())
     }
-    var grams by remember(review.barcode, review.lastLoggedGrams, review.packageSizeGrams) {
-        mutableStateOf(review.lastLoggedGrams?.formatAmount().orEmpty())
+    var kcalPerServing by remember(review.barcode, review.kcalPerServing) {
+        mutableStateOf(review.kcalPerServing?.formatAmount().orEmpty())
+    }
+    var servingUnit by remember(review.barcode, review.servingUnit) {
+        mutableStateOf(review.servingUnit.orEmpty())
+    }
+    var consumedServingCount by remember(review.barcode, review.kcalPerServing) {
+        mutableStateOf(if (review.kcalPerServing != null) "1" else "")
+    }
+    val defaultGrams = review.preferredBarcodeDefaultGrams()
+    var grams by remember(review.barcode, defaultGrams) {
+        mutableStateOf(defaultGrams?.formatAmount().orEmpty())
     }
     var time by remember(review.barcode) { mutableStateOf("") }
     val parsedPackageGrams = packageSizeGrams.toDoubleOrNull()?.takeIf { it > 0.0 }
     val parsedPackageItems = packageItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
     val parsedConsumedItems = consumedItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
     val parsedKcal = kcalPer100g.toDoubleOrNull()?.takeIf { it > 0.0 }
+    val parsedKcalServing = kcalPerServing.toDoubleOrNull()?.takeIf { it > 0.0 }
+    val parsedServingCount = consumedServingCount.toDoubleOrNull()?.takeIf { it > 0.0 }
     val gramsFromItems = if (parsedPackageGrams != null && parsedPackageItems != null && parsedConsumedItems != null) {
         parsedPackageGrams * parsedConsumedItems / parsedPackageItems
     } else {
         null
     }
     val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: gramsFromItems ?: parsedPackageGrams
-    val estimatedCalories = if (parsedKcal != null && parsedGrams != null) {
+    val estimatedCalories = if (parsedKcalServing != null && parsedServingCount != null) {
+        parsedKcalServing * parsedServingCount
+    } else if (parsedKcal != null && parsedGrams != null) {
         parsedKcal * parsedGrams / 100.0
     } else {
         null
@@ -1271,6 +1377,23 @@ private fun BarcodeProductReviewDialog(
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
+                            value = kcalPerServing,
+                            onValueChange = { kcalPerServing = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("kcal/serving") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        )
+                        OutlinedTextField(
+                            value = servingUnit,
+                            onValueChange = { servingUnit = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Serving unit") },
+                        )
+                    }
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
                             value = packageItemCount,
                             onValueChange = { packageItemCount = it },
                             modifier = Modifier.weight(1f),
@@ -1289,14 +1412,31 @@ private fun BarcodeProductReviewDialog(
                         )
                     }
                 }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = consumedServingCount,
+                            onValueChange = {
+                                consumedServingCount = it
+                                grams = ""
+                                consumedItemCount = ""
+                            },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Servings eaten") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        )
+                        TextButton(
+                            onClick = onUseLabel,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("Use label")
+                        }
+                    }
+                }
                 if (parsedPackageGrams != null) {
                     item {
                         Text(
-                            text = if (review.lastLoggedGrams == null && grams == parsedPackageGrams.formatAmount()) {
-                                "Default: whole package - ${parsedPackageGrams.formatAmount()}g"
-                            } else {
-                                "Choose package fraction"
-                            },
+                            text = review.defaultAmountText(parsedPackageGrams, grams) ?: "Choose package fraction",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -1313,6 +1453,7 @@ private fun BarcodeProductReviewDialog(
                                 OutlinedButton(
                                     onClick = {
                                         consumedItemCount = ""
+                                        consumedServingCount = ""
                                         grams = (parsedPackageGrams * fraction).formatAmount()
                                     },
                                     modifier = Modifier.weight(1f),
@@ -1331,6 +1472,7 @@ private fun BarcodeProductReviewDialog(
                             onValueChange = {
                                 grams = it
                                 consumedItemCount = ""
+                                consumedServingCount = ""
                             },
                             modifier = Modifier.weight(1f),
                             label = { Text("Amount g") },
@@ -1358,7 +1500,19 @@ private fun BarcodeProductReviewDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onLog(name, brand, packageSizeGrams, packageItemCount, consumedItemCount, kcalPer100g, grams, time)
+                    onLog(
+                        name,
+                        brand,
+                        packageSizeGrams,
+                        packageItemCount,
+                        consumedItemCount,
+                        kcalPer100g,
+                        kcalPerServing,
+                        servingUnit,
+                        consumedServingCount,
+                        grams,
+                        time,
+                    )
                 },
             ) {
                 Text("Log")
@@ -1366,6 +1520,9 @@ private fun BarcodeProductReviewDialog(
         },
         dismissButton = {
             Row {
+                TextButton(onClick = onUseLabel) {
+                    Text("Use label")
+                }
                 TextButton(onClick = onRefresh) {
                     Text("Refresh")
                 }

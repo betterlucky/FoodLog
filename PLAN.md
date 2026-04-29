@@ -285,16 +285,20 @@ Lookup and cache behavior:
 - The review screen has an explicit `Refresh` action to re-check Open Food Facts before the user confirms logging.
 - Offline cached barcodes remain loggable from local product data.
 - Offline uncached, not-found, or nutrition-incomplete products open the manual barcode product review path.
+- Barcode data is a convenience source, not the source of truth. User-confirmed label values should outrank cached or remote barcode values.
+- If Open Food Facts returns `nutrition_data_prepared_per`, treat the product as preparation-sensitive: prefer serving data where available and make the review state clear before logging.
 
 Review behavior:
 
 - Every scan opens a review dialog before logging.
 - Review shows product name, brand, barcode context, kcal per 100g, package grams, amount grams, time, and cache/offline notes.
 - Default amount is the product's last logged grams when present.
+- If the remembered last amount appears to be a dry-pack amount but the product has a larger prepared serving, prefer the prepared serving for review.
 - If no last amount exists and package grams are known, default visibly to the whole package.
 - If package grams are unknown, grams are required before logging.
 - Package fraction buttons are shown only when package grams are known: whole, two-thirds, half, third, and quarter.
 - When the package contains a known number of items, review can calculate grams and calories from an `Items eaten` value, for example 1 sausage from a 6-sausage pack.
+- Future OCR/AI label extraction should display conflicts explicitly, for example `Label: 83 kcal per cup` versus `Barcode: 91.8 kcal per cup`, and default to the visible label.
 - Users may edit package grams and nutrition before logging.
 
 Logging behavior:
@@ -303,6 +307,18 @@ Logging behavior:
 - The food row links to `productId`, stores grams, calculates calories from kcal per 100g, and uses `source = SAVED_LABEL`.
 - Logging updates the product's `lastLoggedGrams`.
 - Existing non-barcode shortcuts stay separate. Barcode V1 does not overwrite, merge, or fuzzy-match shortcuts.
+
+### OCR Label Capture V1
+
+Label OCR is a one-photo helper for the barcode/manual product review flow:
+
+- Use bundled on-device ML Kit Latin text recognition.
+- `Use label` in product review lets the user take one photo or choose one existing image.
+- OCR values pre-fill the same review dialog; the user still confirms before logging.
+- The parser is conservative and currently targets common UK label patterns such as `33 kcal per 100g`, `83 kcal per cup`, `1 cup (255g)`, `servings per sachet - 1`, and `6 x 50g`.
+- Label-derived values outrank barcode values when they conflict.
+- Direct serving calories such as `83 kcal per cup` can be logged with a friendly unit while grams remain stored when known.
+- Optional nutrient fields captured for future use include protein, fibre, carbs, fat, sugars, and salt.
 
 ## CSV Export
 
@@ -461,6 +477,7 @@ Add focused tests for Phase 1 behavior:
 - Whole, two-thirds, half, third, and quarter package buttons calculate grams and calories when package size is known.
 - Barcode/manual product review can calculate grams and calories from pack item count, for example `6 x 50g` and `1 item`.
 - Barcode products log into daily totals and the Health Monitor CSV like other food rows.
+- OCR label parser extracts the tomato soup label as `33 kcal per 100g`, `83 kcal per cup`, prepared/cup serving, and obvious per-100g nutrients.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.
 - `AuditCsvExporter` header matches the rich schema exactly.
 - CSV export includes active rows, handles blank times, and escapes commas/quotes/newlines.
@@ -474,7 +491,8 @@ Later phases may add:
 
 - richer shortcut/default management screens
 - structured OpenAI text parser behind an interface
-- nutrition-label photo extraction
+- richer nutrition-label photo extraction and AI image extraction for labels ML Kit cannot parse cleanly
+- richer prepared-versus-dry product handling, including human serving units such as sachet, slice, or sausage while preserving grams internally
 - optional protein/fibre and broader nutrient logging once the food-row/export contracts are ready
 - product review and confirmation screens
 - product matching with stale-cache protection

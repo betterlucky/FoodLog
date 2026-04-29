@@ -3,4 +3,7 @@
     <cache-path
         name="exports"
         path="exports/" />
+    <cache-path
+        name="label_images"
+        path="label-images/" />
 </paths>

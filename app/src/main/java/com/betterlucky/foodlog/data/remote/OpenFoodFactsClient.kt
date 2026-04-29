@@ -16,11 +16,15 @@ data class OpenFoodFactsProduct(
     val packageSizeGrams: Double?,
     val packageItemCount: Double?,
     val servingSizeGrams: Double?,
+    val servingUnit: String?,
     val kcalPer100g: Double?,
     val kcalPerServing: Double?,
     val proteinPer100g: Double?,
     val carbsPer100g: Double?,
     val fatPer100g: Double?,
+    val fiberPer100g: Double?,
+    val sugarsPer100g: Double?,
+    val saltPer100g: Double?,
     val url: String?,
 )
 
@@ -87,8 +91,9 @@ class OpenFoodFactsClient {
         val kcalPer100g = nutriments?.optNullableDouble("energy-kcal_100g")
             ?: nutriments?.optNullableDouble("energy_100g")?.let { it / 4.184 }
         val packageQuantity = product.optStringOrNull("quantity")?.parsePackageQuantity()
+        val servingSizeText = product.optStringOrNull("serving_size")
         val servingSizeGrams = product.optNullableDouble("serving_quantity")
-            ?: product.optStringOrNull("serving_size")?.parseGrams()
+            ?: servingSizeText?.parseGrams()
 
         return OpenFoodFactsLookupResult.Found(
             OpenFoodFactsProduct(
@@ -98,6 +103,7 @@ class OpenFoodFactsClient {
                 packageSizeGrams = packageQuantity?.grams,
                 packageItemCount = packageQuantity?.itemCount,
                 servingSizeGrams = servingSizeGrams,
+                servingUnit = servingSizeText?.parseServingUnit(),
                 kcalPer100g = kcalPer100g,
                 kcalPerServing = servingSizeGrams?.let { grams ->
                     kcalPer100g?.let { kcal -> kcal * grams / 100.0 }
@@ -105,6 +111,9 @@ class OpenFoodFactsClient {
                 proteinPer100g = nutriments?.optNullableDouble("proteins_100g"),
                 carbsPer100g = nutriments?.optNullableDouble("carbohydrates_100g"),
                 fatPer100g = nutriments?.optNullableDouble("fat_100g"),
+                fiberPer100g = nutriments?.optNullableDouble("fiber_100g"),
+                sugarsPer100g = nutriments?.optNullableDouble("sugars_100g"),
+                saltPer100g = nutriments?.optNullableDouble("salt_100g"),
                 url = product.optStringOrNull("url"),
             ),
         )
@@ -133,6 +142,12 @@ private fun String.parseGrams(): Double? {
     val value = match.groupValues[1].toDoubleOrNull() ?: return null
     return value.toGrams(match.groupValues[2])
 }
+
+private fun String.parseServingUnit(): String? =
+    lowercase()
+        .let { Regex("""\b(?:1\s+)?(cup|serving|sachet|slice|item|bar|portion)\b""").find(it) }
+        ?.groupValues
+        ?.get(1)
 
 private fun String.parsePackageQuantity(): PackageQuantityInfo {
     val normalized = lowercase().replace(",", ".")

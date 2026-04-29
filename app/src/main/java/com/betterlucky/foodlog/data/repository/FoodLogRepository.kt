@@ -328,9 +328,12 @@ class FoodLogRepository(
             val name = input.name.trim()
             val brand = input.brand?.trim().orEmpty().ifBlank { null }
             val kcalPer100g = input.kcalPer100g?.takeIf { it > 0.0 }
+            val kcalPerServing = input.kcalPerServing?.takeIf { it > 0.0 }
             val packageSizeGrams = input.packageSizeGrams?.takeIf { it > 0.0 }
             val packageItemCount = input.packageItemCount?.takeIf { it > 0.0 }
             val consumedItemCount = input.consumedItemCount?.takeIf { it > 0.0 }
+            val consumedServingCount = input.consumedServingCount?.takeIf { it > 0.0 }
+            val servingUnit = input.servingUnit?.trim().orEmpty().ifBlank { null }
             val gramsFromItems = if (packageSizeGrams != null && packageItemCount != null && consumedItemCount != null) {
                 packageSizeGrams * consumedItemCount / packageItemCount
             } else {
@@ -338,8 +341,13 @@ class FoodLogRepository(
             }
             val grams = input.grams?.takeIf { it > 0.0 } ?: gramsFromItems ?: packageSizeGrams
             val consumedTime = input.consumedTime ?: dateTimeProvider.localTime()
+            val calories = when {
+                kcalPerServing != null && consumedServingCount != null -> kcalPerServing * consumedServingCount
+                kcalPer100g != null && grams != null -> kcalPer100g * grams / 100.0
+                else -> null
+            }
 
-            if (barcode.isBlank() || name.isBlank() || kcalPer100g == null || grams == null) {
+            if (barcode.isBlank() || name.isBlank() || calories == null) {
                 return@withTransaction BarcodeLogResult.InvalidInput
             }
 
@@ -347,12 +355,14 @@ class FoodLogRepository(
                 ?: return@withTransaction BarcodeLogResult.InvalidInput
             val now = dateTimeProvider.nowInstant()
             val existing = productDao.getByBarcode(normalizedBarcode)
-            val productSource = if (existing == null || existing.kcalPer100g == null) {
+            val productSource = if (input.labelDerived) {
+                ProductSource.PACKAGING_PHOTO
+            } else if (existing == null || existing.kcalPer100g == null) {
                 ProductSource.MANUAL_BARCODE
             } else {
                 existing.source
             }
-            val confidence = if (packageSizeGrams != null || input.grams != null) {
+            val confidence = if (packageSizeGrams != null || input.grams != null || consumedServingCount != null) {
                 ConfidenceLevel.HIGH
             } else {
                 ConfidenceLevel.MEDIUM
@@ -365,11 +375,17 @@ class FoodLogRepository(
                 packageSizeGrams = packageSizeGrams,
                 packageItemCount = packageItemCount,
                 servingSizeGrams = input.servingSizeGrams?.takeIf { it > 0.0 },
+                servingUnit = servingUnit ?: existing?.servingUnit,
                 kcalPer100g = kcalPer100g,
-                kcalPerServing = input.servingSizeGrams?.takeIf { it > 0.0 }?.let { kcalPer100g * it / 100.0 },
-                proteinPer100g = existing?.proteinPer100g,
-                carbsPer100g = existing?.carbsPer100g,
-                fatPer100g = existing?.fatPer100g,
+                kcalPerServing = kcalPerServing ?: input.servingSizeGrams?.takeIf { it > 0.0 }?.let { grams ->
+                    kcalPer100g?.let { kcal -> kcal * grams / 100.0 }
+                },
+                proteinPer100g = input.proteinPer100g ?: existing?.proteinPer100g,
+                carbsPer100g = input.carbsPer100g ?: existing?.carbsPer100g,
+                fatPer100g = input.fatPer100g ?: existing?.fatPer100g,
+                fiberPer100g = input.fiberPer100g ?: existing?.fiberPer100g,
+                sugarsPer100g = input.sugarsPer100g ?: existing?.sugarsPer100g,
+                saltPer100g = input.saltPer100g ?: existing?.saltPer100g,
                 source = productSource,
                 confidence = confidence,
                 externalUrl = existing?.externalUrl,
@@ -383,7 +399,6 @@ class FoodLogRepository(
                 productDao.update(product)
                 existing.id
             }
-            val calories = kcalPer100g * grams / 100.0
             val rawEntryId = rawEntryDao.insert(
                 RawEntryEntity(
                     createdAt = now,
@@ -402,8 +417,10 @@ class FoodLogRepository(
                     consumedTime = consumedTime,
                     name = name,
                     productId = productId,
-                    amount = consumedItemCount ?: grams,
-                    unit = consumedItemCount?.let { if (it == 1.0) "item" else "items" } ?: "g",
+                    amount = consumedItemCount ?: consumedServingCount ?: grams,
+                    unit = consumedItemCount?.let { if (it == 1.0) "item" else "items" }
+                        ?: consumedServingCount?.let { servingUnit ?: if (it == 1.0) "serving" else "servings" }
+                        ?: "g",
                     grams = grams,
                     calories = calories,
                     source = FoodItemSource.SAVED_LABEL,
@@ -1049,11 +1066,15 @@ class FoodLogRepository(
             packageSizeGrams = remote.packageSizeGrams ?: existing?.packageSizeGrams,
             packageItemCount = remote.packageItemCount ?: existing?.packageItemCount,
             servingSizeGrams = remote.servingSizeGrams ?: existing?.servingSizeGrams,
+            servingUnit = remote.servingUnit ?: existing?.servingUnit,
             kcalPer100g = remote.kcalPer100g ?: existing?.kcalPer100g,
             kcalPerServing = remote.kcalPerServing ?: existing?.kcalPerServing,
             proteinPer100g = remote.proteinPer100g ?: existing?.proteinPer100g,
             carbsPer100g = remote.carbsPer100g ?: existing?.carbsPer100g,
             fatPer100g = remote.fatPer100g ?: existing?.fatPer100g,
+            fiberPer100g = remote.fiberPer100g ?: existing?.fiberPer100g,
+            sugarsPer100g = remote.sugarsPer100g ?: existing?.sugarsPer100g,
+            saltPer100g = remote.saltPer100g ?: existing?.saltPer100g,
             source = ProductSource.OPEN_FOOD_FACTS,
             confidence = if (remote.kcalPer100g != null) ConfidenceLevel.MEDIUM else ConfidenceLevel.LOW,
             externalUrl = remote.url ?: existing?.externalUrl,
@@ -1083,6 +1104,7 @@ class FoodLogRepository(
             packageItemCount = packageItemCount,
             kcalPer100g = kcalPer100g,
             kcalPerServing = kcalPerServing,
+            servingUnit = servingUnit,
             servingSizeGrams = servingSizeGrams,
             lastLoggedGrams = lastLoggedGrams,
             externalUrl = externalUrl,
@@ -1258,6 +1280,7 @@ class FoodLogRepository(
         val packageItemCount: Double? = null,
         val kcalPer100g: Double? = null,
         val kcalPerServing: Double? = null,
+        val servingUnit: String? = null,
         val servingSizeGrams: Double? = null,
         val lastLoggedGrams: Double? = null,
         val externalUrl: String? = null,
@@ -1277,7 +1300,17 @@ class FoodLogRepository(
         val consumedItemCount: Double?,
         val servingSizeGrams: Double?,
         val kcalPer100g: Double?,
+        val kcalPerServing: Double?,
+        val servingUnit: String?,
+        val consumedServingCount: Double?,
         val grams: Double?,
+        val proteinPer100g: Double? = null,
+        val fiberPer100g: Double? = null,
+        val carbsPer100g: Double? = null,
+        val fatPer100g: Double? = null,
+        val sugarsPer100g: Double? = null,
+        val saltPer100g: Double? = null,
+        val labelDerived: Boolean = false,
     )
 
     sealed interface BarcodeLogResult {
