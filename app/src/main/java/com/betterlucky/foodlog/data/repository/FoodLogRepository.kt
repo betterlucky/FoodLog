@@ -17,6 +17,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.remote.OpenFoodFactsClient
 import com.betterlucky.foodlog.data.remote.OpenFoodFactsLookupResult
 import com.betterlucky.foodlog.data.remote.OpenFoodFactsProduct
+import com.betterlucky.foodlog.domain.barcode.BarcodeNormalizer
 import com.betterlucky.foodlog.domain.export.AuditCsvExporter
 import com.betterlucky.foodlog.domain.export.LegacyHealthCsvExporter
 import com.betterlucky.foodlog.domain.dayboundary.FoodDayPolicy
@@ -251,8 +252,8 @@ class FoodLogRepository(
         barcode: String,
         forceRefresh: Boolean = false,
     ): BarcodeReviewResult {
-        val normalizedBarcode = barcode.trim()
-        if (normalizedBarcode.isBlank()) {
+        val normalizedBarcode = BarcodeNormalizer.normalize(barcode)
+        if (normalizedBarcode == null) {
             return BarcodeReviewResult.InvalidBarcode
         }
 
@@ -334,8 +335,10 @@ class FoodLogRepository(
                 return@withTransaction BarcodeLogResult.InvalidInput
             }
 
+            val normalizedBarcode = BarcodeNormalizer.normalize(barcode)
+                ?: return@withTransaction BarcodeLogResult.InvalidInput
             val now = dateTimeProvider.nowInstant()
-            val existing = productDao.getByBarcode(barcode)
+            val existing = productDao.getByBarcode(normalizedBarcode)
             val productSource = if (existing == null || existing.kcalPer100g == null) {
                 ProductSource.MANUAL_BARCODE
             } else {
@@ -348,7 +351,7 @@ class FoodLogRepository(
             }
             val product = ProductEntity(
                 id = existing?.id ?: 0,
-                barcode = barcode,
+                barcode = normalizedBarcode,
                 name = name,
                 brand = brand,
                 packageSizeGrams = packageSizeGrams,
@@ -377,7 +380,7 @@ class FoodLogRepository(
                     createdAt = now,
                     logDate = input.logDate,
                     consumedTime = consumedTime,
-                    rawText = "Barcode $barcode: $name",
+                    rawText = "Barcode $normalizedBarcode: $name",
                     entryKind = EntryKind.TEXT,
                     status = RawEntryStatus.PARSED,
                     notes = "Logged from barcode product.",
