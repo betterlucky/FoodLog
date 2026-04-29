@@ -55,6 +55,18 @@ data class PendingEntryDraft(
     val time: String,
 )
 
+data class BarcodeProductReview(
+    val barcode: String,
+    val name: String,
+    val brand: String,
+    val packageSizeGrams: Double?,
+    val kcalPer100g: Double?,
+    val servingSizeGrams: Double?,
+    val lastLoggedGrams: Double?,
+    val note: String?,
+    val requiresManualNutrition: Boolean,
+)
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TodayViewModel(
     private val repository: FoodLogRepository,
@@ -117,6 +129,68 @@ class TodayViewModel(
 
     fun logShortcut(trigger: String) {
         submitText(trigger, clearInput = false)
+    }
+
+    fun prepareBarcodeReview(
+        barcode: String,
+        forceRefresh: Boolean = false,
+        onReady: (BarcodeProductReview) -> Unit,
+        onManualRequired: (BarcodeProductReview) -> Unit,
+    ) {
+        viewModelScope.launch {
+            when (val result = repository.prepareBarcodeReview(barcode, forceRefresh)) {
+                is FoodLogRepository.BarcodeReviewResult.Ready -> {
+                    message.value = result.draft.note
+                    onReady(result.draft.toReview())
+                }
+                is FoodLogRepository.BarcodeReviewResult.ManualRequired -> {
+                    message.value = result.draft.note
+                    onManualRequired(result.draft.toReview())
+                }
+                FoodLogRepository.BarcodeReviewResult.InvalidBarcode -> {
+                    message.value = "Enter a valid barcode."
+                }
+            }
+        }
+    }
+
+    fun logBarcodeProduct(
+        review: BarcodeProductReview,
+        name: String,
+        brand: String,
+        packageSizeGrams: String,
+        kcalPer100g: String,
+        grams: String,
+        time: String,
+        onLogged: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            val parsedPackageGrams = packageSizeGrams.toDoubleOrNull()?.takeIf { it > 0.0 }
+            val parsedKcalPer100g = kcalPer100g.toDoubleOrNull()?.takeIf { it > 0.0 }
+            val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: parsedPackageGrams
+            val parsedTime = time.takeIf { it.isNotBlank() }?.let(TimeTextParser::parseOrNull)
+            val result = repository.logBarcodeProduct(
+                FoodLogRepository.BarcodeProductLogInput(
+                    barcode = review.barcode,
+                    logDate = selectedDate.value,
+                    consumedTime = parsedTime,
+                    name = name,
+                    brand = brand,
+                    packageSizeGrams = parsedPackageGrams,
+                    servingSizeGrams = review.servingSizeGrams,
+                    kcalPer100g = parsedKcalPer100g,
+                    grams = parsedGrams,
+                ),
+            )
+            message.value = when (result) {
+                is FoodLogRepository.BarcodeLogResult.Logged -> {
+                    onLogged()
+                    "Logged barcode product for ${result.logDate}"
+                }
+                FoodLogRepository.BarcodeLogResult.InvalidInput ->
+                    "Add product name, kcal per 100g, and amount or package size."
+            }
+        }
     }
 
     private fun submitText(
@@ -682,6 +756,19 @@ class TodayViewModel(
         }
     }
 }
+
+private fun FoodLogRepository.BarcodeProductDraft.toReview(): BarcodeProductReview =
+    BarcodeProductReview(
+        barcode = barcode,
+        name = name,
+        brand = brand,
+        packageSizeGrams = packageSizeGrams,
+        kcalPer100g = kcalPer100g,
+        servingSizeGrams = servingSizeGrams,
+        lastLoggedGrams = lastLoggedGrams,
+        note = note,
+        requiresManualNutrition = requiresManualNutrition,
+    )
 
 private fun parseTimeOrNull(value: String): LocalTime? {
     return TimeTextParser.parseOrNull(value)

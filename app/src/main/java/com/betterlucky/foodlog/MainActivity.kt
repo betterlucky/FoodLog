@@ -12,6 +12,7 @@ import com.betterlucky.foodlog.ui.today.TodayScreen
 import com.betterlucky.foodlog.ui.today.TodayViewModel
 import com.betterlucky.foodlog.ui.today.TodayViewModelFactory
 import com.betterlucky.foodlog.util.CsvShareHelper
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 
 class MainActivity : ComponentActivity() {
     private val viewModel: TodayViewModel by viewModels {
@@ -29,9 +30,29 @@ class MainActivity : ComponentActivity() {
                 TodayScreen(
                     viewModel = viewModel,
                     onShareCsv = ::shareCsv,
+                    onScanBarcode = ::scanBarcode,
                 )
             }
         }
+    }
+
+    private fun scanBarcode(
+        onScanned: (String) -> Unit,
+        onUnavailable: (String) -> Unit,
+    ) {
+        GmsBarcodeScanning.getClient(this)
+            .startScan()
+            .addOnSuccessListener { barcode ->
+                val rawValue = barcode.rawValue
+                if (rawValue.isNullOrBlank()) {
+                    onUnavailable("No barcode was read.")
+                } else {
+                    onScanned(rawValue)
+                }
+            }
+            .addOnFailureListener { exception ->
+                onUnavailable(exception.message ?: "Scanner unavailable. Enter the barcode manually.")
+            }
     }
 
     private fun shareCsv(

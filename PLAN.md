@@ -26,14 +26,14 @@ Use:
 - MVVM-style structure
 - local-only storage
 
-Do not implement in Phase 1:
+Do not implement in the local-only Phase 1 core:
 
 - OpenAI calls
 - backend/server integration
 - nutrition-label photo extraction
 - leftovers
 - corrections
-- product matching
+- fuzzy product matching
 - conversational summaries
 
 Core behavior:
@@ -145,7 +145,17 @@ Define Room entities and DAOs for:
 - `ContainerEntity`
 - `UserDefaultEntity`
 
-Keep product, photo, and container support minimal in Phase 1. Database setup and DAOs are enough; no UI or behavior is required for those concepts yet.
+Product, photo, and container support started as minimal Phase 1 database scaffolding. Barcode V1 now uses `ProductEntity` for local packaged-product caching; product photos and containers remain inert until later phases.
+
+Barcode-capable product storage includes:
+
+- nullable unique `barcode`
+- source metadata
+- package size grams
+- kcal per 100g and kcal per serving where known
+- optional Open Food Facts URL
+- last synced/refreshed timestamp
+- last logged grams for repeat scans
 
 `CorrectionEntity` is a later-phase TODO unless it is trivial to include as an inert placeholder. Phase 1 must not implement correction behavior.
 
@@ -251,6 +261,45 @@ Current pending-entry behavior:
 - Active shortcuts can be reviewed from the Today screen, edited in place, or forgotten by soft-deactivating the default.
 - Forgetting a shortcut requires confirmation.
 - Tapping an active shortcut logs one serving for the selected day using the same raw-entry and food-row path as typing the shortcut trigger.
+
+### Barcode Logging V1
+
+Barcode logging is the first packaged-food path and comes before OCR or AI label reading.
+
+Scanner behavior:
+
+- The Today screen has a `Scan` action beside `Log` and `Shortcuts`.
+- Android uses Google Code Scanner from Play services.
+- The app does not request its own camera permission for barcode V1.
+- If the scanner module is unavailable or no barcode is read, the user is shown manual barcode entry.
+
+Lookup and cache behavior:
+
+- Use Open Food Facts as the only online product database in V1.
+- Query `https://world.openfoodfacts.org/api/v2/product/{barcode}.json` with selected fields only.
+- Send a custom FoodLog user agent.
+- Cache successful lookups in Room using `ProductEntity`.
+- Re-scanning an existing barcode opens the cached product immediately without automatic refresh.
+- The review screen has an explicit `Refresh` action to re-check Open Food Facts before the user confirms logging.
+- Offline cached barcodes remain loggable from local product data.
+- Offline uncached, not-found, or nutrition-incomplete products open the manual barcode product review path.
+
+Review behavior:
+
+- Every scan opens a review dialog before logging.
+- Review shows product name, brand, barcode context, kcal per 100g, package grams, amount grams, time, and cache/offline notes.
+- Default amount is the product's last logged grams when present.
+- If no last amount exists and package grams are known, default visibly to the whole package.
+- If package grams are unknown, grams are required before logging.
+- Package fraction buttons are shown only when package grams are known: whole, two-thirds, half, third, and quarter.
+- Users may edit package grams and nutrition before logging.
+
+Logging behavior:
+
+- Confirming review creates a `RawEntryEntity` audit row and one `FoodItemEntity`.
+- The food row links to `productId`, stores grams, calculates calories from kcal per 100g, and uses `source = SAVED_LABEL`.
+- Logging updates the product's `lastLoggedGrams`.
+- Existing non-barcode shortcuts stay separate. Barcode V1 does not overwrite, merge, or fuzzy-match shortcuts.
 
 ## CSV Export
 
@@ -400,6 +449,14 @@ Add focused tests for Phase 1 behavior:
 - Logged item blank-calorie edits can reparse known shortcuts/defaults into replacement food rows.
 - Logged item removal deletes the food row and updates totals/exports.
 - Daily weight can be saved, edited, exported as a `weight` row, and does not affect calorie totals.
+- Scanner-unavailable barcode path shows manual barcode entry.
+- Open Food Facts lookup maps barcode, name, brand, package size, kcal per 100g, serving data, URL, and source.
+- Cached barcode re-scan opens review without network refresh.
+- Barcode refresh fetches updated Open Food Facts data and still requires user review before logging.
+- Unknown or nutrition-incomplete barcodes can be completed manually and saved as local barcode products.
+- Barcode review reuses the last logged amount on later scans.
+- Whole, two-thirds, half, third, and quarter package buttons calculate grams and calories when package size is known.
+- Barcode products log into daily totals and the Health Monitor CSV like other food rows.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.
 - `AuditCsvExporter` header matches the rich schema exactly.
 - CSV export includes active rows, handles blank times, and escapes commas/quotes/newlines.

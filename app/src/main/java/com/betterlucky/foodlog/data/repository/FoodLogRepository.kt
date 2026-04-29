@@ -9,9 +9,14 @@ import com.betterlucky.foodlog.data.entities.DailyStatusEntity
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
+import com.betterlucky.foodlog.data.entities.ProductEntity
+import com.betterlucky.foodlog.data.entities.ProductSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
+import com.betterlucky.foodlog.data.remote.OpenFoodFactsClient
+import com.betterlucky.foodlog.data.remote.OpenFoodFactsLookupResult
+import com.betterlucky.foodlog.data.remote.OpenFoodFactsProduct
 import com.betterlucky.foodlog.domain.export.AuditCsvExporter
 import com.betterlucky.foodlog.domain.export.LegacyHealthCsvExporter
 import com.betterlucky.foodlog.domain.dayboundary.FoodDayPolicy
@@ -32,10 +37,12 @@ class FoodLogRepository(
     private val legacyHealthCsvExporter: LegacyHealthCsvExporter = LegacyHealthCsvExporter(),
     private val auditCsvExporter: AuditCsvExporter = AuditCsvExporter(),
     private val foodDayPolicy: FoodDayPolicy = FoodDayPolicy(),
+    private val openFoodFactsClient: OpenFoodFactsClient = OpenFoodFactsClient(),
 ) {
     private val appSettingsDao = database.appSettingsDao()
     private val rawEntryDao = database.rawEntryDao()
     private val foodItemDao = database.foodItemDao()
+    private val productDao = database.productDao()
     private val userDefaultDao = database.userDefaultDao()
     private val dailyStatusDao = database.dailyStatusDao()
     private val dailyWeightDao = database.dailyWeightDao()
@@ -239,6 +246,163 @@ class FoodLogRepository(
         )
         return DefaultUpdateResult.Updated
     }
+
+    suspend fun prepareBarcodeReview(
+        barcode: String,
+        forceRefresh: Boolean = false,
+    ): BarcodeReviewResult {
+        val normalizedBarcode = barcode.trim()
+        if (normalizedBarcode.isBlank()) {
+            return BarcodeReviewResult.InvalidBarcode
+        }
+
+        val cached = productDao.getByBarcode(normalizedBarcode)
+        if (cached != null && !forceRefresh) {
+            return BarcodeReviewResult.Ready(
+                draft = cached.toBarcodeProductDraft(
+                    note = "Loaded from saved product.",
+                    refreshed = false,
+                ),
+            )
+        }
+
+        return when (val lookup = openFoodFactsClient.lookup(normalizedBarcode)) {
+            is OpenFoodFactsLookupResult.Found -> {
+                val product = upsertOpenFoodFactsProduct(
+                    existing = cached,
+                    remote = lookup.product.copy(barcode = normalizedBarcode),
+                )
+                BarcodeReviewResult.Ready(
+                    draft = product.toBarcodeProductDraft(
+                        note = if (cached == null) "Loaded from Open Food Facts." else "Refreshed from Open Food Facts.",
+                        refreshed = true,
+                    ),
+                )
+            }
+            OpenFoodFactsLookupResult.NotFound -> BarcodeReviewResult.ManualRequired(
+                draft = BarcodeProductDraft(
+                    barcode = normalizedBarcode,
+                    productId = cached?.id,
+                    name = cached?.name.orEmpty(),
+                    brand = cached?.brand.orEmpty(),
+                    packageSizeGrams = cached?.packageSizeGrams,
+                    kcalPer100g = cached?.kcalPer100g,
+                    kcalPerServing = cached?.kcalPerServing,
+                    servingSizeGrams = cached?.servingSizeGrams,
+                    lastLoggedGrams = cached?.lastLoggedGrams,
+                    externalUrl = cached?.externalUrl,
+                    note = if (cached == null) {
+                        "Barcode not found. Add label details to save it locally."
+                    } else {
+                        "Open Food Facts did not return an update. Saved product is still available."
+                    },
+                    requiresManualNutrition = cached?.kcalPer100g == null,
+                ),
+            )
+            is OpenFoodFactsLookupResult.Failed -> {
+                if (cached != null) {
+                    BarcodeReviewResult.Ready(
+                        draft = cached.toBarcodeProductDraft(
+                            note = "Offline or lookup failed. Using saved product.",
+                            refreshed = false,
+                        ),
+                    )
+                } else {
+                    BarcodeReviewResult.ManualRequired(
+                        draft = BarcodeProductDraft(
+                            barcode = normalizedBarcode,
+                            note = "${lookup.message} Add label details to save it locally.",
+                            requiresManualNutrition = true,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    suspend fun logBarcodeProduct(input: BarcodeProductLogInput): BarcodeLogResult =
+        database.withTransaction {
+            val barcode = input.barcode.trim()
+            val name = input.name.trim()
+            val brand = input.brand?.trim().orEmpty().ifBlank { null }
+            val kcalPer100g = input.kcalPer100g?.takeIf { it > 0.0 }
+            val packageSizeGrams = input.packageSizeGrams?.takeIf { it > 0.0 }
+            val grams = input.grams?.takeIf { it > 0.0 } ?: packageSizeGrams
+            val consumedTime = input.consumedTime ?: dateTimeProvider.localTime()
+
+            if (barcode.isBlank() || name.isBlank() || kcalPer100g == null || grams == null) {
+                return@withTransaction BarcodeLogResult.InvalidInput
+            }
+
+            val now = dateTimeProvider.nowInstant()
+            val existing = productDao.getByBarcode(barcode)
+            val productSource = if (existing == null || existing.kcalPer100g == null) {
+                ProductSource.MANUAL_BARCODE
+            } else {
+                existing.source
+            }
+            val confidence = if (packageSizeGrams != null || input.grams != null) {
+                ConfidenceLevel.HIGH
+            } else {
+                ConfidenceLevel.MEDIUM
+            }
+            val product = ProductEntity(
+                id = existing?.id ?: 0,
+                barcode = barcode,
+                name = name,
+                brand = brand,
+                packageSizeGrams = packageSizeGrams,
+                servingSizeGrams = input.servingSizeGrams?.takeIf { it > 0.0 },
+                kcalPer100g = kcalPer100g,
+                kcalPerServing = input.servingSizeGrams?.takeIf { it > 0.0 }?.let { kcalPer100g * it / 100.0 },
+                proteinPer100g = existing?.proteinPer100g,
+                carbsPer100g = existing?.carbsPer100g,
+                fatPer100g = existing?.fatPer100g,
+                source = productSource,
+                confidence = confidence,
+                externalUrl = existing?.externalUrl,
+                lastSyncedAt = existing?.lastSyncedAt,
+                lastLoggedGrams = grams,
+                createdAt = existing?.createdAt ?: now,
+            )
+            val productId = if (existing == null) {
+                productDao.insert(product)
+            } else {
+                productDao.update(product)
+                existing.id
+            }
+            val calories = kcalPer100g * grams / 100.0
+            val rawEntryId = rawEntryDao.insert(
+                RawEntryEntity(
+                    createdAt = now,
+                    logDate = input.logDate,
+                    consumedTime = consumedTime,
+                    rawText = "Barcode $barcode: $name",
+                    entryKind = EntryKind.TEXT,
+                    status = RawEntryStatus.PARSED,
+                    notes = "Logged from barcode product.",
+                ),
+            )
+            val foodItemId = foodItemDao.insert(
+                FoodItemEntity(
+                    rawEntryId = rawEntryId,
+                    logDate = input.logDate,
+                    consumedTime = consumedTime,
+                    name = name,
+                    productId = productId,
+                    amount = grams,
+                    unit = "g",
+                    grams = grams,
+                    calories = calories,
+                    source = FoodItemSource.SAVED_LABEL,
+                    confidence = confidence,
+                    notes = brand?.let { "Brand: $it" },
+                    createdAt = now,
+                ),
+            )
+            markFoodChanged(input.logDate)
+            BarcodeLogResult.Logged(foodItemId = foodItemId, logDate = input.logDate)
+        }
 
     suspend fun updateFoodItem(
         id: Long,
@@ -860,6 +1024,59 @@ class FoodLogRepository(
     private suspend fun resolveDefaults(parts: List<ParsedFoodPart>): List<Pair<ParsedFoodPart, UserDefaultEntity?>> =
         parts.map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
 
+    private suspend fun upsertOpenFoodFactsProduct(
+        existing: ProductEntity?,
+        remote: OpenFoodFactsProduct,
+    ): ProductEntity {
+        val now = dateTimeProvider.nowInstant()
+        val product = ProductEntity(
+            id = existing?.id ?: 0,
+            barcode = remote.barcode,
+            name = remote.name?.takeIf { it.isNotBlank() } ?: existing?.name ?: "Barcode ${remote.barcode}",
+            brand = remote.brand?.takeIf { it.isNotBlank() } ?: existing?.brand,
+            packageSizeGrams = remote.packageSizeGrams ?: existing?.packageSizeGrams,
+            servingSizeGrams = remote.servingSizeGrams ?: existing?.servingSizeGrams,
+            kcalPer100g = remote.kcalPer100g ?: existing?.kcalPer100g,
+            kcalPerServing = remote.kcalPerServing ?: existing?.kcalPerServing,
+            proteinPer100g = remote.proteinPer100g ?: existing?.proteinPer100g,
+            carbsPer100g = remote.carbsPer100g ?: existing?.carbsPer100g,
+            fatPer100g = remote.fatPer100g ?: existing?.fatPer100g,
+            source = ProductSource.OPEN_FOOD_FACTS,
+            confidence = if (remote.kcalPer100g != null) ConfidenceLevel.MEDIUM else ConfidenceLevel.LOW,
+            externalUrl = remote.url ?: existing?.externalUrl,
+            lastSyncedAt = now,
+            lastLoggedGrams = existing?.lastLoggedGrams,
+            createdAt = existing?.createdAt ?: now,
+        )
+        val id = if (existing == null) {
+            productDao.insert(product)
+        } else {
+            productDao.update(product)
+            existing.id
+        }
+        return product.copy(id = id)
+    }
+
+    private fun ProductEntity.toBarcodeProductDraft(
+        note: String?,
+        refreshed: Boolean,
+    ): BarcodeProductDraft =
+        BarcodeProductDraft(
+            barcode = checkNotNull(barcode),
+            productId = id,
+            name = name,
+            brand = brand.orEmpty(),
+            packageSizeGrams = packageSizeGrams,
+            kcalPer100g = kcalPer100g,
+            kcalPerServing = kcalPerServing,
+            servingSizeGrams = servingSizeGrams,
+            lastLoggedGrams = lastLoggedGrams,
+            externalUrl = externalUrl,
+            note = note,
+            refreshed = refreshed,
+            requiresManualNutrition = kcalPer100g == null,
+        )
+
     private suspend fun ParsedFoodPart.toPreviewPart(): FoodItemDefaultEditPreviewPart =
         FoodItemDefaultEditPreviewPart(
             inputText = normalizedFoodText,
@@ -1010,6 +1227,49 @@ class FoodLogRepository(
     sealed interface DailyWeightResult {
         data object Saved : DailyWeightResult
         data object InvalidInput : DailyWeightResult
+    }
+
+    sealed interface BarcodeReviewResult {
+        data class Ready(val draft: BarcodeProductDraft) : BarcodeReviewResult
+        data class ManualRequired(val draft: BarcodeProductDraft) : BarcodeReviewResult
+        data object InvalidBarcode : BarcodeReviewResult
+    }
+
+    data class BarcodeProductDraft(
+        val barcode: String,
+        val productId: Long? = null,
+        val name: String = "",
+        val brand: String = "",
+        val packageSizeGrams: Double? = null,
+        val kcalPer100g: Double? = null,
+        val kcalPerServing: Double? = null,
+        val servingSizeGrams: Double? = null,
+        val lastLoggedGrams: Double? = null,
+        val externalUrl: String? = null,
+        val note: String? = null,
+        val refreshed: Boolean = false,
+        val requiresManualNutrition: Boolean = false,
+    )
+
+    data class BarcodeProductLogInput(
+        val barcode: String,
+        val logDate: LocalDate,
+        val consumedTime: LocalTime?,
+        val name: String,
+        val brand: String?,
+        val packageSizeGrams: Double?,
+        val servingSizeGrams: Double?,
+        val kcalPer100g: Double?,
+        val grams: Double?,
+    )
+
+    sealed interface BarcodeLogResult {
+        data class Logged(
+            val foodItemId: Long,
+            val logDate: LocalDate,
+        ) : BarcodeLogResult
+
+        data object InvalidInput : BarcodeLogResult
     }
 
     data class ExportedCsv(
