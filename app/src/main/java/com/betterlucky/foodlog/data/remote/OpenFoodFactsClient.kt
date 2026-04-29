@@ -52,18 +52,26 @@ class OpenFoodFactsClient {
                     setRequestProperty("User-Agent", "FoodLog/0.1.0 Android barcode lookup")
                     setRequestProperty("Accept", "application/json")
                 }
-                connection.inputStream.use { stream ->
-                    val body = stream.bufferedReader().readText()
-                    parseLookupResponse(barcode = barcode, body = body)
+                val responseCode = connection.responseCode
+                val stream = if (responseCode in 200..299) {
+                    connection.inputStream
+                } else {
+                    connection.errorStream
+                }
+                val body = stream?.use { it.bufferedReader().readText() }.orEmpty()
+                when {
+                    responseCode == HttpURLConnection.HTTP_NOT_FOUND -> OpenFoodFactsLookupResult.NotFound
+                    responseCode in 200..299 -> parseLookupResponse(barcode = barcode, body = body)
+                    else -> OpenFoodFactsLookupResult.Failed("Open Food Facts returned HTTP $responseCode.")
                 }
             } catch (exception: IOException) {
-                OpenFoodFactsLookupResult.Failed(exception.message ?: "Open Food Facts is unavailable.")
+                OpenFoodFactsLookupResult.Failed("Open Food Facts is unavailable.")
             } catch (exception: RuntimeException) {
                 OpenFoodFactsLookupResult.Failed(exception.message ?: "Open Food Facts response could not be read.")
             }
         }
 
-    private fun parseLookupResponse(
+    internal fun parseLookupResponse(
         barcode: String,
         body: String,
     ): OpenFoodFactsLookupResult {

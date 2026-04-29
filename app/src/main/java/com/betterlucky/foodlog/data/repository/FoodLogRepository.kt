@@ -293,7 +293,7 @@ class FoodLogRepository(
                     lastLoggedGrams = cached?.lastLoggedGrams,
                     externalUrl = cached?.externalUrl,
                     note = if (cached == null) {
-                        "Barcode not found. Add label details to save it locally."
+                        "Barcode $normalizedBarcode was not found in Open Food Facts. Add label details to save it locally."
                     } else {
                         "Open Food Facts did not return an update. Saved product is still available."
                     },
