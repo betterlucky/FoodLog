@@ -172,7 +172,7 @@ fun TodayScreen(
                 ) {
                     Text("Log")
                 }
-                OutlinedButton(
+                Button(
                     onClick = { showingShortcuts = true },
                     modifier = Modifier.weight(1f),
                 ) {
@@ -194,7 +194,7 @@ fun TodayScreen(
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             state = listState,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             item {
                 CollapsibleSectionHeader(
@@ -726,7 +726,7 @@ private fun CollapsibleSectionHeader(
             text = if (expanded) "▾" else "▸",
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.headlineSmall,
         )
         Text(
             text = title,
@@ -880,14 +880,14 @@ private fun FoodItemRow(
             .clickable(onClick = onClick),
         shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .heightIn(min = 44.dp)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -903,6 +903,7 @@ private fun FoodItemRow(
                         quantityText(item),
                     ).joinToString(" - "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -936,14 +937,14 @@ private fun ClumpedFoodItemRow(
             .clickable(onClick = onClick),
         shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .heightIn(min = 44.dp)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -956,6 +957,7 @@ private fun ClumpedFoodItemRow(
                 Text(
                     text = clumpDetailText(clump, expanded),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
