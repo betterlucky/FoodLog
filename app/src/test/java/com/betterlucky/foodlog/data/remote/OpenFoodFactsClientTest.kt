@@ -48,8 +48,34 @@ class OpenFoodFactsClientTest {
         assertEquals("Test yoghurt", product.name)
         assertEquals("Example Brand", product.brand)
         assertEquals(450.0, product.packageSizeGrams ?: 0.0, 0.001)
+        assertEquals(null, product.packageItemCount)
         assertEquals(150.0, product.servingSizeGrams ?: 0.0, 0.001)
         assertEquals(95.0, product.kcalPer100g ?: 0.0, 0.001)
         assertEquals(142.5, product.kcalPerServing ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun productQuantityMultipliersMapPackGramsAndItemCount() {
+        val result = client.parseLookupResponse(
+            barcode = "12345678",
+            body = """
+                {
+                  "status": 1,
+                  "product": {
+                    "code": "12345678",
+                    "product_name": "Sausages",
+                    "quantity": "6 x 50g",
+                    "nutriments": {
+                      "energy-kcal_100g": 240
+                    }
+                  }
+                }
+            """.trimIndent(),
+        )
+
+        assertTrue(result is OpenFoodFactsLookupResult.Found)
+        val product = (result as OpenFoodFactsLookupResult.Found).product
+        assertEquals(300.0, product.packageSizeGrams ?: 0.0, 0.001)
+        assertEquals(6.0, product.packageItemCount ?: 0.0, 0.001)
     }
 }

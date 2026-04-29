@@ -287,6 +287,7 @@ class FoodLogRepository(
                     name = cached?.name.orEmpty(),
                     brand = cached?.brand.orEmpty(),
                     packageSizeGrams = cached?.packageSizeGrams,
+                    packageItemCount = cached?.packageItemCount,
                     kcalPer100g = cached?.kcalPer100g,
                     kcalPerServing = cached?.kcalPerServing,
                     servingSizeGrams = cached?.servingSizeGrams,
@@ -328,7 +329,14 @@ class FoodLogRepository(
             val brand = input.brand?.trim().orEmpty().ifBlank { null }
             val kcalPer100g = input.kcalPer100g?.takeIf { it > 0.0 }
             val packageSizeGrams = input.packageSizeGrams?.takeIf { it > 0.0 }
-            val grams = input.grams?.takeIf { it > 0.0 } ?: packageSizeGrams
+            val packageItemCount = input.packageItemCount?.takeIf { it > 0.0 }
+            val consumedItemCount = input.consumedItemCount?.takeIf { it > 0.0 }
+            val gramsFromItems = if (packageSizeGrams != null && packageItemCount != null && consumedItemCount != null) {
+                packageSizeGrams * consumedItemCount / packageItemCount
+            } else {
+                null
+            }
+            val grams = input.grams?.takeIf { it > 0.0 } ?: gramsFromItems ?: packageSizeGrams
             val consumedTime = input.consumedTime ?: dateTimeProvider.localTime()
 
             if (barcode.isBlank() || name.isBlank() || kcalPer100g == null || grams == null) {
@@ -355,6 +363,7 @@ class FoodLogRepository(
                 name = name,
                 brand = brand,
                 packageSizeGrams = packageSizeGrams,
+                packageItemCount = packageItemCount,
                 servingSizeGrams = input.servingSizeGrams?.takeIf { it > 0.0 },
                 kcalPer100g = kcalPer100g,
                 kcalPerServing = input.servingSizeGrams?.takeIf { it > 0.0 }?.let { kcalPer100g * it / 100.0 },
@@ -393,8 +402,8 @@ class FoodLogRepository(
                     consumedTime = consumedTime,
                     name = name,
                     productId = productId,
-                    amount = grams,
-                    unit = "g",
+                    amount = consumedItemCount ?: grams,
+                    unit = consumedItemCount?.let { if (it == 1.0) "item" else "items" } ?: "g",
                     grams = grams,
                     calories = calories,
                     source = FoodItemSource.SAVED_LABEL,
@@ -1038,6 +1047,7 @@ class FoodLogRepository(
             name = remote.name?.takeIf { it.isNotBlank() } ?: existing?.name ?: "Barcode ${remote.barcode}",
             brand = remote.brand?.takeIf { it.isNotBlank() } ?: existing?.brand,
             packageSizeGrams = remote.packageSizeGrams ?: existing?.packageSizeGrams,
+            packageItemCount = remote.packageItemCount ?: existing?.packageItemCount,
             servingSizeGrams = remote.servingSizeGrams ?: existing?.servingSizeGrams,
             kcalPer100g = remote.kcalPer100g ?: existing?.kcalPer100g,
             kcalPerServing = remote.kcalPerServing ?: existing?.kcalPerServing,
@@ -1070,6 +1080,7 @@ class FoodLogRepository(
             name = name,
             brand = brand.orEmpty(),
             packageSizeGrams = packageSizeGrams,
+            packageItemCount = packageItemCount,
             kcalPer100g = kcalPer100g,
             kcalPerServing = kcalPerServing,
             servingSizeGrams = servingSizeGrams,
@@ -1244,6 +1255,7 @@ class FoodLogRepository(
         val name: String = "",
         val brand: String = "",
         val packageSizeGrams: Double? = null,
+        val packageItemCount: Double? = null,
         val kcalPer100g: Double? = null,
         val kcalPerServing: Double? = null,
         val servingSizeGrams: Double? = null,
@@ -1261,6 +1273,8 @@ class FoodLogRepository(
         val name: String,
         val brand: String?,
         val packageSizeGrams: Double?,
+        val packageItemCount: Double?,
+        val consumedItemCount: Double?,
         val servingSizeGrams: Double?,
         val kcalPer100g: Double?,
         val grams: Double?,

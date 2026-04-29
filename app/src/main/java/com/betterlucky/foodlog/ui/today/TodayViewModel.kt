@@ -60,6 +60,7 @@ data class BarcodeProductReview(
     val name: String,
     val brand: String,
     val packageSizeGrams: Double?,
+    val packageItemCount: Double?,
     val kcalPer100g: Double?,
     val servingSizeGrams: Double?,
     val lastLoggedGrams: Double?,
@@ -159,6 +160,8 @@ class TodayViewModel(
         name: String,
         brand: String,
         packageSizeGrams: String,
+        packageItemCount: String,
+        consumedItemCount: String,
         kcalPer100g: String,
         grams: String,
         time: String,
@@ -166,8 +169,10 @@ class TodayViewModel(
     ) {
         viewModelScope.launch {
             val parsedPackageGrams = packageSizeGrams.toDoubleOrNull()?.takeIf { it > 0.0 }
+            val parsedPackageItemCount = packageItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
+            val parsedConsumedItemCount = consumedItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
             val parsedKcalPer100g = kcalPer100g.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: parsedPackageGrams
+            val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 }
             val parsedTime = time.takeIf { it.isNotBlank() }?.let(TimeTextParser::parseOrNull)
             val result = repository.logBarcodeProduct(
                 FoodLogRepository.BarcodeProductLogInput(
@@ -177,6 +182,8 @@ class TodayViewModel(
                     name = name,
                     brand = brand,
                     packageSizeGrams = parsedPackageGrams,
+                    packageItemCount = parsedPackageItemCount,
+                    consumedItemCount = parsedConsumedItemCount,
                     servingSizeGrams = review.servingSizeGrams,
                     kcalPer100g = parsedKcalPer100g,
                     grams = parsedGrams,
@@ -763,6 +770,7 @@ private fun FoodLogRepository.BarcodeProductDraft.toReview(): BarcodeProductRevi
         name = name,
         brand = brand,
         packageSizeGrams = packageSizeGrams,
+        packageItemCount = packageItemCount,
         kcalPer100g = kcalPer100g,
         servingSizeGrams = servingSizeGrams,
         lastLoggedGrams = lastLoggedGrams,

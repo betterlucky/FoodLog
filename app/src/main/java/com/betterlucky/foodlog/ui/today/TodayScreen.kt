@@ -564,12 +564,14 @@ fun TodayScreen(
                     onManualRequired = { reviewingBarcode = it },
                 )
             },
-            onLog = { name, brand, packageSizeGrams, kcalPer100g, grams, time ->
+            onLog = { name, brand, packageSizeGrams, packageItemCount, consumedItemCount, kcalPer100g, grams, time ->
                 viewModel.logBarcodeProduct(
                     review = review,
                     name = name,
                     brand = brand,
                     packageSizeGrams = packageSizeGrams,
+                    packageItemCount = packageItemCount,
+                    consumedItemCount = consumedItemCount,
                     kcalPer100g = kcalPer100g,
                     grams = grams,
                     time = time,
@@ -1180,23 +1182,38 @@ private fun BarcodeProductReviewDialog(
     review: BarcodeProductReview,
     onDismiss: () -> Unit,
     onRefresh: () -> Unit,
-    onLog: (String, String, String, String, String, String) -> Unit,
+    onLog: (String, String, String, String, String, String, String, String) -> Unit,
 ) {
     var name by remember(review.barcode, review.name) { mutableStateOf(review.name) }
     var brand by remember(review.barcode, review.brand) { mutableStateOf(review.brand) }
     var packageSizeGrams by remember(review.barcode, review.packageSizeGrams) {
         mutableStateOf(review.packageSizeGrams?.formatAmount().orEmpty())
     }
+    var packageItemCount by remember(review.barcode, review.packageItemCount) {
+        mutableStateOf(review.packageItemCount?.formatAmount().orEmpty())
+    }
+    var consumedItemCount by remember(review.barcode, review.packageItemCount, review.lastLoggedGrams) {
+        mutableStateOf(
+            if (review.lastLoggedGrams == null && review.packageItemCount != null) "1" else "",
+        )
+    }
     var kcalPer100g by remember(review.barcode, review.kcalPer100g) {
         mutableStateOf(review.kcalPer100g?.formatAmount().orEmpty())
     }
     var grams by remember(review.barcode, review.lastLoggedGrams, review.packageSizeGrams) {
-        mutableStateOf((review.lastLoggedGrams ?: review.packageSizeGrams)?.formatAmount().orEmpty())
+        mutableStateOf(review.lastLoggedGrams?.formatAmount().orEmpty())
     }
     var time by remember(review.barcode) { mutableStateOf("") }
     val parsedPackageGrams = packageSizeGrams.toDoubleOrNull()?.takeIf { it > 0.0 }
+    val parsedPackageItems = packageItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
+    val parsedConsumedItems = consumedItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
     val parsedKcal = kcalPer100g.toDoubleOrNull()?.takeIf { it > 0.0 }
-    val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: parsedPackageGrams
+    val gramsFromItems = if (parsedPackageGrams != null && parsedPackageItems != null && parsedConsumedItems != null) {
+        parsedPackageGrams * parsedConsumedItems / parsedPackageItems
+    } else {
+        null
+    }
+    val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: gramsFromItems ?: parsedPackageGrams
     val estimatedCalories = if (parsedKcal != null && parsedGrams != null) {
         parsedKcal * parsedGrams / 100.0
     } else {
@@ -1251,6 +1268,27 @@ private fun BarcodeProductReviewDialog(
                         )
                     }
                 }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = packageItemCount,
+                            onValueChange = { packageItemCount = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Items in pack") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        )
+                        OutlinedTextField(
+                            value = consumedItemCount,
+                            onValueChange = {
+                                consumedItemCount = it
+                                grams = ""
+                            },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Items eaten") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        )
+                    }
+                }
                 if (parsedPackageGrams != null) {
                     item {
                         Text(
@@ -1273,7 +1311,10 @@ private fun BarcodeProductReviewDialog(
                                 "1/4" to 0.25,
                             ).forEach { (label, fraction) ->
                                 OutlinedButton(
-                                    onClick = { grams = (parsedPackageGrams * fraction).formatAmount() },
+                                    onClick = {
+                                        consumedItemCount = ""
+                                        grams = (parsedPackageGrams * fraction).formatAmount()
+                                    },
                                     modifier = Modifier.weight(1f),
                                     contentPadding = ButtonDefaults.TextButtonContentPadding,
                                 ) {
@@ -1287,7 +1328,10 @@ private fun BarcodeProductReviewDialog(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = grams,
-                            onValueChange = { grams = it },
+                            onValueChange = {
+                                grams = it
+                                consumedItemCount = ""
+                            },
                             modifier = Modifier.weight(1f),
                             label = { Text("Amount g") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1312,7 +1356,11 @@ private fun BarcodeProductReviewDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onLog(name, brand, packageSizeGrams, kcalPer100g, grams, time) }) {
+            Button(
+                onClick = {
+                    onLog(name, brand, packageSizeGrams, packageItemCount, consumedItemCount, kcalPer100g, grams, time)
+                },
+            ) {
                 Text("Log")
             }
         },

@@ -152,7 +152,9 @@ Barcode-capable product storage includes:
 - nullable unique `barcode`
 - source metadata
 - package size grams
+- optional item count per pack, for products such as a 6-sausage packet
 - kcal per 100g and kcal per serving where known
+- optional per-100g macro fields, currently protein, carbohydrate, and fat; future OCR/product work should preserve room for fibre and similar nutrients
 - optional Open Food Facts URL
 - last synced/refreshed timestamp
 - last logged grams for repeat scans
@@ -292,6 +294,7 @@ Review behavior:
 - If no last amount exists and package grams are known, default visibly to the whole package.
 - If package grams are unknown, grams are required before logging.
 - Package fraction buttons are shown only when package grams are known: whole, two-thirds, half, third, and quarter.
+- When the package contains a known number of items, review can calculate grams and calories from an `Items eaten` value, for example 1 sausage from a 6-sausage pack.
 - Users may edit package grams and nutrition before logging.
 
 Logging behavior:
@@ -456,6 +459,7 @@ Add focused tests for Phase 1 behavior:
 - Unknown or nutrition-incomplete barcodes can be completed manually and saved as local barcode products.
 - Barcode review reuses the last logged amount on later scans.
 - Whole, two-thirds, half, third, and quarter package buttons calculate grams and calories when package size is known.
+- Barcode/manual product review can calculate grams and calories from pack item count, for example `6 x 50g` and `1 item`.
 - Barcode products log into daily totals and the Health Monitor CSV like other food rows.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.
 - `AuditCsvExporter` header matches the rich schema exactly.
@@ -471,6 +475,7 @@ Later phases may add:
 - richer shortcut/default management screens
 - structured OpenAI text parser behind an interface
 - nutrition-label photo extraction
+- optional protein/fibre and broader nutrient logging once the food-row/export contracts are ready
 - product review and confirmation screens
 - product matching with stale-cache protection
 - active leftover/container handling

@@ -14,6 +14,7 @@ data class OpenFoodFactsProduct(
     val name: String?,
     val brand: String?,
     val packageSizeGrams: Double?,
+    val packageItemCount: Double?,
     val servingSizeGrams: Double?,
     val kcalPer100g: Double?,
     val kcalPerServing: Double?,
@@ -85,6 +86,7 @@ class OpenFoodFactsClient {
         val nutriments = product.optJSONObject("nutriments")
         val kcalPer100g = nutriments?.optNullableDouble("energy-kcal_100g")
             ?: nutriments?.optNullableDouble("energy_100g")?.let { it / 4.184 }
+        val packageQuantity = product.optStringOrNull("quantity")?.parsePackageQuantity()
         val servingSizeGrams = product.optNullableDouble("serving_quantity")
             ?: product.optStringOrNull("serving_size")?.parseGrams()
 
@@ -93,7 +95,8 @@ class OpenFoodFactsClient {
                 barcode = product.optStringOrNull("code") ?: barcode,
                 name = product.optStringOrNull("product_name"),
                 brand = product.optStringOrNull("brands"),
-                packageSizeGrams = product.optStringOrNull("quantity")?.parseGrams(),
+                packageSizeGrams = packageQuantity?.grams,
+                packageItemCount = packageQuantity?.itemCount,
                 servingSizeGrams = servingSizeGrams,
                 kcalPer100g = kcalPer100g,
                 kcalPerServing = servingSizeGrams?.let { grams ->
@@ -107,6 +110,11 @@ class OpenFoodFactsClient {
         )
     }
 }
+
+private data class PackageQuantityInfo(
+    val grams: Double?,
+    val itemCount: Double?,
+)
 
 private fun JSONObject.optStringOrNull(name: String): String? =
     optString(name).trim().ifBlank { null }
@@ -123,9 +131,37 @@ private fun String.parseGrams(): Double? {
     val match = Regex("""(\d+(?:\.\d+)?)\s*(kg|g|ml|l)\b""").find(normalized)
         ?: return null
     val value = match.groupValues[1].toDoubleOrNull() ?: return null
-    return when (match.groupValues[2]) {
-        "kg", "l" -> value * 1000.0
-        "g", "ml" -> value
+    return value.toGrams(match.groupValues[2])
+}
+
+private fun String.parsePackageQuantity(): PackageQuantityInfo {
+    val normalized = lowercase().replace(",", ".")
+    val multiplierMatch = Regex("""(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(kg|g|ml|l)\b""")
+        .find(normalized)
+    if (multiplierMatch != null) {
+        val count = multiplierMatch.groupValues[1].toDoubleOrNull()
+        val itemValue = multiplierMatch.groupValues[2].toDoubleOrNull()
+        val unit = multiplierMatch.groupValues[3]
+        val itemGrams = itemValue?.toGrams(unit)
+        return PackageQuantityInfo(
+            grams = if (count != null && itemGrams != null) count * itemGrams else parseGrams(),
+            itemCount = count?.takeIf { it > 0.0 },
+        )
+    }
+
+    val grams = parseGrams()
+    val itemCount = Regex("""(?:^|\b)(\d+(?:\.\d+)?)\s*(?:sausages?|bars?|pieces?|packs?|portions?|servings?|slices?|items?)\b""")
+        .find(normalized)
+        ?.groupValues
+        ?.get(1)
+        ?.toDoubleOrNull()
+        ?.takeIf { it > 0.0 }
+    return PackageQuantityInfo(grams = grams, itemCount = itemCount)
+}
+
+private fun Double.toGrams(unit: String): Double? =
+    when (unit) {
+        "kg", "l" -> this * 1000.0
+        "g", "ml" -> this
         else -> null
     }
-}

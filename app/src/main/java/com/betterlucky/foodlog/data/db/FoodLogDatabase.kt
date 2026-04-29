@@ -38,7 +38,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         AppSettingsEntity::class,
         DailyWeightEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -125,6 +125,12 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE products ADD COLUMN packageItemCount REAL")
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -137,6 +143,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_4_5)
                 .addMigrations(MIGRATION_5_6)
                 .addMigrations(MIGRATION_6_7)
+                .addMigrations(MIGRATION_7_8)
                 .build()
     }
 }

@@ -21,6 +21,7 @@ data class ProductEntity(
     val containerType: String? = null,
     val containerSizeGrams: Double? = null,
     val packageSizeGrams: Double? = null,
+    val packageItemCount: Double? = null,
     val servingSizeGrams: Double? = null,
     val kcalPer100g: Double? = null,
     val kcalPerServing: Double? = null,
