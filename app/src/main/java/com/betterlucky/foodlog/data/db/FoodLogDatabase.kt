@@ -38,7 +38,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         AppSettingsEntity::class,
         DailyWeightEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -133,10 +133,19 @@ abstract class FoodLogDatabase : RoomDatabase() {
 
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE products ADD COLUMN fiberPer100g REAL")
-                db.execSQL("ALTER TABLE products ADD COLUMN sugarsPer100g REAL")
-                db.execSQL("ALTER TABLE products ADD COLUMN saltPer100g REAL")
-                db.execSQL("ALTER TABLE products ADD COLUMN servingUnit TEXT")
+                db.addColumnIfMissing("products", "fiberPer100g", "REAL")
+                db.addColumnIfMissing("products", "sugarsPer100g", "REAL")
+                db.addColumnIfMissing("products", "saltPer100g", "REAL")
+                db.addColumnIfMissing("products", "servingUnit", "TEXT")
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing("products", "fiberPer100g", "REAL")
+                db.addColumnIfMissing("products", "sugarsPer100g", "REAL")
+                db.addColumnIfMissing("products", "saltPer100g", "REAL")
+                db.addColumnIfMissing("products", "servingUnit", "TEXT")
             }
         }
 
@@ -154,6 +163,19 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_6_7)
                 .addMigrations(MIGRATION_7_8)
                 .addMigrations(MIGRATION_8_9)
+                .addMigrations(MIGRATION_9_10)
                 .build()
     }
+}
+
+private fun SupportSQLiteDatabase.addColumnIfMissing(tableName: String, columnName: String, declaration: String) {
+    query("PRAGMA table_info($tableName)").use { cursor ->
+        val nameIndex = cursor.getColumnIndex("name")
+        while (cursor.moveToNext()) {
+            if (cursor.getString(nameIndex) == columnName) {
+                return
+            }
+        }
+    }
+    execSQL("ALTER TABLE $tableName ADD COLUMN $columnName $declaration")
 }
