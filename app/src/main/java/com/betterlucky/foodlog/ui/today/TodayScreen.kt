@@ -172,13 +172,9 @@ fun TodayScreen(
                 ) {
                     Text("Log")
                 }
-                Button(
+                OutlinedButton(
                     onClick = { showingShortcuts = true },
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ),
                 ) {
                     Text("Shortcuts")
                 }
@@ -727,6 +723,12 @@ private fun CollapsibleSectionHeader(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
+            text = if (expanded) "▾" else "▸",
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
             text = title,
             modifier = Modifier.weight(1f),
             fontWeight = FontWeight.Bold,
@@ -740,12 +742,6 @@ private fun CollapsibleSectionHeader(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        Text(
-            text = if (expanded) "Hide" else "Show",
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            style = MaterialTheme.typography.bodySmall,
-        )
     }
 }
 
@@ -756,23 +752,35 @@ private fun LoggedItemsViewControls(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         LoggedItemsViewMode.entries.forEach { mode ->
             val selected = mode == selectedMode
             if (selected) {
                 Button(
                     onClick = { onModeSelected(mode) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(36.dp),
+                    contentPadding = ButtonDefaults.TextButtonContentPadding,
                 ) {
-                    Text(mode.label)
+                    Text(
+                        text = mode.label,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             } else {
                 OutlinedButton(
                     onClick = { onModeSelected(mode) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(36.dp),
+                    contentPadding = ButtonDefaults.TextButtonContentPadding,
                 ) {
-                    Text(mode.label)
+                    Text(
+                        text = mode.label,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
         }
@@ -878,8 +886,8 @@ private fun FoodItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -887,7 +895,7 @@ private fun FoodItemRow(
                 Text(
                     text = item.name,
                     fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
                     text = listOfNotNull(
@@ -895,13 +903,13 @@ private fun FoodItemRow(
                         quantityText(item),
                     ).joinToString(" - "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
             Text(
                 text = "${item.calories.toInt()} kcal",
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.titleMedium,
             )
         }
     }
@@ -934,8 +942,8 @@ private fun ClumpedFoodItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -943,18 +951,18 @@ private fun ClumpedFoodItemRow(
                 Text(
                     text = if (count == 1) clump.name else "${clump.name} x$count",
                     fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
                     text = clumpDetailText(clump, expanded),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
             Text(
                 text = "${clump.items.sumOf { it.calories }.toInt()} kcal",
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.titleMedium,
             )
         }
     }
