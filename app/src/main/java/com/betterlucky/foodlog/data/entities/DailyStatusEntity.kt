@@ -12,4 +12,6 @@ data class DailyStatusEntity(
     val legacyExportedAt: Instant? = null,
     val auditExportedAt: Instant? = null,
     val lastFoodChangedAt: Instant? = null,
+    val legacyExportFileName: String? = null,
+    val auditExportFileName: String? = null,
 )

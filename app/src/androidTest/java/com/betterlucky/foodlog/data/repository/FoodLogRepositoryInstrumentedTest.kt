@@ -11,6 +11,7 @@ import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
+import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.util.DateTimeProvider
@@ -94,13 +95,136 @@ class FoodLogRepositoryInstrumentedTest {
         val result = repository.submitText("2 teas")
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
         val total = repository.observeCaloriesForDate(today).first()
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
         assertEquals(2.0, foodItem.amount ?: 0.0, 0.001)
         assertEquals(50.0, foodItem.calories, 0.001)
         assertEquals(50.0, total, 0.001)
         assertTrue(csv.contains("2 cups,50"))
+    }
+
+    @Test
+    fun explicitTimeInSubmissionOverridesCurrentTime() = runTest {
+        repository.seedDefaults()
+
+        repository.submitText("1pm tea")
+        repository.submitText("13:15 tea")
+        repository.submitText("tea at 1:30pm")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals(
+            listOf(
+                LocalTime.parse("13:00"),
+                LocalTime.parse("13:15"),
+                LocalTime.parse("13:30"),
+            ),
+            foodItems.map { it.consumedTime },
+        )
+    }
+
+    @Test
+    fun explicitTimeInPendingSubmissionIsPreservedForResolution() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("1pm curry")
+        val pendingEntry = repository.observePendingEntriesForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Pending)
+        assertEquals(LocalTime.parse("13:00"), pendingEntry.consumedTime)
+        assertEquals(LocalTime.parse("13:00"), rawEntry?.consumedTime)
+    }
+
+    @Test
+    fun pmPrefixUnsupportedCompoundStaysPendingWithParsedTime() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("10pm yoghurt with chia and pumpkin seeds")
+        val pendingEntry = repository.observePendingEntriesForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Pending)
+        assertEquals(LocalTime.parse("22:00"), pendingEntry.consumedTime)
+        assertEquals(LocalTime.parse("22:00"), rawEntry?.consumedTime)
+    }
+
+    @Test
+    fun quantityOneDoesNotParseAsTime() = runTest {
+        repository.seedDefaults()
+
+        repository.submitText("1 tea")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(1.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals(localTime, foodItem.consumedTime)
+    }
+
+    @Test
+    fun selectedDateGuardBlocksDatedSubmissionForAnotherDay() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText(
+            input = "yesterday tea",
+            targetLogDate = today,
+        )
+
+        assertEquals(
+            FoodLogRepository.SubmitResult.DateMismatch(
+                requestedLogDate = today.minusDays(1),
+                selectedLogDate = today,
+            ),
+            result,
+        )
+        assertEquals(emptyList<FoodItemEntity>(), repository.observeFoodItemsForDate(today).first())
+        assertEquals(emptyList<RawEntryEntity>(), repository.observePendingEntries().first())
+    }
+
+    @Test
+    fun compoundShortcutSubmissionCreatesOneRawEntryAndMultipleFoodItems() = runTest {
+        repository.seedDefaults()
+        database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))
+        database.userDefaultDao().upsert(default(trigger = "satsuma", name = "Satsuma", calories = 35.0, unit = "each"))
+
+        val result = repository.submitText("banana, satsuma and tea")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+        val total = repository.observeCaloriesForDate(today).first()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(3, (result as FoodLogRepository.SubmitResult.Parsed).foodItemIds.size)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals(listOf("Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(listOf(result.rawEntryId), foodItems.map { it.rawEntryId }.distinct())
+        assertEquals(165.0, total, 0.001)
+    }
+
+    @Test
+    fun ampersandSlashAndSemicolonSeparateCompoundShortcuts() = runTest {
+        repository.seedDefaults()
+        database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))
+        database.userDefaultDao().upsert(default(trigger = "satsuma", name = "Satsuma", calories = 35.0, unit = "each"))
+
+        repository.submitText("banana & satsuma / tea; banana")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals(listOf("Banana", "Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(270.0, repository.observeCaloriesForDate(today).first(), 0.001)
+    }
+
+    @Test
+    fun compoundSubmissionWithUnknownPartStaysPendingAndCreatesNoFoodItems() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.submitText("tea and curry")
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Pending)
+        assertEquals(listOf("tea and curry"), pendingEntries.map { it.rawText })
+        assertEquals(RawEntryStatus.PENDING, rawEntry?.status)
+        assertEquals(emptyList<FoodItemEntity>(), foodItems)
     }
 
     @Test
@@ -184,7 +308,7 @@ class FoodLogRepositoryInstrumentedTest {
         val pendingEntries = repository.observePendingEntriesForDate(today).first()
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
         val rawEntry = database.rawEntryDao().getById(rawEntryId)
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
         assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
@@ -242,6 +366,389 @@ class FoodLogRepositoryInstrumentedTest {
 
         assertEquals(null, database.userDefaultDao().getActiveDefault("pear"))
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Pending)
+    }
+
+    @Test
+    fun pendingEntryCanBeRemovedWithHardDelete() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("apple")
+        val removeResult = repository.removePendingEntry(pendingResult.rawEntryId)
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertEquals(FoodLogRepository.PendingEntryRemoveResult.Removed, removeResult)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(null, rawEntry)
+    }
+
+    @Test
+    fun pendingEntryCanBeEditedAndKeptPending() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("banana cake")
+        val updateResult = repository.updatePendingEntry(
+            rawEntryId = pendingResult.rawEntryId,
+            rawText = "Banana cake slice",
+            amount = 1.0,
+            unit = "slice",
+            calories = null,
+            notes = "Need calories later",
+        )
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertEquals(FoodLogRepository.PendingEntryUpdateResult.Updated, updateResult)
+        assertEquals(listOf("Banana cake slice"), pendingEntries.map { it.rawText })
+        assertEquals(RawEntryStatus.PENDING, rawEntry?.status)
+        assertEquals("Draft quantity: 1 slice\nNeed calories later", rawEntry?.notes)
+        assertEquals(emptyList<FoodItemEntity>(), foodItems)
+    }
+
+    @Test
+    fun pendingEntryEditRerunsParserAndResolvesShortcutWhenNoManualCalories() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("teklfhjl")
+        val updateResult = repository.updatePendingEntry(
+            rawEntryId = pendingResult.rawEntryId,
+            rawText = "tea",
+            amount = null,
+            unit = null,
+            calories = null,
+            notes = null,
+        )
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertTrue(updateResult is FoodLogRepository.PendingEntryUpdateResult.Parsed)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals("tea", rawEntry?.rawText)
+        assertEquals("Tea", foodItem.name)
+        assertEquals(25.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun singlePendingGramEntryPreviewKeepsParsedQuantityAndTime() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("13:45 10g fruit and nut mix")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart
+
+        assertEquals("10g fruit and nut mix", preview.part?.inputText)
+        assertEquals("fruit and nut mix", preview.part?.trigger)
+        assertEquals(10.0, preview.part?.quantity ?: 0.0, 0.001)
+        assertEquals("g", preview.part?.quantityUnit)
+        assertEquals(LocalTime.parse("13:45"), preview.consumedTime)
+        assertEquals(null, preview.part?.default)
+    }
+
+    @Test
+    fun manualPendingResolutionCanOverrideParsedTime() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("13:45 10g fruit and nut mix")
+        val resolveResult = repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Fruit and nut mix",
+            amount = 10.0,
+            unit = "g",
+            calories = 52.0,
+            notes = null,
+            consumedTime = LocalTime.parse("14:10"),
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+
+        assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
+        assertEquals(LocalTime.parse("14:10"), foodItem.consumedTime)
+        assertEquals(LocalTime.parse("14:10"), rawEntry?.consumedTime)
+    }
+
+    @Test
+    fun pendingCompoundEntryCanBeItemisedAndKeptPendingUntilCommitted() = runTest {
+        repository.seedDefaults()
+        val pendingResult = repository.submitText("tea, banana, satsuma")
+
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.Ready
+        val stillPending = repository.observePendingEntriesForDate(today).first()
+        val noFoodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals("tea, banana, satsuma", preview.rawText)
+        assertEquals(listOf("tea", "banana", "satsuma"), preview.parts.map { it.inputText })
+        assertEquals(listOf(true, false, false), preview.parts.map { it.default != null })
+        assertEquals(listOf("tea, banana, satsuma"), stillPending.map { it.rawText })
+        assertEquals(emptyList<FoodItemEntity>(), noFoodItems)
+
+        val updateResult = repository.resolvePendingEntryParts(
+            rawEntryId = pendingResult.rawEntryId,
+            rawText = preview.rawText,
+            parts = listOf(
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Tea",
+                    amount = 1.0,
+                    unit = "cup",
+                    calories = 25.0,
+                    source = FoodItemSource.USER_DEFAULT,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = FoodLogRepository.DEFAULT_TEA.notes,
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Banana",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 105.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                    saveDefaultTrigger = "banana",
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Satsuma",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 35.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                ),
+            ),
+        )
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(pendingResult.rawEntryId)
+        val bananaDefault = database.userDefaultDao().getActiveDefault("banana")
+
+        assertTrue(updateResult is FoodLogRepository.PendingEntryUpdateResult.Parsed)
+        assertEquals(emptyList<RawEntryEntity>(), pendingEntries)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals(listOf("Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(listOf(pendingResult.rawEntryId), foodItems.map { it.rawEntryId }.distinct())
+        assertEquals("Banana", bananaDefault?.name)
+        assertEquals(105.0, bananaDefault?.calories ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun plusSeparatedPendingEntryStagesRecognisedPartsAndGramQuantity() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("1pm 150g sourdough with thin butter + tea")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.Ready
+        val pendingEntry = repository.observePendingEntriesForDate(today).first().single()
+
+        assertEquals(LocalTime.parse("13:00"), pendingEntry.consumedTime)
+        assertEquals(
+            listOf("150g sourdough with thin butter", "tea"),
+            preview.parts.map { it.inputText },
+        )
+        assertEquals(listOf(null, "Tea"), preview.parts.map { it.default?.name })
+        assertEquals(150.0, preview.parts.first().quantity, 0.001)
+        assertEquals("g", preview.parts.first().quantityUnit)
+        assertEquals("sourdough with thin butter", preview.parts.first().trigger)
+    }
+
+    @Test
+    fun parsedEntryCannotBeRemovedAsPending() = runTest {
+        repository.seedDefaults()
+
+        val parsedResult = repository.submitText("tea")
+        val removeResult = repository.removePendingEntry(parsedResult.rawEntryId)
+        val rawEntry = database.rawEntryDao().getById(parsedResult.rawEntryId)
+
+        assertEquals(FoodLogRepository.PendingEntryRemoveResult.NotPending, removeResult)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+    }
+
+    @Test
+    fun manualAddCreatesLoggedFoodItemUsingCurrentTimeWhenBlank() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addFoodItemManually(
+            logDate = today,
+            name = "Banana",
+            amount = 1.0,
+            unit = "medium",
+            calories = 105.0,
+            consumedTime = null,
+            notes = "Manual estimate",
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(
+            (addResult as FoodLogRepository.ManualAddResult.Added).rawEntryId,
+        )
+        val total = repository.observeCaloriesForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today).csv
+
+        assertEquals(today, addResult.logDate)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals("Manual entry: Banana", rawEntry?.rawText)
+        assertEquals(localTime, rawEntry?.consumedTime)
+        assertEquals("Banana", foodItem.name)
+        assertEquals(localTime, foodItem.consumedTime)
+        assertEquals(FoodItemSource.MANUAL_OVERRIDE, foodItem.source)
+        assertEquals(105.0, total, 0.001)
+        assertTrue(csv.contains("2026-04-24,12:30,Banana,1 medium,105,Manual estimate"))
+    }
+
+    @Test
+    fun manualAddCanSaveShortcutForFutureSubmissions() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addFoodItemManually(
+            logDate = today,
+            name = "Greek yogurt",
+            amount = 2.0,
+            unit = "pot",
+            calories = 180.0,
+            consumedTime = LocalTime.parse("09:15"),
+            notes = "Manual default",
+            saveAsDefault = true,
+        )
+        val default = database.userDefaultDao().getActiveDefault("greek yogurt")
+        val nextResult = repository.submitText("greek yogurt")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertTrue(addResult is FoodLogRepository.ManualAddResult.Added)
+        assertEquals("greek yogurt", (addResult as FoodLogRepository.ManualAddResult.Added).savedDefaultTrigger)
+        assertEquals("Greek yogurt", default?.name)
+        assertEquals(90.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("pot", default?.unit)
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(listOf(180.0, 90.0), foodItems.map { it.calories })
+    }
+
+    @Test
+    fun shortcutCanBeAddedDirectlyForFutureSubmissions() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addDefault(
+            trigger = "  Banana  ",
+            name = "Banana",
+            calories = 105.0,
+            unit = "each",
+            notes = "Shortcut picker",
+        )
+        val default = database.userDefaultDao().getActiveDefault("banana")
+        val nextResult = repository.submitText("banana")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.Updated, addResult)
+        assertEquals("Banana", default?.name)
+        assertEquals(105.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("each", default?.unit)
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Banana", foodItem.name)
+        assertEquals(105.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun gramShortcutScalesCaloriesByParsedWeight() = runTest {
+        repository.seedDefaults()
+
+        repository.addDefault(
+            trigger = "sourdough with thin butter",
+            name = "Sourdough with thin butter",
+            calories = 2.4,
+            unit = "g",
+            notes = null,
+        )
+        val result = repository.submitText("100g sourdough with thin butter")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Sourdough with thin butter", foodItem.name)
+        assertEquals(100.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals("g", foodItem.unit)
+        assertEquals(240.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun unitQuantityShortcutScalesCaloriesByParsedAmount() = runTest {
+        repository.seedDefaults()
+
+        repository.addDefault(
+            trigger = "sourdough",
+            name = "Sourdough",
+            calories = 90.0,
+            unit = "slice",
+            notes = null,
+        )
+        val result = repository.submitText("2 slices sourdough")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Sourdough", foodItem.name)
+        assertEquals(2.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals("slice", foodItem.unit)
+        assertEquals(180.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun unitQuantityPendingPreviewKeepsParsedUnit() = runTest {
+        repository.seedDefaults()
+
+        val pendingResult = repository.submitText("3 slices sourdough + tea")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = pendingResult.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.Ready
+
+        assertEquals(listOf("3 slices sourdough", "tea"), preview.parts.map { it.inputText })
+        assertEquals(3.0, preview.parts.first().quantity, 0.001)
+        assertEquals("slice", preview.parts.first().quantityUnit)
+        assertEquals("sourdough", preview.parts.first().trigger)
+        assertEquals("Tea", preview.parts.last().default?.name)
+    }
+
+    @Test
+    fun dailyWeightDoesNotAffectCalorieTotalAndExportsWeightRow() = runTest {
+        val result = repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.6,
+            measuredTime = LocalTime.parse("07:15"),
+        )
+        val total = repository.observeCaloriesForDate(today).first()
+        val weight = repository.observeDailyWeightForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today).csv
+        val status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(FoodLogRepository.DailyWeightResult.Saved, result)
+        assertEquals(0.0, total, 0.001)
+        assertEquals(82.6, weight?.weightKg ?: 0.0, 0.001)
+        assertTrue(csv.contains("2026-04-24,07:15,weight,82.6 kg,,Recorded weight"))
+        assertEquals(now, status?.lastFoodChangedAt)
+    }
+
+    @Test
+    fun dailyWeightBlankTimeUsesCurrentTimeAndCanBeUpdated() = runTest {
+        repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.0,
+            measuredTime = null,
+        )
+        val firstWeight = repository.observeDailyWeightForDate(today).first()
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:30:00Z")
+        val updateResult = repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 83.0,
+            measuredTime = LocalTime.parse("08:10"),
+        )
+        val weight = repository.observeDailyWeightForDate(today).first()
+
+        assertEquals(FoodLogRepository.DailyWeightResult.Saved, updateResult)
+        assertEquals(localTime, firstWeight?.measuredTime)
+        assertEquals(83.0, weight?.weightKg ?: 0.0, 0.001)
+        assertEquals(LocalTime.parse("08:10"), weight?.measuredTime)
+        assertEquals(now, weight?.createdAt)
+        assertEquals(Instant.parse("2026-04-24T12:30:00Z"), weight?.updatedAt)
     }
 
     @Test
@@ -336,7 +843,7 @@ class FoodLogRepositoryInstrumentedTest {
         )
         val foodItem = repository.observeFoodItemsForDate(today).first().single()
         val total = repository.observeCaloriesForDate(today).first()
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
         assertEquals("Large tea", foodItem.name)
@@ -349,6 +856,165 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun loggedFoodItemCanBeReplacedFromDefaultsWhenCaloriesBlank() = runTest {
+        repository.seedDefaults()
+        database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))
+        database.userDefaultDao().upsert(default(trigger = "satsuma", name = "Satsuma", calories = 35.0, unit = "each"))
+        val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        val updateResult = repository.updateFoodItem(
+            id = result.foodItemId,
+            name = "tea, banana, satsuma",
+            amount = 999.0,
+            unit = "ignored",
+            calories = null,
+            consumedTime = LocalTime.parse("08:45"),
+            notes = FoodLogRepository.DEFAULT_TEA.notes,
+        )
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+        val total = repository.observeCaloriesForDate(today).first()
+        val csv = repository.exportLegacyHealthCsv(today).csv
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults, updateResult)
+        assertEquals(null, database.foodItemDao().getById(result.foodItemId))
+        assertEquals("tea, banana, satsuma", rawEntry?.rawText)
+        assertEquals(listOf("Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(listOf(LocalTime.parse("08:45")), foodItems.map { it.consumedTime }.distinct())
+        assertEquals(165.0, total, 0.001)
+        assertTrue(csv.contains("Banana,1 each,105"))
+        assertTrue(csv.contains("Satsuma,1 each,35"))
+        assertTrue(csv.contains("Tea,1 cup,25"))
+    }
+
+    @Test
+    fun blankCalorieLoggedFoodEditDoesNotChangeRowWhenDefaultsDoNotResolve() = runTest {
+        repository.seedDefaults()
+        val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        val updateResult = repository.updateFoodItem(
+            id = result.foodItemId,
+            name = "tea and curry",
+            amount = null,
+            unit = null,
+            calories = null,
+            consumedTime = LocalTime.parse("08:45"),
+            notes = null,
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+
+        assertEquals(
+            FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults(listOf("curry")),
+            updateResult,
+        )
+        assertEquals("Tea", foodItem.name)
+        assertEquals(25.0, foodItem.calories, 0.001)
+        assertEquals(localTime, foodItem.consumedTime)
+        assertEquals("tea", rawEntry?.rawText)
+    }
+
+    @Test
+    fun loggedFoodEditPreviewCanBeCommittedAfterManualMissingPartsAreCompleted() = runTest {
+        repository.seedDefaults()
+        val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        val preview = repository.previewFoodItemDefaultEdit(
+            id = result.foodItemId,
+            name = "tea, satsuma, banana",
+        ) as FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready
+        val unchangedItems = repository.observeFoodItemsForDate(today).first()
+
+        assertEquals("tea, satsuma, banana", preview.rawText)
+        assertEquals(listOf("tea", "satsuma", "banana"), preview.parts.map { it.inputText })
+        assertEquals(listOf(true, false, false), preview.parts.map { it.default != null })
+        assertEquals(listOf("Tea"), unchangedItems.map { it.name })
+
+        val updateResult = repository.replaceFoodItemWithResolvedEditParts(
+            id = result.foodItemId,
+            rawText = preview.rawText,
+            consumedTime = LocalTime.parse("08:45"),
+            parts = listOf(
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Tea",
+                    amount = 1.0,
+                    unit = "cup",
+                    calories = 25.0,
+                    source = FoodItemSource.USER_DEFAULT,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = FoodLogRepository.DEFAULT_TEA.notes,
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Satsuma",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 35.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                    saveDefaultTrigger = "satsuma",
+                ),
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Banana",
+                    amount = 1.0,
+                    unit = "each",
+                    calories = 105.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                ),
+            ),
+        )
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
+        val total = repository.observeCaloriesForDate(today).first()
+        val satsumaDefault = database.userDefaultDao().getActiveDefault("satsuma")
+        val bananaDefault = database.userDefaultDao().getActiveDefault("banana")
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.UpdatedFromDefaults, updateResult)
+        assertEquals(null, database.foodItemDao().getById(result.foodItemId))
+        assertEquals("tea, satsuma, banana", rawEntry?.rawText)
+        assertEquals(listOf("Banana", "Satsuma", "Tea"), foodItems.map { it.name }.sorted())
+        assertEquals(listOf(LocalTime.parse("08:45")), foodItems.map { it.consumedTime }.distinct())
+        assertEquals(165.0, total, 0.001)
+        assertEquals("Satsuma", satsumaDefault?.name)
+        assertEquals(35.0, satsumaDefault?.calories ?: 0.0, 0.001)
+        assertEquals(null, bananaDefault)
+
+        val nextResult = repository.submitText("satsuma")
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        val nextParsedResult = nextResult as FoodLogRepository.SubmitResult.Parsed
+        val nextFoodItem = repository.observeFoodItemsForDate(today).first()
+            .single { it.rawEntryId == nextParsedResult.rawEntryId }
+
+        assertEquals("Satsuma", nextFoodItem.name)
+        assertEquals(35.0, nextFoodItem.calories, 0.001)
+    }
+
+    @Test
+    fun explicitCaloriesKeepLoggedFoodEditAsSingleManualRow() = runTest {
+        repository.seedDefaults()
+        database.userDefaultDao().upsert(default(trigger = "banana", name = "Banana", calories = 105.0, unit = "each"))
+        val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        val updateResult = repository.updateFoodItem(
+            id = result.foodItemId,
+            name = "tea, banana",
+            amount = 1.0,
+            unit = "plate",
+            calories = 200.0,
+            consumedTime = LocalTime.parse("08:45"),
+            notes = "Manual override",
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
+        assertEquals("tea, banana", foodItem.name)
+        assertEquals("plate", foodItem.unit)
+        assertEquals(200.0, foodItem.calories, 0.001)
+    }
+
+    @Test
     fun loggedFoodItemCanBeRemovedWithHardDelete() = runTest {
         repository.seedDefaults()
         val result = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
@@ -357,7 +1023,7 @@ class FoodLogRepositoryInstrumentedTest {
         val rawEntry = database.rawEntryDao().getById(result.rawEntryId)
         val foodItems = repository.observeFoodItemsForDate(today).first()
         val total = repository.observeCaloriesForDate(today).first()
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertEquals(FoodLogRepository.FoodItemRemoveResult.Removed, removeResult)
         assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
@@ -437,7 +1103,7 @@ class FoodLogRepositoryInstrumentedTest {
         database.foodItemDao().insert(foodItem(rawEntryId = rawEntryId, name = "Tea"))
         database.foodItemDao().insert(foodItem(rawEntryId = rawEntryId, name = "Old tea", voided = true))
 
-        val csv = repository.exportLegacyHealthCsv(today)
+        val csv = repository.exportLegacyHealthCsv(today).csv
 
         assertTrue(csv.startsWith("date,time_local,item,quantity,calories_kcal,notes"))
         assertTrue(csv.contains("Tea"))
@@ -449,17 +1115,23 @@ class FoodLogRepositoryInstrumentedTest {
         repository.seedDefaults()
         repository.submitText("tea")
 
-        repository.exportLegacyHealthCsv(today)
+        val healthMonitorExport = repository.exportLegacyHealthCsv(today)
         var status = database.dailyStatusDao().observeByDate(today).first()
 
+        assertEquals("food_log_2026-04-24.csv", healthMonitorExport.fileName)
         assertEquals(now, status?.legacyExportedAt)
+        assertEquals("food_log_2026-04-24.csv", status?.legacyExportFileName)
         assertEquals(null, status?.auditExportedAt)
+        assertEquals(null, status?.auditExportFileName)
 
-        repository.exportAuditCsv(today)
+        val auditExport = repository.exportAuditCsv(today)
         status = database.dailyStatusDao().observeByDate(today).first()
 
+        assertEquals("foodlog-audit-2026-04-24.csv", auditExport.fileName)
         assertEquals(now, status?.legacyExportedAt)
+        assertEquals("food_log_2026-04-24.csv", status?.legacyExportFileName)
         assertEquals(now, status?.auditExportedAt)
+        assertEquals("foodlog-audit-2026-04-24.csv", status?.auditExportFileName)
     }
 
     @Test
@@ -468,7 +1140,7 @@ class FoodLogRepositoryInstrumentedTest {
         val parsedResult = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
 
         dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
-        repository.exportLegacyHealthCsv(today)
+        repository.exportLegacyHealthCsv(today).csv
 
         dateTimeProvider.now = Instant.parse("2026-04-24T12:30:00Z")
         repository.updateFoodItem(
@@ -486,7 +1158,7 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(Instant.parse("2026-04-24T12:30:00Z"), status?.lastFoodChangedAt)
 
         dateTimeProvider.now = Instant.parse("2026-04-24T13:00:00Z")
-        repository.exportLegacyHealthCsv(today)
+        repository.exportLegacyHealthCsv(today).csv
         status = database.dailyStatusDao().observeByDate(today).first()
 
         assertEquals(Instant.parse("2026-04-24T13:00:00Z"), status?.legacyExportedAt)
@@ -512,6 +1184,19 @@ class FoodLogRepositoryInstrumentedTest {
             notes = "test",
             createdAt = now,
             voided = voided,
+        )
+
+    private fun default(
+        trigger: String,
+        name: String,
+        calories: Double,
+        unit: String,
+    ): UserDefaultEntity =
+        UserDefaultEntity(
+            trigger = trigger,
+            name = name,
+            calories = calories,
+            unit = unit,
         )
 
     private class MutableDateTimeProvider(

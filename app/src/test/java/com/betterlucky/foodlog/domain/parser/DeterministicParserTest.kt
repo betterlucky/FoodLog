@@ -3,6 +3,7 @@ package com.betterlucky.foodlog.domain.parser
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
+import java.time.LocalTime
 
 class DeterministicParserTest {
     private val parser = DeterministicParser()
@@ -35,6 +36,77 @@ class DeterministicParserTest {
     }
 
     @Test
+    fun compoundEntriesSplitOnCommasAndAnd() {
+        val parsed = parser.parse("banana, satsuma and 2 teas", today)
+
+        assertEquals(listOf("banana", "satsuma", "2 teas"), parsed.parts.map { it.normalizedFoodText })
+        assertEquals(listOf("banana", "satsuma", "tea"), parsed.parts.map { it.shortcutTrigger })
+        assertEquals(listOf(1.0, 1.0, 2.0), parsed.parts.map { it.quantity })
+        assertEquals(null, parsed.shortcutTrigger)
+    }
+
+    @Test
+    fun fruitAndNutMixKeepsAndInsideItemName() {
+        val parsed = parser.parse("13:45 10g fruit and nut mix", today)
+
+        assertEquals(listOf("10g fruit and nut mix"), parsed.parts.map { it.normalizedFoodText })
+        assertEquals(listOf("fruit and nut mix"), parsed.parts.map { it.shortcutTrigger })
+        assertEquals(listOf(10.0), parsed.parts.map { it.quantity })
+    }
+
+    @Test
+    fun weakAndSeparatorDoesNotSplitWithinWithPhrases() {
+        val parsed = parser.parse("10pm yoghurt with chia and pumpkin seeds", today)
+
+        assertEquals(LocalTime.parse("22:00"), parsed.consumedTime)
+        assertEquals("yoghurt with chia and pumpkin seeds", parsed.normalizedFoodText)
+        assertEquals(listOf("yoghurt with chia and pumpkin seeds"), parsed.parts.map { it.normalizedFoodText })
+    }
+
+    @Test
+    fun strongSeparatorsStillSplitWithPhrases() {
+        val parsed = parser.parse("1pm 150g sourdough with thin butter + tea", today)
+
+        assertEquals(LocalTime.parse("13:00"), parsed.consumedTime)
+        assertEquals("150g sourdough with thin butter + tea", parsed.normalizedFoodText)
+        assertEquals(listOf("150g sourdough with thin butter", "tea"), parsed.parts.map { it.normalizedFoodText })
+        assertEquals(listOf("sourdough with thin butter", "tea"), parsed.parts.map { it.shortcutTrigger })
+        assertEquals(listOf(150.0, 1.0), parsed.parts.map { it.quantity })
+        assertEquals(listOf("g", null), parsed.parts.map { it.quantityUnit })
+    }
+
+    @Test
+    fun quantityPrefixesSingularizeCommonFoodPlurals() {
+        val parsed = parser.parse("2 bananas and 3 satsumas", today)
+
+        assertEquals(listOf("banana", "satsuma"), parsed.parts.map { it.shortcutTrigger })
+        assertEquals(listOf(2.0, 3.0), parsed.parts.map { it.quantity })
+    }
+
+    @Test
+    fun sharedTimeParserSupportsLogAndEditTimeFormats() {
+        assertEquals(LocalTime.parse("13:00"), TimeTextParser.parseOrNull("1pm"))
+        assertEquals(LocalTime.parse("13:45"), TimeTextParser.parseOrNull("13:45"))
+        assertEquals(LocalTime.parse("08:05"), TimeTextParser.parseOrNull("8:05am"))
+    }
+
+    @Test
+    fun pmPrefixDoesNotNeedQuantity() {
+        val parsed = parser.parse("10pm yoghurt with chia and pumpkin seeds", today)
+
+        assertEquals(LocalTime.parse("22:00"), parsed.consumedTime)
+        assertEquals("yoghurt with chia and pumpkin seeds", parsed.normalizedFoodText)
+    }
+
+    @Test
+    fun atPrefixAlsoExtractsTime() {
+        val parsed = parser.parse("at 10pm tea", today)
+
+        assertEquals(LocalTime.parse("22:00"), parsed.consumedTime)
+        assertEquals("tea", parsed.normalizedFoodText)
+    }
+
+    @Test
     fun supportedDatePrefixesSetLogDate() {
         assertEquals(today, parser.parse("today tea", today).logDate)
         assertEquals(today.minusDays(1), parser.parse("yesterday tea", today).logDate)
@@ -58,5 +130,13 @@ class DeterministicParserTest {
         assertEquals(today.minusDays(1), parsed.logDate)
         assertEquals("curry", parsed.normalizedFoodText)
         assertEquals("curry", parsed.shortcutTrigger)
+    }
+
+    @Test
+    fun invalidIsoLikeDatePrefixDoesNotCrash() {
+        val parsed = parser.parse("2026-99-99 tea", today)
+
+        assertEquals(today, parsed.logDate)
+        assertEquals("2026-99-99 tea", parsed.normalizedFoodText)
     }
 }

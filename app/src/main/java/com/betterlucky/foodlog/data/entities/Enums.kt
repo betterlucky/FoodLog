@@ -21,6 +21,8 @@ enum class RawEntryStatus {
 enum class ProductSource {
     PACKAGING_PHOTO,
     MANUAL,
+    MANUAL_BARCODE,
+    OPEN_FOOD_FACTS,
     ESTIMATE,
 }
 

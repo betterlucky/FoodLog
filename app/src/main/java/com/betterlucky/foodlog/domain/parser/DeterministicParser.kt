@@ -1,13 +1,28 @@
 package com.betterlucky.foodlog.domain.parser
 
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeParseException
 
 data class ParsedSubmission(
     val rawText: String,
     val normalizedFoodText: String,
     val logDate: LocalDate,
+    val consumedTime: LocalTime?,
+    val parts: List<ParsedFoodPart>,
+) {
+    val shortcutTrigger: String?
+        get() = parts.singleOrNull()?.shortcutTrigger
+
+    val quantity: Double
+        get() = parts.singleOrNull()?.quantity ?: 1.0
+}
+
+data class ParsedFoodPart(
+    val normalizedFoodText: String,
     val shortcutTrigger: String?,
     val quantity: Double = 1.0,
+    val quantityUnit: String? = null,
 )
 
 class DeterministicParser {
@@ -22,14 +37,13 @@ class DeterministicParser {
             today = today,
             defaultLogDate = defaultLogDate,
         )
-        val shortcutTrigger = shortcutTriggerFor(dated.foodText)
-
+        val timed = extractTime(dated.foodText)
         return ParsedSubmission(
             rawText = input,
-            normalizedFoodText = dated.foodText,
+            normalizedFoodText = timed.foodText,
             logDate = dated.logDate,
-            shortcutTrigger = shortcutTrigger?.trigger,
-            quantity = shortcutTrigger?.quantity ?: 1.0,
+            consumedTime = timed.consumedTime,
+            parts = foodPartsFor(timed.foodText),
         )
     }
 
@@ -61,24 +75,84 @@ class DeterministicParser {
                     logDate = today,
                 )
 
-            isoDateMatch != null ->
-                DatedFoodText(
-                    foodText = isoDateMatch.groupValues[2],
-                    logDate = LocalDate.parse(isoDateMatch.groupValues[1]),
-                )
+            isoDateMatch != null -> {
+                val parsedDate = isoDateMatch.groupValues[1].toLocalDateOrNull()
+                if (parsedDate == null) {
+                    DatedFoodText(foodText = normalized, logDate = defaultLogDate)
+                } else {
+                    DatedFoodText(
+                        foodText = isoDateMatch.groupValues[2],
+                        logDate = parsedDate,
+                    )
+                }
+            }
 
             else -> DatedFoodText(foodText = normalized, logDate = defaultLogDate)
         }
     }
 
+    private fun extractTime(foodText: String): TimedFoodText {
+        val prefixMatch = Regex("^(?:at\\s+)?(${TIME_PATTERN})\\s+(.+)$").matchEntire(foodText)
+        if (prefixMatch != null) {
+            return TimedFoodText(
+                foodText = prefixMatch.groupValues[2],
+                consumedTime = TimeTextParser.parse(prefixMatch.groupValues[1]),
+            )
+        }
+
+        val suffixMatch = Regex("^(.+?)\\s+(?:at\\s+)?(${TIME_PATTERN})$").matchEntire(foodText)
+        if (suffixMatch != null) {
+            return TimedFoodText(
+                foodText = suffixMatch.groupValues[1],
+                consumedTime = TimeTextParser.parse(suffixMatch.groupValues[2]),
+            )
+        }
+
+        return TimedFoodText(foodText = foodText, consumedTime = null)
+    }
+
+    private fun foodPartsFor(foodText: String): List<ParsedFoodPart> {
+        return splitFoodText(foodText)
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { part ->
+                val shortcutTrigger = shortcutTriggerFor(part)
+                ParsedFoodPart(
+                    normalizedFoodText = part,
+                    shortcutTrigger = shortcutTrigger?.trigger,
+                    quantity = shortcutTrigger?.quantity ?: 1.0,
+                    quantityUnit = shortcutTrigger?.unit,
+                )
+            }
+    }
+
     private fun shortcutTriggerFor(foodText: String): ShortcutMatch? {
         if (foodText.isBlank()) return null
+
+        val gramMatch = Regex("^(\\d+(?:\\.\\d+)?)\\s*g\\s+(.+)$").matchEntire(foodText)
+        if (gramMatch != null) {
+            return ShortcutMatch(
+                trigger = singularizeShortcut(gramMatch.groupValues[2]),
+                quantity = gramMatch.groupValues[1].toDouble(),
+                unit = "g",
+            )
+        }
+
+        val unitQuantityMatch = Regex("^(\\d+(?:\\.\\d+)?)\\s+(${UNIT_PATTERN})\\s+(?:of\\s+)?(.+)$").matchEntire(foodText)
+        if (unitQuantityMatch != null) {
+            return ShortcutMatch(
+                trigger = singularizeShortcut(unitQuantityMatch.groupValues[3]),
+                quantity = unitQuantityMatch.groupValues[1].toDouble(),
+                unit = singularizeUnit(unitQuantityMatch.groupValues[2]),
+            )
+        }
 
         val numericMatch = Regex("^(\\d+(?:\\.\\d+)?)\\s+(.+)$").matchEntire(foodText)
         if (numericMatch != null) {
             return ShortcutMatch(
                 trigger = singularizeShortcut(numericMatch.groupValues[2]),
                 quantity = numericMatch.groupValues[1].toDouble(),
+                unit = null,
             )
         }
 
@@ -87,6 +161,7 @@ class DeterministicParser {
             return ShortcutMatch(
                 trigger = singularizeShortcut(wordQuantityMatch.groupValues[2]),
                 quantity = wordQuantityMatch.groupValues[1].wordQuantity(),
+                unit = null,
             )
         }
 
@@ -95,14 +170,51 @@ class DeterministicParser {
             foodText.startsWith("cup of ") -> foodText.removePrefix("cup of ")
             else -> foodText
         }
-        return ShortcutMatch(trigger = singularizeShortcut(trigger), quantity = 1.0)
+        return ShortcutMatch(trigger = singularizeShortcut(trigger), quantity = 1.0, unit = null)
             .takeIf { it.trigger.isNotBlank() }
     }
 
     private fun singularizeShortcut(trigger: String): String =
         when (trigger) {
             "teas", "cups of tea" -> "tea"
+            "bananas" -> "banana"
+            "satsumas" -> "satsuma"
+            "apples" -> "apple"
             else -> trigger
+        }
+
+    private fun splitFoodText(foodText: String): List<String> {
+        val protectedFoodText = PROTECTED_AND_PHRASES.fold(foodText) { text, phrase ->
+            text.replace(phrase, phrase.replace(" and ", PROTECTED_AND_TOKEN))
+        }
+        return protectedFoodText
+            .split(Regex("\\s*(?:,|\\+|/|&|;)\\s*"))
+            .flatMap { segment ->
+                if (segment.contains(" with ")) {
+                    listOf(segment)
+                } else {
+                    segment.split(Regex("\\s+and\\s+"))
+                }
+            }
+            .map { it.replace(PROTECTED_AND_TOKEN, " and ") }
+    }
+
+    private fun singularizeUnit(unit: String): String =
+        when (unit) {
+            "slices" -> "slice"
+            "pieces" -> "piece"
+            "servings" -> "serving"
+            "portions" -> "portion"
+            "pots" -> "pot"
+            "cups" -> "cup"
+            "crackers" -> "cracker"
+            "biscuits" -> "biscuit"
+            "bars" -> "bar"
+            "bowls" -> "bowl"
+            "spoons" -> "spoon"
+            "tablespoons" -> "tablespoon"
+            "teaspoons" -> "teaspoon"
+            else -> unit
         }
 
     private fun String.wordQuantity(): Double =
@@ -117,10 +229,32 @@ class DeterministicParser {
     private data class ShortcutMatch(
         val trigger: String,
         val quantity: Double,
+        val unit: String?,
     )
 
     private data class DatedFoodText(
         val foodText: String,
         val logDate: LocalDate,
     )
+
+    private data class TimedFoodText(
+        val foodText: String,
+        val consumedTime: LocalTime?,
+    )
+
+    private companion object {
+        private const val TIME_PATTERN = TimeTextParser.PATTERN
+        private const val UNIT_PATTERN = "slices?|pieces?|servings?|portions?|pots?|cups?|crackers?|biscuits?|bars?|bowls?|spoons?|tablespoons?|teaspoons?"
+        private const val PROTECTED_AND_TOKEN = "__and__"
+        private val PROTECTED_AND_PHRASES = listOf(
+            "fruit and nut mix",
+        )
+    }
 }
+
+private fun String.toLocalDateOrNull(): LocalDate? =
+    try {
+        LocalDate.parse(this)
+    } catch (_: DateTimeParseException) {
+        null
+    }

@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.betterlucky.foodlog.data.dao.AppSettingsDao
 import com.betterlucky.foodlog.data.dao.ContainerDao
 import com.betterlucky.foodlog.data.dao.DailyStatusDao
+import com.betterlucky.foodlog.data.dao.DailyWeightDao
 import com.betterlucky.foodlog.data.dao.FoodItemDao
 import com.betterlucky.foodlog.data.dao.ProductDao
 import com.betterlucky.foodlog.data.dao.ProductPhotoDao
@@ -18,6 +19,7 @@ import com.betterlucky.foodlog.data.dao.UserDefaultDao
 import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.ContainerEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
+import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.ProductEntity
 import com.betterlucky.foodlog.data.entities.ProductPhotoEntity
@@ -34,8 +36,9 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         UserDefaultEntity::class,
         DailyStatusEntity::class,
         AppSettingsEntity::class,
+        DailyWeightEntity::class,
     ],
-    version = 4,
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -48,6 +51,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
     abstract fun containerDao(): ContainerDao
     abstract fun userDefaultDao(): UserDefaultDao
     abstract fun dailyStatusDao(): DailyStatusDao
+    abstract fun dailyWeightDao(): DailyWeightDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -86,6 +90,65 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE daily_statuses ADD COLUMN legacyExportFileName TEXT")
+                db.execSQL("ALTER TABLE daily_statuses ADD COLUMN auditExportFileName TEXT")
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_weights (
+                        logDate TEXT NOT NULL,
+                        weightKg REAL NOT NULL,
+                        measuredTime TEXT NOT NULL,
+                        createdAt TEXT NOT NULL,
+                        updatedAt TEXT NOT NULL,
+                        PRIMARY KEY(logDate)
+                    )
+                    """.trimIndent(),
+                )
+            }
+        }
+
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE products ADD COLUMN barcode TEXT")
+                db.execSQL("ALTER TABLE products ADD COLUMN packageSizeGrams REAL")
+                db.execSQL("ALTER TABLE products ADD COLUMN externalUrl TEXT")
+                db.execSQL("ALTER TABLE products ADD COLUMN lastSyncedAt TEXT")
+                db.execSQL("ALTER TABLE products ADD COLUMN lastLoggedGrams REAL")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_products_barcode ON products(barcode)")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE products ADD COLUMN packageItemCount REAL")
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing("products", "fiberPer100g", "REAL")
+                db.addColumnIfMissing("products", "sugarsPer100g", "REAL")
+                db.addColumnIfMissing("products", "saltPer100g", "REAL")
+                db.addColumnIfMissing("products", "servingUnit", "TEXT")
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing("products", "fiberPer100g", "REAL")
+                db.addColumnIfMissing("products", "sugarsPer100g", "REAL")
+                db.addColumnIfMissing("products", "saltPer100g", "REAL")
+                db.addColumnIfMissing("products", "servingUnit", "TEXT")
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -95,6 +158,24 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_1_2)
                 .addMigrations(MIGRATION_2_3)
                 .addMigrations(MIGRATION_3_4)
+                .addMigrations(MIGRATION_4_5)
+                .addMigrations(MIGRATION_5_6)
+                .addMigrations(MIGRATION_6_7)
+                .addMigrations(MIGRATION_7_8)
+                .addMigrations(MIGRATION_8_9)
+                .addMigrations(MIGRATION_9_10)
                 .build()
     }
+}
+
+private fun SupportSQLiteDatabase.addColumnIfMissing(tableName: String, columnName: String, declaration: String) {
+    query("PRAGMA table_info($tableName)").use { cursor ->
+        val nameIndex = cursor.getColumnIndex("name")
+        while (cursor.moveToNext()) {
+            if (cursor.getString(nameIndex) == columnName) {
+                return
+            }
+        }
+    }
+    execSQL("ALTER TABLE $tableName ADD COLUMN $columnName $declaration")
 }
