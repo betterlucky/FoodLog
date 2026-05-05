@@ -230,7 +230,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                     """.trimIndent(),
                 )
                 db.execSQL(
-                    "INSERT INTO `app_settings_new` SELECT `id`, `dayBoundaryTime`, `lastLabelInputMode` FROM `app_settings`",
+                    "INSERT INTO `app_settings_new` (`id`, `dayBoundaryTime`, `lastLabelInputMode`) SELECT `id`, `dayBoundaryTime`, `lastLabelInputMode` FROM `app_settings`",
                 )
                 db.execSQL("DROP TABLE `app_settings`")
                 db.execSQL("ALTER TABLE `app_settings_new` RENAME TO `app_settings`")
