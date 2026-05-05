@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
@@ -30,6 +29,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.ConcurrentHashMap
 
 data class LoggedFoodEditResolution(
     val rawText: String,
@@ -132,7 +132,7 @@ class TodayViewModel(
     private var labelOcrRequestId: Long = 0
 
     private val selectedDate = MutableStateFlow(LocalDate.now())
-    private val inputText = MutableStateFlow("")
+    private val inputDrafts = MutableStateFlow<Map<LocalDate, String>>(emptyMap())
     private val message = MutableStateFlow<String?>(null)
 
     private val _labelReview = MutableStateFlow<LabelReviewState?>(null)
@@ -144,40 +144,55 @@ class TodayViewModel(
     private val _loggingWizard = MutableStateFlow<LoggingWizardSession?>(null)
     val loggingWizard: StateFlow<LoggingWizardSession?> = _loggingWizard.asStateFlow()
 
+    private val dayStateCache = ConcurrentHashMap<LocalDate, StateFlow<TodayDayUiState>>()
+
     val uiState: StateFlow<TodayUiState> =
         combine(
             selectedDate,
-            inputText,
+            inputDrafts,
             message,
-            selectedDate.flatMapLatest(repository::observeFoodItemsForDate),
-            selectedDate.flatMapLatest(repository::observeCaloriesForDate),
-            selectedDate.flatMapLatest(repository::observePendingEntriesForDate),
             repository.observeActiveDefaults(),
-            selectedDate.flatMapLatest(repository::observeDailyStatusForDate),
-            selectedDate.flatMapLatest(repository::observeDailyWeightForDate),
             repository.observeAppSettings(),
-        ) { values ->
-            @Suppress("UNCHECKED_CAST")
+        ) { date, drafts, msg, defaults, settings ->
             TodayUiState(
-                selectedDate = values[0] as LocalDate,
-                inputText = values[1] as String,
-                message = values[2] as String?,
-                items = values[3] as List<com.betterlucky.foodlog.data.entities.FoodItemEntity>,
-                totalCalories = values[4] as Double,
-                pendingEntries = values[5] as List<com.betterlucky.foodlog.data.entities.RawEntryEntity>,
-                userDefaults = values[6] as List<com.betterlucky.foodlog.data.entities.UserDefaultEntity>,
-                dailyStatus = values[7] as com.betterlucky.foodlog.data.entities.DailyStatusEntity?,
-                dailyWeight = values[8] as com.betterlucky.foodlog.data.entities.DailyWeightEntity?,
-                dayBoundaryTime = (values[9] as? AppSettingsEntity)?.dayBoundaryTime,
-                lastLabelInputMode = (values[9] as? AppSettingsEntity)?.lastLabelInputMode
+                selectedDate = date,
+                inputDrafts = drafts,
+                message = msg,
+                userDefaults = defaults,
+                dayBoundaryTime = settings?.dayBoundaryTime,
+                lastLabelInputMode = settings?.lastLabelInputMode
                     ?: AppSettingsEntity.LAST_LABEL_INPUT_MODE_ITEMS,
-                isLoading = false,
             )
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5_000),
             initialValue = TodayUiState(selectedDate = selectedDate.value),
         )
+
+    fun dayState(date: LocalDate): StateFlow<TodayDayUiState> =
+        dayStateCache.getOrPut(date) {
+            combine(
+                repository.observeFoodItemsForDate(date),
+                repository.observeCaloriesForDate(date),
+                repository.observePendingEntriesForDate(date),
+                repository.observeDailyStatusForDate(date),
+                repository.observeDailyWeightForDate(date),
+            ) { items, calories, pending, status, weight ->
+                TodayDayUiState(
+                    date = date,
+                    items = items,
+                    totalCalories = calories,
+                    pendingEntries = pending,
+                    dailyStatus = status,
+                    dailyWeight = weight,
+                    isReady = true,
+                )
+            }.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = TodayDayUiState(date = date),
+            )
+        }
 
     init {
         viewModelScope.launch {
@@ -186,23 +201,25 @@ class TodayViewModel(
         }
     }
 
-    fun onInputChanged(value: String) {
-        inputText.value = value
+    fun inputTextForDate(date: LocalDate): String =
+        inputDrafts.value[date].orEmpty()
+
+    fun onInputChanged(date: LocalDate, value: String) {
+        inputDrafts.update { it + (date to value) }
         message.value = null
     }
 
-    fun submit() {
-        val text = inputText.value
+    fun submit(date: LocalDate) {
+        val text = inputDrafts.value[date].orEmpty()
         if (text.isBlank()) return
-
-        previewOrSubmitText(text)
+        previewOrSubmitText(text, date)
     }
 
     fun logShortcut(trigger: String) {
         viewModelScope.launch {
             val default = repository.getActiveShortcut(trigger)
             when {
-                default == null -> previewOrSubmitText(trigger)
+                default == null -> previewOrSubmitText(trigger, selectedDate.value)
                 default.defaultAmount != null -> openShortcutWizard(default, default.defaultAmount, saveDefaultAmount = false)
                 else -> _pendingQuantityPicker.value = default
             }
@@ -418,7 +435,7 @@ class TodayViewModel(
                     }
                     _loggingWizard.value = null
                     _labelReview.value = null
-                    inputText.value = ""
+                    clearInputDraft(session.logDate)
                     when {
                         result.foodItemIds.isNotEmpty() && result.pendingRawEntryId != null ->
                             "Logged ${result.foodItemIds.size} item(s); kept ${pendingParts.size} pending."
@@ -491,16 +508,17 @@ class TodayViewModel(
 
     private fun submitText(
         text: String,
+        targetDate: LocalDate,
         clearInput: Boolean,
     ) {
         viewModelScope.launch {
             val result = repository.submitText(
                 input = text,
-                targetLogDate = selectedDate.value,
+                targetLogDate = targetDate,
             )
             if (clearInput) {
                 if (result !is FoodLogRepository.SubmitResult.DateMismatch) {
-                    inputText.value = ""
+                    clearInputDraft(targetDate)
                 }
             }
             message.value = when (result) {
@@ -518,22 +536,22 @@ class TodayViewModel(
         }
     }
 
-    private fun previewOrSubmitText(text: String) {
+    private fun previewOrSubmitText(text: String, targetDate: LocalDate) {
         viewModelScope.launch {
-            when (val preview = repository.previewSubmission(text, selectedDate.value)) {
+            when (val preview = repository.previewSubmission(text, targetDate)) {
                 is FoodLogRepository.SubmissionPreviewResult.Ready -> {
                     if (preview.consumedTime == null) {
                         _loggingWizard.value = preview.toLoggingWizardSession(defaultTime = currentWizardTime())
                         message.value = null
                     } else {
-                        submitText(text, clearInput = true)
+                        submitText(text, targetDate, clearInput = true)
                     }
                 }
                 is FoodLogRepository.SubmissionPreviewResult.NeedsResolution -> {
                     _loggingWizard.value = preview.toLoggingWizardSession(defaultTime = currentWizardTime())
                     message.value = null
                 }
-                is FoodLogRepository.SubmissionPreviewResult.NonFood -> submitText(text, clearInput = true)
+                is FoodLogRepository.SubmissionPreviewResult.NonFood -> submitText(text, targetDate, clearInput = true)
                 is FoodLogRepository.SubmissionPreviewResult.DateMismatch ->
                     message.value = "Switch to ${preview.requestedLogDate} before adding that entry."
                 FoodLogRepository.SubmissionPreviewResult.InvalidInput -> Unit
@@ -541,11 +559,23 @@ class TodayViewModel(
         }
     }
 
+    private fun clearInputDraft(date: LocalDate) {
+        inputDrafts.update { it - date }
+    }
+
     private fun currentWizardTime(): LocalTime =
         repository.currentLocalTime().truncatedTo(ChronoUnit.MINUTES)
 
     fun selectDate(date: LocalDate) {
         selectedDate.value = date
+    }
+
+    fun selectCurrentFoodDate(onSelected: (LocalDate) -> Unit) {
+        viewModelScope.launch {
+            val date = repository.currentFoodDate()
+            selectedDate.value = date
+            onSelected(date)
+        }
     }
 
     fun previousDay() {
@@ -556,17 +586,15 @@ class TodayViewModel(
         selectedDate.update { it.plusDays(1) }
     }
 
-    fun exportLegacyCsv(onExported: (String, String) -> Unit) {
+    fun exportLegacyCsv(date: LocalDate, onExported: (String, String) -> Unit) {
         viewModelScope.launch {
-            val date = selectedDate.value
             val exported = repository.exportLegacyHealthCsv(date)
             onExported(exported.csv, exported.fileName)
         }
     }
 
-    fun exportAuditCsv(onExported: (String, String) -> Unit) {
+    fun exportAuditCsv(date: LocalDate, onExported: (String, String) -> Unit) {
         viewModelScope.launch {
-            val date = selectedDate.value
             val exported = repository.exportAuditCsv(date)
             onExported(exported.csv, exported.fileName)
         }
@@ -591,6 +619,7 @@ class TodayViewModel(
     }
 
     fun saveDailyWeight(
+        date: LocalDate,
         stone: String,
         pounds: String,
         time: String,
@@ -628,14 +657,14 @@ class TodayViewModel(
         viewModelScope.launch {
             message.value = when (
                 repository.upsertDailyWeight(
-                    logDate = selectedDate.value,
+                    logDate = date,
                     weightKg = stonePoundsToKg(parsedStone, parsedPounds),
                     measuredTime = parsedTime,
                 )
             ) {
                 FoodLogRepository.DailyWeightResult.Saved -> {
                     onSaved()
-                    "Saved weight for ${selectedDate.value}"
+                    "Saved weight for $date"
                 }
                 FoodLogRepository.DailyWeightResult.InvalidInput -> "Add a valid weight."
             }
@@ -725,7 +754,7 @@ class TodayViewModel(
                 is FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults -> {
                     val missing = result.missingTriggers.joinToString(", ")
                     if (missing.isBlank()) {
-                        "Add calories or use known shortcuts to update this item."
+                        "Add calories or save shortcuts for: $missing."
                     } else {
                         "Add calories or save shortcuts for: $missing."
                     }
@@ -874,6 +903,7 @@ class TodayViewModel(
     }
 
     fun addFoodItemManually(
+        date: LocalDate,
         name: String,
         amount: String,
         unit: String,
@@ -905,7 +935,7 @@ class TodayViewModel(
         viewModelScope.launch {
             message.value = when (
                 val result = repository.addFoodItemManually(
-                    logDate = selectedDate.value,
+                    logDate = date,
                     name = name,
                     amount = parsedAmount,
                     unit = unit,
