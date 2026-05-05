@@ -38,7 +38,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         AppSettingsEntity::class,
         DailyWeightEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -214,6 +214,29 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        // Recreates app_settings so the DDL matches the Room-generated schema after
+        // @ColumnInfo(defaultValue = "ITEMS") was added to lastLabelInputMode without
+        // a version bump in the prior commit (identity hash mismatch on existing installs).
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `app_settings_new` (
+                        `id` INTEGER NOT NULL,
+                        `dayBoundaryTime` TEXT,
+                        `lastLabelInputMode` TEXT NOT NULL DEFAULT 'ITEMS',
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "INSERT INTO `app_settings_new` (`id`, `dayBoundaryTime`, `lastLabelInputMode`) SELECT `id`, `dayBoundaryTime`, `lastLabelInputMode` FROM `app_settings`",
+                )
+                db.execSQL("DROP TABLE `app_settings`")
+                db.execSQL("ALTER TABLE `app_settings_new` RENAME TO `app_settings`")
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -231,6 +254,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_9_10)
                 .addMigrations(MIGRATION_10_11)
                 .addMigrations(MIGRATION_11_12)
+                .addMigrations(MIGRATION_12_13)
                 .build()
     }
 }
