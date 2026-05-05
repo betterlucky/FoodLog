@@ -17,6 +17,7 @@ data class TodayUiState(
     val dailyWeight: DailyWeightEntity? = null,
     val totalCalories: Double = 0.0,
     val dayBoundaryTime: LocalTime? = null,
+    val lastLabelInputMode: String = "ITEMS",
     val inputText: String = "",
     val isLoading: Boolean = true,
     val message: String? = null,

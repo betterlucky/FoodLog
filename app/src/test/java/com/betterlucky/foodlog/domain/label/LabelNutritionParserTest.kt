@@ -47,6 +47,93 @@ class LabelNutritionParserTest {
     }
 
     @Test
+    fun halfCanLabelExtractsServingCaloriesAndSize() {
+        val facts = parser.parse(
+            """
+            Chicken in White Sauce
+            Typical values per 100g per 1/2 can (196g)
+            Energy 567kJ 1111kJ
+            135kcal 265kcal 13%
+            Fat 6.7g 13.1g
+            of which saturates 1.9g 3.6g
+            Carbohydrate 3.2g 6.3g
+            of which sugars 0.3g 0.5g
+            Fibre 0.4g 0.8g
+            Protein 15.4g 30.1g
+            Salt 0.51g 0.99g
+            """.trimIndent(),
+        )
+
+        assertEquals(135.0, facts.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(265.0, facts.kcalPerServing ?: 0.0, 0.001)
+        assertEquals("1/2 can", facts.servingUnit)
+        assertEquals(0.5, facts.servingAmount ?: 0.0, 0.001)
+        assertEquals("can", facts.servingItemUnit)
+        assertEquals(196.0, facts.servingSizeGrams ?: 0.0, 0.001)
+        assertEquals(6.7, facts.fatPer100g ?: 0.0, 0.001)
+        assertEquals(3.2, facts.carbsPer100g ?: 0.0, 0.001)
+        assertEquals(15.4, facts.proteinPer100g ?: 0.0, 0.001)
+        assertEquals(0.51, facts.saltPer100g ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun halfCanOcrTextWithFusedSpacingExtractsCalories() {
+        val facts = parser.parse(
+            """
+            Nutrition
+            Typical values per100g pert/2can pert/2can
+            (as consumed) (196g) - (196g) %RI
+            Energy 567kJ 1111kd
+            135kcal 265kcal 13%
+            Fat 6.79 13.19
+            Carbohydrate 3.2 6.30
+            Protein 15.49 30.19
+            Salt 0.519 0.999
+            """.trimIndent(),
+        )
+
+        assertEquals(135.0, facts.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(265.0, facts.kcalPerServing ?: 0.0, 0.001)
+        assertEquals("1/2 can", facts.servingUnit)
+        assertEquals(0.5, facts.servingAmount ?: 0.0, 0.001)
+        assertEquals("can", facts.servingItemUnit)
+        assertEquals(196.0, facts.servingSizeGrams ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun multipackQuantityExtractsItemUnit() {
+        val facts = parser.parse(
+            """
+            Ready salted crisps
+            6 x 25g bags
+            Typical values per 100g
+            Energy 2140kJ 512kcal
+            """.trimIndent(),
+        )
+
+        assertEquals(150.0, facts.packageSizeGrams ?: 0.0, 0.001)
+        assertEquals(6.0, facts.packageItemCount ?: 0.0, 0.001)
+        assertEquals("bag", facts.packageItemUnit)
+        assertEquals(512.0, facts.kcalPer100g ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun drinkLabelExtractsKcalPer100mlAndPackageMilliliters() {
+        val facts = parser.parse(
+            """
+            Orange juice
+            250ml bottle
+            Typical values per 100ml
+            Energy 190kJ 45kcal
+            """.trimIndent(),
+        )
+
+        assertEquals(45.0, facts.kcalPer100ml ?: 0.0, 0.001)
+        assertEquals(null, facts.kcalPer100g)
+        assertEquals(250.0, facts.packageSizeMilliliters ?: 0.0, 0.001)
+    }
+
+    @Test
     fun multiplierQuantityExtractsPackGramsAndCount() {
         val facts = parser.parse("6 x 50g sausages\nEnergy 240kcal per 100g")
 

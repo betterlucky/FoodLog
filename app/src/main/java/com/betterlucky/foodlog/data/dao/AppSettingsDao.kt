@@ -24,4 +24,10 @@ interface AppSettingsDao {
         dayBoundaryTime: LocalTime?,
         id: Int = AppSettingsEntity.FOOD_LOG_SETTINGS_ID,
     )
+
+    @Query("UPDATE app_settings SET lastLabelInputMode = :lastLabelInputMode WHERE id = :id")
+    suspend fun updateLastLabelInputMode(
+        lastLabelInputMode: String,
+        id: Int = AppSettingsEntity.FOOD_LOG_SETTINGS_ID,
+    )
 }

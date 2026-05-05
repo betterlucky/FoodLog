@@ -12,7 +12,9 @@ import com.betterlucky.foodlog.data.ocr.LabelOcrReader
 import com.betterlucky.foodlog.data.ocr.LabelOcrResult
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.intent.EntryIntent
+import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
+import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -119,6 +121,8 @@ class TodayViewModel(
                 dailyStatus = values[7] as com.betterlucky.foodlog.data.entities.DailyStatusEntity?,
                 dailyWeight = values[8] as com.betterlucky.foodlog.data.entities.DailyWeightEntity?,
                 dayBoundaryTime = (values[9] as AppSettingsEntity?)?.dayBoundaryTime,
+                lastLabelInputMode = (values[9] as AppSettingsEntity?)?.lastLabelInputMode
+                    ?: AppSettingsEntity.LAST_LABEL_INPUT_MODE_ITEMS,
                 isLoading = false,
             )
         }.stateIn(
@@ -191,6 +195,8 @@ class TodayViewModel(
 
     fun logLabelItem(
         name: String,
+        inputMode: LabelInputMode,
+        amountText: String,
         calories: String,
         time: String,
         saveAsShortcut: Boolean,
@@ -199,6 +205,8 @@ class TodayViewModel(
         val parsedTime = time.takeIf { it.isNotBlank() }?.let { TimeTextParser.parseOrNull(it) }
         viewModelScope.launch {
             val review = _labelReview.value ?: return@launch
+            val resolvedPortion = LabelPortionResolver.resolve(review.facts, inputMode, amountText)
+            if (!resolvedPortion.isValidAmount) return@launch
             val result = repository.logLabelProduct(
                 FoodLogRepository.LabelProductLogInput(
                     name = name,
@@ -206,7 +214,9 @@ class TodayViewModel(
                     servingSizeGrams = review.facts.servingSizeGrams,
                     servingUnit = review.facts.servingUnit,
                     kcalPerServing = review.facts.kcalPerServing,
-                    grams = null,
+                    amount = resolvedPortion.amount,
+                    unit = resolvedPortion.unit,
+                    grams = resolvedPortion.grams,
                     calories = parsedCalories,
                     logDate = selectedDate.value,
                     consumedTime = parsedTime,
@@ -217,11 +227,15 @@ class TodayViewModel(
             message.value = when (result) {
                 is FoodLogRepository.LabelLogResult.Logged -> {
                     if (saveAsShortcut && name.isNotBlank()) {
+                        val shortcutCalories = resolvedPortion.amount
+                            ?.takeIf { it > 0.0 }
+                            ?.let { parsedCalories / it }
+                            ?: parsedCalories
                         repository.addDefault(
                             trigger = name.trim().lowercase(),
                             name = name,
-                            calories = parsedCalories,
-                            unit = review.facts.servingUnit ?: "serving",
+                            calories = shortcutCalories,
+                            unit = resolvedPortion.unit ?: "item",
                             notes = null,
                         )
                     }
@@ -229,6 +243,12 @@ class TodayViewModel(
                 }
                 FoodLogRepository.LabelLogResult.InvalidInput -> "Add item name and calories."
             }
+        }
+    }
+
+    fun setLastLabelInputMode(mode: LabelInputMode) {
+        viewModelScope.launch {
+            repository.setLastLabelInputMode(mode.storageValue)
         }
     }
 

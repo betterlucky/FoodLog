@@ -181,6 +181,18 @@ class FoodLogRepository(
         }
     }
 
+    suspend fun setLastLabelInputMode(lastLabelInputMode: String) {
+        val normalizedMode = when (lastLabelInputMode) {
+            AppSettingsEntity.LAST_LABEL_INPUT_MODE_MEASURE -> AppSettingsEntity.LAST_LABEL_INPUT_MODE_MEASURE
+            else -> AppSettingsEntity.LAST_LABEL_INPUT_MODE_ITEMS
+        }
+        if (appSettingsDao.getById() == null) {
+            appSettingsDao.upsert(AppSettingsEntity(lastLabelInputMode = normalizedMode))
+        } else {
+            appSettingsDao.updateLastLabelInputMode(normalizedMode)
+        }
+    }
+
     suspend fun deactivateDefault(trigger: String) {
         userDefaultDao.deactivate(trigger)
     }
@@ -331,8 +343,8 @@ class FoodLogRepository(
                     consumedTime = consumedTime,
                     name = name,
                     productId = productId,
-                    amount = input.grams ?: 1.0,
-                    unit = if (input.grams != null) "g" else (input.servingUnit ?: "serving"),
+                    amount = input.amount ?: input.grams ?: 1.0,
+                    unit = input.unit ?: if (input.grams != null) "g" else (input.servingUnit ?: "serving"),
                     grams = input.grams,
                     calories = input.calories,
                     source = FoodItemSource.SAVED_LABEL,
@@ -1125,6 +1137,8 @@ class FoodLogRepository(
         val servingSizeGrams: Double?,
         val servingUnit: String?,
         val kcalPerServing: Double?,
+        val amount: Double?,
+        val unit: String?,
         val grams: Double?,
         val calories: Double,
         val logDate: LocalDate,

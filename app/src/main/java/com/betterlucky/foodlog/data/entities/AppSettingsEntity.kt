@@ -9,8 +9,11 @@ data class AppSettingsEntity(
     @PrimaryKey
     val id: Int = FOOD_LOG_SETTINGS_ID,
     val dayBoundaryTime: LocalTime? = null,
+    val lastLabelInputMode: String = LAST_LABEL_INPUT_MODE_ITEMS,
 ) {
     companion object {
         const val FOOD_LOG_SETTINGS_ID = 1
+        const val LAST_LABEL_INPUT_MODE_ITEMS = "ITEMS"
+        const val LAST_LABEL_INPUT_MODE_MEASURE = "MEASURE"
     }
 }
