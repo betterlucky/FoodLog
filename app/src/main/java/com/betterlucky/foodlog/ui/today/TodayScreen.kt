@@ -56,7 +56,6 @@ import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
-import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import java.time.Instant
 import java.time.LocalDate
@@ -71,11 +70,12 @@ import kotlin.math.floor
 fun TodayScreen(
     viewModel: TodayViewModel,
     onShareCsv: (String, String) -> Unit,
-    onScanBarcode: ((String) -> Unit, (String) -> Unit) -> Unit,
-    onTakeLabelPhoto: ((LabelNutritionFacts) -> Unit, (String) -> Unit) -> Unit,
-    onChooseLabelImage: ((LabelNutritionFacts) -> Unit, (String) -> Unit) -> Unit,
+    onTakeLabelPhoto: () -> Unit,
+    onChooseLabelImage: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val labelReview by viewModel.labelReview.collectAsState()
+    val pendingQuantityPicker by viewModel.pendingQuantityPicker.collectAsState()
     val focusManager = LocalFocusManager.current
     var resolvingEntry by remember { mutableStateOf<RawEntryEntity?>(null) }
     var editingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
@@ -86,8 +86,6 @@ fun TodayScreen(
     var showingShortcuts by remember { mutableStateOf(false) }
     var addingShortcut by remember { mutableStateOf(false) }
     var pickingDate by remember { mutableStateOf(false) }
-    var enteringBarcode by remember { mutableStateOf(false) }
-    var reviewingBarcode by remember { mutableStateOf<BarcodeProductReview?>(null) }
     var choosingLabelImage by remember { mutableStateOf(false) }
     var loggedItemsViewMode by remember { mutableStateOf(LoggedItemsViewMode.Time) }
     var expandedLoggedClumps by remember { mutableStateOf(emptySet<String>()) }
@@ -186,23 +184,10 @@ fun TodayScreen(
                     Text("Shortcuts")
                 }
                 Button(
-                    onClick = {
-                        onScanBarcode(
-                            { barcode ->
-                                viewModel.prepareBarcodeReview(
-                                    barcode = barcode,
-                                    onReady = { reviewingBarcode = it },
-                                    onManualRequired = { reviewingBarcode = it },
-                                )
-                            },
-                            {
-                                enteringBarcode = true
-                            },
-                        )
-                    },
+                    onClick = { choosingLabelImage = true },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Scan")
+                    Text("Scan label")
                 }
             }
         }
@@ -542,69 +527,41 @@ fun TodayScreen(
         )
     }
 
-    if (enteringBarcode) {
-        ManualBarcodeDialog(
-            onDismiss = { enteringBarcode = false },
-            onSubmit = { barcode ->
-                enteringBarcode = false
-                viewModel.prepareBarcodeReview(
-                    barcode = barcode,
-                    onReady = { reviewingBarcode = it },
-                    onManualRequired = { reviewingBarcode = it },
-                )
-            },
-        )
-    }
-
-    reviewingBarcode?.let { review ->
-        BarcodeProductReviewDialog(
-            review = review,
-            onDismiss = { reviewingBarcode = null },
-            onUseLabel = { choosingLabelImage = true },
-            onRefresh = {
-                viewModel.prepareBarcodeReview(
-                    barcode = review.barcode,
-                    forceRefresh = true,
-                    onReady = { reviewingBarcode = it },
-                    onManualRequired = { reviewingBarcode = it },
-                )
-            },
-            onLog = { name, brand, packageSizeGrams, packageItemCount, consumedItemCount, kcalPer100g, kcalPerServing, servingUnit, consumedServingCount, grams, time ->
-                viewModel.logBarcodeProduct(
-                    review = review,
-                    name = name,
-                    brand = brand,
-                    packageSizeGrams = packageSizeGrams,
-                    packageItemCount = packageItemCount,
-                    consumedItemCount = consumedItemCount,
-                    kcalPer100g = kcalPer100g,
-                    kcalPerServing = kcalPerServing,
-                    servingUnit = servingUnit,
-                    consumedServingCount = consumedServingCount,
-                    grams = grams,
-                    time = time,
-                    onLogged = { reviewingBarcode = null },
-                )
-            },
-        )
-    }
-
     if (choosingLabelImage) {
         LabelImageSourceDialog(
             onDismiss = { choosingLabelImage = false },
             onTakePhoto = {
                 choosingLabelImage = false
-                onTakeLabelPhoto(
-                    { facts -> reviewingBarcode = reviewingBarcode?.withLabelFacts(facts) },
-                    { /* Message is surfaced by MainActivity for now. */ },
-                )
+                onTakeLabelPhoto()
             },
             onChooseImage = {
                 choosingLabelImage = false
-                onChooseLabelImage(
-                    { facts -> reviewingBarcode = reviewingBarcode?.withLabelFacts(facts) },
-                    { /* Message is surfaced by MainActivity for now. */ },
+                onChooseLabelImage()
+            },
+        )
+    }
+
+    labelReview?.let { review ->
+        LabelReviewDialog(
+            review = review,
+            onDismiss = { viewModel.clearLabelReview() },
+            onLog = { name, calories, time, saveAsShortcut ->
+                viewModel.logLabelItem(
+                    name = name,
+                    calories = calories,
+                    time = time,
+                    saveAsShortcut = saveAsShortcut,
                 )
+            },
+        )
+    }
+
+    pendingQuantityPicker?.let { shortcut ->
+        QuantityPickerDialog(
+            shortcut = shortcut,
+            onDismiss = { viewModel.dismissQuantityPicker() },
+            onConfirm = { amount ->
+                viewModel.logShortcutWithAmount(shortcut.trigger, amount)
             },
         )
     }
@@ -1174,40 +1131,6 @@ private fun RawEntryEntity.displayFoodText(): String {
     return suffixMatch?.groupValues?.get(1) ?: normalizedRawText
 }
 
-private fun BarcodeProductReview.preferredBarcodeDefaultGrams(): Double? {
-    val servingDefault = servingSizeGrams?.takeIf { it > 0.0 && kcalPerServing != null }
-    val packageDefault = packageSizeGrams?.takeIf { it > 0.0 }
-    val previousDefault = lastLoggedGrams?.takeIf { it > 0.0 }
-    val previousLooksLikeDryPack = previousDefault != null &&
-        packageDefault != null &&
-        servingDefault != null &&
-        kotlin.math.abs(previousDefault - packageDefault) < 0.01 &&
-        servingDefault > packageDefault * 2.0
-
-    return when {
-        previousLooksLikeDryPack -> servingDefault
-        previousDefault != null -> previousDefault
-        servingDefault != null -> servingDefault
-        else -> packageDefault
-    }
-}
-
-private fun BarcodeProductReview.defaultAmountText(
-    parsedPackageGrams: Double,
-    grams: String,
-): String? {
-    val displayedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
-    val servingDefault = servingSizeGrams?.takeIf { it > 0.0 && kcalPerServing != null }
-    return when {
-        servingDefault != null && kotlin.math.abs(displayedGrams - servingDefault) < 0.01 ->
-            "Default: serving - ${servingDefault.formatAmount()}g"
-        lastLoggedGrams != null && kotlin.math.abs(displayedGrams - lastLoggedGrams) < 0.01 ->
-            "Default: last amount - ${lastLoggedGrams.formatAmount()}g"
-        kotlin.math.abs(displayedGrams - parsedPackageGrams) < 0.01 ->
-            "Default: whole package - ${parsedPackageGrams.formatAmount()}g"
-        else -> null
-    }
-}
 
 @Composable
 private fun LabelImageSourceDialog(
@@ -1238,26 +1161,81 @@ private fun LabelImageSourceDialog(
 }
 
 @Composable
-private fun ManualBarcodeDialog(
+private fun LabelReviewDialog(
+    review: LabelReviewState,
     onDismiss: () -> Unit,
-    onSubmit: (String) -> Unit,
+    onLog: (name: String, calories: String, time: String, saveAsShortcut: Boolean) -> Unit,
 ) {
-    var barcode by remember { mutableStateOf("") }
+    val facts = review.facts
+    var name by remember { mutableStateOf("") }
+    val suggestedCalories = review.suggestedCalories
+    var calories by remember { mutableStateOf(suggestedCalories?.toInt()?.toString().orEmpty()) }
+    var time by remember { mutableStateOf("") }
+    var saveAsShortcut by remember { mutableStateOf(false) }
+    val canLog = name.isNotBlank() && calories.isNotBlank()
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Enter barcode") },
+        title = { Text("Log from label") },
         text = {
-            OutlinedTextField(
-                value = barcode,
-                onValueChange = { barcode = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Barcode") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (review.isProcessing) {
+                    Text(
+                        text = "Reading label...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    facts.kcalPer100g?.let {
+                        Text(
+                            text = "Label: ${it.toInt()} kcal/100g" +
+                                (facts.servingSizeGrams?.let { s -> ", serving ${s.toInt()}g" } ?: ""),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Item name") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = calories,
+                        onValueChange = { calories = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Calories") },
+                    )
+                    TimeTextField(
+                        value = time,
+                        onValueChange = { time = it },
+                        modifier = Modifier.weight(1f),
+                        label = "Time",
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = saveAsShortcut,
+                        onCheckedChange = { saveAsShortcut = it },
+                    )
+                    Text("Save as shortcut", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         },
         confirmButton = {
-            Button(onClick = { onSubmit(barcode) }) {
-                Text("Look up")
+            Button(
+                onClick = { onLog(name, calories, time, saveAsShortcut) },
+                enabled = canLog,
+            ) {
+                Text("Log")
             }
         },
         dismissButton = {
@@ -1269,266 +1247,61 @@ private fun ManualBarcodeDialog(
 }
 
 @Composable
-private fun BarcodeProductReviewDialog(
-    review: BarcodeProductReview,
+private fun QuantityPickerDialog(
+    shortcut: UserDefaultEntity,
     onDismiss: () -> Unit,
-    onUseLabel: () -> Unit,
-    onRefresh: () -> Unit,
-    onLog: (String, String, String, String, String, String, String, String, String, String, String) -> Unit,
+    onConfirm: (Double) -> Unit,
 ) {
-    var name by remember(review.barcode, review.name) { mutableStateOf(review.name) }
-    var brand by remember(review.barcode, review.brand) { mutableStateOf(review.brand) }
-    var packageSizeGrams by remember(review.barcode, review.packageSizeGrams) {
-        mutableStateOf(review.packageSizeGrams?.formatAmount().orEmpty())
-    }
-    var packageItemCount by remember(review.barcode, review.packageItemCount) {
-        mutableStateOf(review.packageItemCount?.formatAmount().orEmpty())
-    }
-    var consumedItemCount by remember(review.barcode, review.packageItemCount, review.lastLoggedGrams) {
-        mutableStateOf(
-            if (review.lastLoggedGrams == null && review.packageItemCount != null) "1" else "",
-        )
-    }
-    var kcalPer100g by remember(review.barcode, review.kcalPer100g) {
-        mutableStateOf(review.kcalPer100g?.formatAmount().orEmpty())
-    }
-    var kcalPerServing by remember(review.barcode, review.kcalPerServing) {
-        mutableStateOf(review.kcalPerServing?.formatAmount().orEmpty())
-    }
-    var servingUnit by remember(review.barcode, review.servingUnit) {
-        mutableStateOf(review.servingUnit.orEmpty())
-    }
-    var consumedServingCount by remember(review.barcode, review.kcalPerServing) {
-        mutableStateOf(if (review.kcalPerServing != null) "1" else "")
-    }
-    val defaultGrams = review.preferredBarcodeDefaultGrams()
-    var grams by remember(review.barcode, defaultGrams) {
-        mutableStateOf(defaultGrams?.formatAmount().orEmpty())
-    }
-    var time by remember(review.barcode) { mutableStateOf("") }
-    val parsedPackageGrams = packageSizeGrams.toDoubleOrNull()?.takeIf { it > 0.0 }
-    val parsedPackageItems = packageItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
-    val parsedConsumedItems = consumedItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
-    val parsedKcal = kcalPer100g.toDoubleOrNull()?.takeIf { it > 0.0 }
-    val parsedKcalServing = kcalPerServing.toDoubleOrNull()?.takeIf { it > 0.0 }
-    val parsedServingCount = consumedServingCount.toDoubleOrNull()?.takeIf { it > 0.0 }
-    val gramsFromItems = if (parsedPackageGrams != null && parsedPackageItems != null && parsedConsumedItems != null) {
-        parsedPackageGrams * parsedConsumedItems / parsedPackageItems
-    } else {
-        null
-    }
-    val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 } ?: gramsFromItems ?: parsedPackageGrams
-    val estimatedCalories = if (parsedKcalServing != null && parsedServingCount != null) {
-        parsedKcalServing * parsedServingCount
-    } else if (parsedKcal != null && parsedGrams != null) {
-        parsedKcal * parsedGrams / 100.0
-    } else {
-        null
-    }
+    var amountText by remember { mutableStateOf("") }
+    val parsedAmount = amountText.toDoubleOrNull()?.takeIf { it > 0.0 }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Review barcode product") },
+        title = { Text("How much ${shortcut.name}?") },
         text = {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                item {
-                    Text(
-                        text = review.note ?: "Barcode ${review.barcode}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                item {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Product") },
-                    )
-                }
-                item {
-                    OutlinedTextField(
-                        value = brand,
-                        onValueChange = { brand = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Brand") },
-                    )
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = kcalPer100g,
-                            onValueChange = { kcalPer100g = it },
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "${shortcut.calories.formatAmount()} kcal per ${shortcut.unit}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { amountText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    label = { Text("Amount (${shortcut.unit})") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        "1" to 1.0,
+                        "½" to 0.5,
+                        "⅓" to (1.0 / 3.0),
+                        "⅔" to (2.0 / 3.0),
+                    ).forEach { (label, value) ->
+                        OutlinedButton(
+                            onClick = { amountText = value.formatAmount() },
                             modifier = Modifier.weight(1f),
-                            label = { Text("kcal/100g") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        )
-                        OutlinedTextField(
-                            value = packageSizeGrams,
-                            onValueChange = { packageSizeGrams = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Pack g") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        )
-                    }
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = kcalPerServing,
-                            onValueChange = { kcalPerServing = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("kcal/serving") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        )
-                        OutlinedTextField(
-                            value = servingUnit,
-                            onValueChange = { servingUnit = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Serving unit") },
-                        )
-                    }
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = packageItemCount,
-                            onValueChange = { packageItemCount = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Items in pack") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        )
-                        OutlinedTextField(
-                            value = consumedItemCount,
-                            onValueChange = {
-                                consumedItemCount = it
-                                grams = ""
-                            },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Items eaten") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        )
-                    }
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = consumedServingCount,
-                            onValueChange = {
-                                consumedServingCount = it
-                                grams = ""
-                                consumedItemCount = ""
-                            },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Servings eaten") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        )
-                        TextButton(
-                            onClick = onUseLabel,
-                            modifier = Modifier.weight(1f),
+                            contentPadding = ButtonDefaults.TextButtonContentPadding,
                         ) {
-                            Text("Use label")
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                }
-                if (parsedPackageGrams != null) {
-                    item {
-                        Text(
-                            text = review.defaultAmountText(parsedPackageGrams, grams) ?: "Choose package fraction",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    item {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(
-                                "Whole" to 1.0,
-                                "2/3" to (2.0 / 3.0),
-                                "1/2" to 0.5,
-                                "1/3" to (1.0 / 3.0),
-                                "1/4" to 0.25,
-                            ).forEach { (label, fraction) ->
-                                OutlinedButton(
-                                    onClick = {
-                                        consumedItemCount = ""
-                                        consumedServingCount = ""
-                                        grams = (parsedPackageGrams * fraction).formatAmount()
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    contentPadding = ButtonDefaults.TextButtonContentPadding,
-                                ) {
-                                    Text(label, style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                    }
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = grams,
-                            onValueChange = {
-                                grams = it
-                                consumedItemCount = ""
-                                consumedServingCount = ""
-                            },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Amount g") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        )
-                        OutlinedTextField(
-                            value = time,
-                            onValueChange = { time = it },
-                            modifier = Modifier.weight(1f),
-                            label = { Text("Time") },
-                        )
-                    }
-                }
-                item {
-                    Text(
-                        text = estimatedCalories?.let { "Estimated: ${it.toInt()} kcal" }
-                            ?: "Add kcal/100g and amount to calculate calories.",
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
                 }
             }
         },
         confirmButton = {
             Button(
-                onClick = {
-                    onLog(
-                        name,
-                        brand,
-                        packageSizeGrams,
-                        packageItemCount,
-                        consumedItemCount,
-                        kcalPer100g,
-                        kcalPerServing,
-                        servingUnit,
-                        consumedServingCount,
-                        grams,
-                        time,
-                    )
-                },
+                onClick = { parsedAmount?.let(onConfirm) },
+                enabled = parsedAmount != null,
             ) {
                 Text("Log")
             }
         },
         dismissButton = {
-            Row {
-                TextButton(onClick = onUseLabel) {
-                    Text("Use label")
-                }
-                TextButton(onClick = onRefresh) {
-                    Text("Refresh")
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         },
     )
@@ -2294,6 +2067,11 @@ private fun EditFoodItemDialog(
     onRemove: () -> Unit,
     onSave: (name: String, amount: String, unit: String, calories: String, time: String, notes: String) -> Unit,
 ) {
+    val caloriesPerUnit = remember(item.id) {
+        val a = item.amount?.takeIf { it > 0.0 }
+        val c = item.calories.takeIf { it > 0.0 }
+        if (item.source == com.betterlucky.foodlog.data.entities.FoodItemSource.USER_DEFAULT && a != null && c != null) c / a else null
+    }
     var name by remember(item.id) { mutableStateOf(item.name) }
     var amount by remember(item.id) { mutableStateOf(item.amount?.formatAmount().orEmpty()) }
     var unit by remember(item.id) { mutableStateOf(item.unit.orEmpty()) }
@@ -2301,6 +2079,7 @@ private fun EditFoodItemDialog(
     var time by remember(item.id) { mutableStateOf(item.consumedTime?.toString().orEmpty()) }
     var notes by remember(item.id) { mutableStateOf(item.notes.orEmpty()) }
     var caloriesEdited by remember(item.id) { mutableStateOf(false) }
+    var caloriesRecalculated by remember(item.id) { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2322,7 +2101,16 @@ private fun EditFoodItemDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = amount,
-                        onValueChange = { amount = it },
+                        onValueChange = { newAmount ->
+                            amount = newAmount
+                            if (!caloriesEdited && caloriesPerUnit != null) {
+                                val parsedAmount = newAmount.toDoubleOrNull()?.takeIf { it > 0.0 }
+                                if (parsedAmount != null) {
+                                    calories = String.format(java.util.Locale.US, "%.1f", caloriesPerUnit * parsedAmount).trimEnd('0').trimEnd('.')
+                                    caloriesRecalculated = true
+                                }
+                            }
+                        },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -2341,12 +2129,19 @@ private fun EditFoodItemDialog(
                     onValueChange = {
                         calories = it
                         caloriesEdited = true
+                        caloriesRecalculated = false
                     },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     label = { Text("Calories") },
-                    supportingText = { Text("Blank = use defaults") },
+                    supportingText = {
+                        if (caloriesRecalculated) {
+                            Text("Recalculated from shortcut rate")
+                        } else {
+                            Text("Blank = use defaults")
+                        }
+                    },
                 )
                 TimeTextField(
                     value = time,

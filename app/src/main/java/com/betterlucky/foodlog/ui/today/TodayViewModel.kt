@@ -3,9 +3,13 @@ package com.betterlucky.foodlog.ui.today
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.FoodItemSource
+import com.betterlucky.foodlog.data.entities.UserDefaultEntity
+import com.betterlucky.foodlog.data.ocr.LabelOcrReader
+import com.betterlucky.foodlog.data.ocr.LabelOcrResult
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.intent.EntryIntent
 import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
@@ -13,6 +17,7 @@ import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -56,55 +61,15 @@ data class PendingEntryDraft(
     val time: String,
 )
 
-data class BarcodeProductReview(
-    val barcode: String,
-    val name: String,
-    val brand: String,
-    val packageSizeGrams: Double?,
-    val packageItemCount: Double?,
-    val kcalPer100g: Double?,
-    val kcalPerServing: Double?,
-    val servingUnit: String?,
-    val servingSizeGrams: Double?,
-    val lastLoggedGrams: Double?,
-    val proteinPer100g: Double?,
-    val fiberPer100g: Double?,
-    val carbsPer100g: Double?,
-    val fatPer100g: Double?,
-    val sugarsPer100g: Double?,
-    val saltPer100g: Double?,
-    val labelDerived: Boolean = false,
-    val note: String?,
-    val requiresManualNutrition: Boolean,
+data class LabelReviewState(
+    val facts: LabelNutritionFacts,
+    val isProcessing: Boolean = false,
 ) {
-    fun withLabelFacts(facts: LabelNutritionFacts): BarcodeProductReview {
-        val labelNote = buildString {
-            append(if (facts.isPartial) "Label read partially; check values before logging." else "Label values applied; check before logging.")
-            if (facts.prepared) append(" Prepared serving detected.")
-            if (facts.kcalPerServing != null && kcalPerServing != null && kotlin.math.abs(facts.kcalPerServing - kcalPerServing) > 1.0) {
-                append(" Label: ${facts.kcalPerServing.formatForMessage()} kcal")
-                facts.servingUnit?.let { append(" per $it") }
-                append("; barcode: ${kcalPerServing.formatForMessage()} kcal.")
-            }
+    // Pre-calculated calories from the OCR facts, preferring per-serving if available
+    val suggestedCalories: Double?
+        get() = facts.kcalPerServing ?: facts.kcalPer100g?.let { k ->
+            facts.servingSizeGrams?.let { s -> k * s / 100.0 }
         }
-        return copy(
-            packageSizeGrams = facts.packageSizeGrams ?: packageSizeGrams,
-            packageItemCount = facts.packageItemCount ?: packageItemCount,
-            kcalPer100g = facts.kcalPer100g ?: kcalPer100g,
-            kcalPerServing = facts.kcalPerServing ?: kcalPerServing,
-            servingUnit = facts.servingUnit ?: servingUnit,
-            servingSizeGrams = facts.servingSizeGrams ?: servingSizeGrams,
-            proteinPer100g = facts.proteinPer100g ?: proteinPer100g,
-            fiberPer100g = facts.fiberPer100g ?: fiberPer100g,
-            carbsPer100g = facts.carbsPer100g ?: carbsPer100g,
-            fatPer100g = facts.fatPer100g ?: fatPer100g,
-            sugarsPer100g = facts.sugarsPer100g ?: sugarsPer100g,
-            saltPer100g = facts.saltPer100g ?: saltPer100g,
-            labelDerived = true,
-            note = labelNote,
-            requiresManualNutrition = facts.kcalPer100g == null && facts.kcalPerServing == null,
-        )
-    }
 }
 
 private fun Double.formatForMessage(): String =
@@ -117,10 +82,17 @@ private fun Double.formatForMessage(): String =
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TodayViewModel(
     private val repository: FoodLogRepository,
+    private val labelOcrReader: LabelOcrReader? = null,
 ) : ViewModel() {
     private val selectedDate = MutableStateFlow(LocalDate.now())
     private val inputText = MutableStateFlow("")
     private val message = MutableStateFlow<String?>(null)
+
+    private val _labelReview = MutableStateFlow<LabelReviewState?>(null)
+    val labelReview: StateFlow<LabelReviewState?> = _labelReview.asStateFlow()
+
+    private val _pendingQuantityPicker = MutableStateFlow<UserDefaultEntity?>(null)
+    val pendingQuantityPicker: StateFlow<UserDefaultEntity?> = _pendingQuantityPicker.asStateFlow()
 
     val uiState: StateFlow<TodayUiState> =
         combine(
@@ -175,90 +147,93 @@ class TodayViewModel(
     }
 
     fun logShortcut(trigger: String) {
-        submitText(trigger, clearInput = false)
+        viewModelScope.launch {
+            val default = repository.getActiveShortcut(trigger)
+            when {
+                default == null -> submitText(trigger, clearInput = false)
+                default.defaultAmount != null -> {
+                    repository.logShortcutAmount(trigger, default.defaultAmount, selectedDate.value)
+                    message.value = "Logged ${default.name}"
+                }
+                else -> _pendingQuantityPicker.value = default
+            }
+        }
     }
 
-    fun prepareBarcodeReview(
-        barcode: String,
-        forceRefresh: Boolean = false,
-        onReady: (BarcodeProductReview) -> Unit,
-        onManualRequired: (BarcodeProductReview) -> Unit,
-    ) {
+    fun logShortcutWithAmount(trigger: String, amount: Double, saveAsDefault: Boolean = true) {
         viewModelScope.launch {
-            when (val result = repository.prepareBarcodeReview(barcode, forceRefresh)) {
-                is FoodLogRepository.BarcodeReviewResult.Ready -> {
-                    message.value = result.draft.note
-                    onReady(result.draft.toReview())
-                }
-                is FoodLogRepository.BarcodeReviewResult.ManualRequired -> {
-                    message.value = result.draft.note
-                    onManualRequired(result.draft.toReview())
-                }
-                FoodLogRepository.BarcodeReviewResult.InvalidBarcode -> {
-                    message.value = "Enter a valid barcode."
+            _pendingQuantityPicker.value = null
+            if (saveAsDefault) {
+                repository.updateShortcutDefaultAmount(trigger, amount)
+            }
+            val result = repository.logShortcutAmount(trigger, amount, selectedDate.value)
+            message.value = if (result != null) null else "Could not log shortcut."
+        }
+    }
+
+    fun dismissQuantityPicker() {
+        _pendingQuantityPicker.value = null
+    }
+
+    fun processLabelImage(uri: Uri) {
+        val reader = labelOcrReader ?: return
+        viewModelScope.launch {
+            _labelReview.value = LabelReviewState(facts = com.betterlucky.foodlog.domain.label.LabelNutritionFacts(rawText = ""), isProcessing = true)
+            when (val result = reader.read(uri)) {
+                is LabelOcrResult.Read -> _labelReview.value = LabelReviewState(facts = result.facts)
+                is LabelOcrResult.Failed -> {
+                    _labelReview.value = null
+                    message.value = result.message
                 }
             }
         }
     }
 
-    fun logBarcodeProduct(
-        review: BarcodeProductReview,
+    fun logLabelItem(
         name: String,
-        brand: String,
-        packageSizeGrams: String,
-        packageItemCount: String,
-        consumedItemCount: String,
-        kcalPer100g: String,
-        kcalPerServing: String,
-        servingUnit: String,
-        consumedServingCount: String,
-        grams: String,
+        calories: String,
         time: String,
-        onLogged: () -> Unit,
+        saveAsShortcut: Boolean,
     ) {
+        val parsedCalories = calories.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return
+        val parsedTime = time.takeIf { it.isNotBlank() }?.let { TimeTextParser.parseOrNull(it) }
         viewModelScope.launch {
-            val parsedPackageGrams = packageSizeGrams.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedPackageItemCount = packageItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedConsumedItemCount = consumedItemCount.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedKcalPer100g = kcalPer100g.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedKcalPerServing = kcalPerServing.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedConsumedServingCount = consumedServingCount.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedGrams = grams.toDoubleOrNull()?.takeIf { it > 0.0 }
-            val parsedTime = time.takeIf { it.isNotBlank() }?.let(TimeTextParser::parseOrNull)
-            val result = repository.logBarcodeProduct(
-                FoodLogRepository.BarcodeProductLogInput(
-                    barcode = review.barcode,
+            val review = _labelReview.value ?: return@launch
+            val result = repository.logLabelProduct(
+                FoodLogRepository.LabelProductLogInput(
+                    name = name,
+                    kcalPer100g = review.facts.kcalPer100g,
+                    servingSizeGrams = review.facts.servingSizeGrams,
+                    servingUnit = review.facts.servingUnit,
+                    kcalPerServing = review.facts.kcalPerServing,
+                    grams = null,
+                    calories = parsedCalories,
                     logDate = selectedDate.value,
                     consumedTime = parsedTime,
-                    name = name,
-                    brand = brand,
-                    packageSizeGrams = parsedPackageGrams,
-                    packageItemCount = parsedPackageItemCount,
-                    consumedItemCount = parsedConsumedItemCount,
-                    servingSizeGrams = review.servingSizeGrams,
-                    kcalPer100g = parsedKcalPer100g,
-                    kcalPerServing = parsedKcalPerServing,
-                    servingUnit = servingUnit,
-                    consumedServingCount = parsedConsumedServingCount,
-                    grams = parsedGrams,
-                    proteinPer100g = review.proteinPer100g,
-                    fiberPer100g = review.fiberPer100g,
-                    carbsPer100g = review.carbsPer100g,
-                    fatPer100g = review.fatPer100g,
-                    sugarsPer100g = review.sugarsPer100g,
-                    saltPer100g = review.saltPer100g,
-                    labelDerived = review.labelDerived,
+                    notes = null,
                 ),
             )
+            _labelReview.value = null
             message.value = when (result) {
-                is FoodLogRepository.BarcodeLogResult.Logged -> {
-                    onLogged()
-                    "Logged barcode product for ${result.logDate}"
+                is FoodLogRepository.LabelLogResult.Logged -> {
+                    if (saveAsShortcut && name.isNotBlank()) {
+                        repository.addDefault(
+                            trigger = name.trim().lowercase(),
+                            name = name,
+                            calories = parsedCalories,
+                            unit = review.facts.servingUnit ?: "serving",
+                            notes = null,
+                        )
+                    }
+                    null
                 }
-                FoodLogRepository.BarcodeLogResult.InvalidInput ->
-                    "Add product name, calories, and an amount."
+                FoodLogRepository.LabelLogResult.InvalidInput -> "Add item name and calories."
             }
         }
+    }
+
+    fun clearLabelReview() {
+        _labelReview.value = null
     }
 
     private fun submitText(
@@ -825,28 +800,6 @@ class TodayViewModel(
     }
 }
 
-private fun FoodLogRepository.BarcodeProductDraft.toReview(): BarcodeProductReview =
-    BarcodeProductReview(
-        barcode = barcode,
-        name = name,
-        brand = brand,
-        packageSizeGrams = packageSizeGrams,
-        packageItemCount = packageItemCount,
-        kcalPer100g = kcalPer100g,
-        kcalPerServing = kcalPerServing,
-        servingUnit = servingUnit,
-        servingSizeGrams = servingSizeGrams,
-        lastLoggedGrams = lastLoggedGrams,
-        proteinPer100g = null,
-        fiberPer100g = null,
-        carbsPer100g = null,
-        fatPer100g = null,
-        sugarsPer100g = null,
-        saltPer100g = null,
-        note = note,
-        requiresManualNutrition = requiresManualNutrition,
-    )
-
 private fun parseTimeOrNull(value: String): LocalTime? {
     return TimeTextParser.parseOrNull(value)
 }
@@ -955,11 +908,12 @@ private fun Double.formatDraftAmount(): String =
 
 class TodayViewModelFactory(
     private val repository: FoodLogRepository,
+    private val labelOcrReader: LabelOcrReader? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(TodayViewModel::class.java)) {
-            return TodayViewModel(repository) as T
+            return TodayViewModel(repository, labelOcrReader) as T
         }
         error("Unknown ViewModel class: ${modelClass.name}")
     }

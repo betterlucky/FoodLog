@@ -139,4 +139,25 @@ class DeterministicParserTest {
         assertEquals(today, parsed.logDate)
         assertEquals("2026-99-99 tea", parsed.normalizedFoodText)
     }
+
+    @Test
+    fun fractionWordPrefixesResolveToCorrectQuantity() {
+        mapOf(
+            "half ham" to (0.5 to "ham"),
+            "a half ham" to (0.5 to "ham"),
+            "1/2 ham" to (0.5 to "ham"),
+            "1/3 lasagne" to (1.0 / 3.0 to "lasagne"),
+            "a third lasagne" to (1.0 / 3.0 to "lasagne"),
+            "2/3 pack" to (2.0 / 3.0 to "pack"),
+            "two thirds pack" to (2.0 / 3.0 to "pack"),
+            "3/4 pizza" to (0.75 to "pizza"),
+            "1/4 pizza" to (0.25 to "pizza"),
+            "a quarter pizza" to (0.25 to "pizza"),
+        ).forEach { (input, expected) ->
+            val (expectedQuantity, expectedTrigger) = expected
+            val parsed = parser.parse(input, today)
+            assertEquals("trigger for '$input'", expectedTrigger, parsed.shortcutTrigger)
+            assertEquals("quantity for '$input'", expectedQuantity, parsed.quantity, 0.001)
+        }
+    }
 }

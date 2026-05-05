@@ -156,7 +156,19 @@ class DeterministicParser {
             )
         }
 
-        val wordQuantityMatch = Regex("^(two|three|four|five)\\s+(.+)$").matchEntire(foodText)
+        val fractionMatch = Regex(
+            "^(1/2|a half|half|1/3|a third|one third|2/3|two thirds?|3/4|three quarters?|1/4|a quarter|one quarter)\\s+(.+)$",
+            RegexOption.IGNORE_CASE,
+        ).matchEntire(foodText)
+        if (fractionMatch != null) {
+            return ShortcutMatch(
+                trigger = singularizeShortcut(fractionMatch.groupValues[2]),
+                quantity = fractionMatch.groupValues[1].fractionQuantity(),
+                unit = null,
+            )
+        }
+
+        val wordQuantityMatch = Regex("^(two|three|four|five|half|a half)\\s+(.+)$", RegexOption.IGNORE_CASE).matchEntire(foodText)
         if (wordQuantityMatch != null) {
             return ShortcutMatch(
                 trigger = singularizeShortcut(wordQuantityMatch.groupValues[2]),
@@ -188,7 +200,7 @@ class DeterministicParser {
             text.replace(phrase, phrase.replace(" and ", PROTECTED_AND_TOKEN))
         }
         return protectedFoodText
-            .split(Regex("\\s*(?:,|\\+|/|&|;)\\s*"))
+            .split(Regex("\\s*(?:,|\\+|(?<!\\d)/(?!\\d)|&|;)\\s*"))
             .flatMap { segment ->
                 if (segment.contains(" with ")) {
                     listOf(segment)
@@ -218,11 +230,22 @@ class DeterministicParser {
         }
 
     private fun String.wordQuantity(): Double =
-        when (this) {
+        when (lowercase()) {
             "two" -> 2.0
             "three" -> 3.0
             "four" -> 4.0
             "five" -> 5.0
+            "half", "a half" -> 0.5
+            else -> 1.0
+        }
+
+    private fun String.fractionQuantity(): Double =
+        when (lowercase().trim()) {
+            "1/2", "a half", "half" -> 0.5
+            "1/3", "a third", "one third" -> 1.0 / 3.0
+            "2/3", "two thirds", "two third" -> 2.0 / 3.0
+            "3/4", "three quarters", "three quarter" -> 0.75
+            "1/4", "a quarter", "one quarter" -> 0.25
             else -> 1.0
         }
 
