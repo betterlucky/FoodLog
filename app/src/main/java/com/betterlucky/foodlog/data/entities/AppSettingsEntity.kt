@@ -1,5 +1,6 @@
 package com.betterlucky.foodlog.data.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import java.time.LocalTime
@@ -9,6 +10,7 @@ data class AppSettingsEntity(
     @PrimaryKey
     val id: Int = FOOD_LOG_SETTINGS_ID,
     val dayBoundaryTime: LocalTime? = null,
+    @ColumnInfo(defaultValue = "ITEMS")
     val lastLabelInputMode: String = LAST_LABEL_INPUT_MODE_ITEMS,
 ) {
     companion object {
