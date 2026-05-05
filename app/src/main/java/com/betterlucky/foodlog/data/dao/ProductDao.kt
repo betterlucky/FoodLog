@@ -14,8 +14,8 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE id = :id")
     suspend fun getById(id: Long): ProductEntity?
 
-    @Query("SELECT * FROM products WHERE barcode = :barcode AND archived = 0")
-    suspend fun getByBarcode(barcode: String): ProductEntity?
+    @Query("SELECT * FROM products WHERE name = :name LIMIT 1")
+    suspend fun getByName(name: String): ProductEntity?
 
     @Update
     suspend fun update(product: ProductEntity)

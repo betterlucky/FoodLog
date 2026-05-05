@@ -38,7 +38,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         AppSettingsEntity::class,
         DailyWeightEntity::class,
     ],
-    version = 10,
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -149,6 +149,71 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Recreate products table without barcode, externalUrl, lastSyncedAt columns
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `products_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `brand` TEXT,
+                        `description` TEXT,
+                        `containerType` TEXT,
+                        `containerSizeGrams` REAL,
+                        `packageSizeGrams` REAL,
+                        `packageItemCount` REAL,
+                        `servingSizeGrams` REAL,
+                        `servingUnit` TEXT,
+                        `kcalPer100g` REAL,
+                        `kcalPerServing` REAL,
+                        `proteinPer100g` REAL,
+                        `carbsPer100g` REAL,
+                        `fatPer100g` REAL,
+                        `fiberPer100g` REAL,
+                        `sugarsPer100g` REAL,
+                        `saltPer100g` REAL,
+                        `source` TEXT NOT NULL,
+                        `confidence` TEXT NOT NULL,
+                        `lastLoggedGrams` REAL,
+                        `createdAt` TEXT NOT NULL,
+                        `archived` INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `products_new`
+                    (id, name, brand, description, containerType, containerSizeGrams,
+                     packageSizeGrams, packageItemCount, servingSizeGrams, servingUnit,
+                     kcalPer100g, kcalPerServing, proteinPer100g, carbsPer100g, fatPer100g,
+                     fiberPer100g, sugarsPer100g, saltPer100g, source, confidence,
+                     lastLoggedGrams, createdAt, archived)
+                    SELECT id, name, brand, description, containerType, containerSizeGrams,
+                     packageSizeGrams, packageItemCount, servingSizeGrams, servingUnit,
+                     kcalPer100g, kcalPerServing, proteinPer100g, carbsPer100g, fatPer100g,
+                     fiberPer100g, sugarsPer100g, saltPer100g, source, confidence,
+                     lastLoggedGrams, createdAt, archived
+                    FROM `products`
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE `products`")
+                db.execSQL("ALTER TABLE `products_new` RENAME TO `products`")
+                // Add defaultAmount to user_defaults for shortcut default quantity
+                db.execSQL("ALTER TABLE user_defaults ADD COLUMN defaultAmount REAL")
+            }
+        }
+
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing(
+                    tableName = "app_settings",
+                    columnName = "lastLabelInputMode",
+                    declaration = "TEXT NOT NULL DEFAULT 'ITEMS'",
+                )
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -164,6 +229,8 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_7_8)
                 .addMigrations(MIGRATION_8_9)
                 .addMigrations(MIGRATION_9_10)
+                .addMigrations(MIGRATION_10_11)
+                .addMigrations(MIGRATION_11_12)
                 .build()
     }
 }

@@ -20,3 +20,10 @@ local.properties
 *.log
 tmp/
 temp/
+
+# Claude local files
+.claude/
+
+# Local device test artifacts
+device-backups/
+device-screenshots/

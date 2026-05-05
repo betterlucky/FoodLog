@@ -9,10 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.core.content.FileProvider
-import androidx.lifecycle.lifecycleScope
 import com.betterlucky.foodlog.data.ocr.LabelOcrReader
-import com.betterlucky.foodlog.data.ocr.LabelOcrResult
-import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
@@ -20,36 +17,33 @@ import com.betterlucky.foodlog.ui.today.TodayScreen
 import com.betterlucky.foodlog.ui.today.TodayViewModel
 import com.betterlucky.foodlog.ui.today.TodayViewModelFactory
 import com.betterlucky.foodlog.util.CsvShareHelper
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
-import kotlinx.coroutines.launch
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private val labelOcrReader: LabelOcrReader by lazy {
+        LabelOcrReader(this)
+    }
     private val viewModel: TodayViewModel by viewModels {
-        TodayViewModelFactory((application as FoodLogApplication).repository)
+        TodayViewModelFactory((application as FoodLogApplication).repository, labelOcrReader)
     }
     private val csvShareHelper: CsvShareHelper by lazy {
         CsvShareHelper(this)
     }
-    private val labelOcrReader: LabelOcrReader by lazy {
-        LabelOcrReader(this)
-    }
-    private var pendingLabelCallbacks: Pair<(LabelNutritionFacts) -> Unit, (String) -> Unit>? = null
     private var pendingLabelPhotoUri: Uri? = null
     private val takeLabelPhotoLauncher = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val uri = pendingLabelPhotoUri
+        pendingLabelPhotoUri = null
         if (success && uri != null) {
             readLabelImage(uri)
         } else {
-            pendingLabelCallbacks?.second?.invoke("No label photo was captured.")
+            Toast.makeText(this, "No label photo was captured.", Toast.LENGTH_SHORT).show()
         }
-        pendingLabelPhotoUri = null
     }
     private val chooseLabelImageLauncher = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             readLabelImage(uri)
         } else {
-            pendingLabelCallbacks?.second?.invoke("No label image was selected.")
+            Toast.makeText(this, "No label image was selected.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -61,7 +55,6 @@ class MainActivity : ComponentActivity() {
                 TodayScreen(
                     viewModel = viewModel,
                     onShareCsv = ::shareCsv,
-                    onScanBarcode = ::scanBarcode,
                     onTakeLabelPhoto = ::takeLabelPhoto,
                     onChooseLabelImage = ::chooseLabelImage,
                 )
@@ -69,11 +62,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun takeLabelPhoto(
-        onRead: (LabelNutritionFacts) -> Unit,
-        onFailed: (String) -> Unit,
-    ) {
-        pendingLabelCallbacks = onRead to onFailed
+    private fun takeLabelPhoto() {
         val directory = File(cacheDir, "label-images").apply { mkdirs() }
         val file = File(directory, "label-${System.currentTimeMillis()}.jpg")
         val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", file)
@@ -81,49 +70,14 @@ class MainActivity : ComponentActivity() {
         takeLabelPhotoLauncher.launch(uri)
     }
 
-    private fun chooseLabelImage(
-        onRead: (LabelNutritionFacts) -> Unit,
-        onFailed: (String) -> Unit,
-    ) {
-        pendingLabelCallbacks = onRead to onFailed
+    private fun chooseLabelImage() {
         chooseLabelImageLauncher.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
         )
     }
 
     private fun readLabelImage(uri: Uri) {
-        lifecycleScope.launch {
-            when (val result = labelOcrReader.read(uri)) {
-                is LabelOcrResult.Read -> {
-                    pendingLabelCallbacks?.first?.invoke(result.facts)
-                    Toast.makeText(this@MainActivity, "Label read; check values before logging", Toast.LENGTH_LONG).show()
-                }
-                is LabelOcrResult.Failed -> {
-                    pendingLabelCallbacks?.second?.invoke(result.message)
-                    Toast.makeText(this@MainActivity, result.message, Toast.LENGTH_LONG).show()
-                }
-            }
-            pendingLabelCallbacks = null
-        }
-    }
-
-    private fun scanBarcode(
-        onScanned: (String) -> Unit,
-        onUnavailable: (String) -> Unit,
-    ) {
-        GmsBarcodeScanning.getClient(this)
-            .startScan()
-            .addOnSuccessListener { barcode ->
-                val rawValue = barcode.rawValue
-                if (rawValue.isNullOrBlank()) {
-                    onUnavailable("No barcode was read.")
-                } else {
-                    onScanned(rawValue)
-                }
-            }
-            .addOnFailureListener { exception ->
-                onUnavailable(exception.message ?: "Scanner unavailable. Enter the barcode manually.")
-            }
+        viewModel.processLabelImage(uri)
     }
 
     private fun shareCsv(

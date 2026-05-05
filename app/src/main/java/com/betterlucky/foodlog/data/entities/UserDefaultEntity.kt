@@ -14,4 +14,5 @@ data class UserDefaultEntity(
     val source: FoodItemSource = FoodItemSource.USER_DEFAULT,
     val confidence: ConfidenceLevel = ConfidenceLevel.HIGH,
     val active: Boolean = true,
+    val defaultAmount: Double? = null,
 )

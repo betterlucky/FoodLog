@@ -1,5 +1,6 @@
 package com.betterlucky.foodlog.ui.today
 
+import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
@@ -17,6 +18,7 @@ data class TodayUiState(
     val dailyWeight: DailyWeightEntity? = null,
     val totalCalories: Double = 0.0,
     val dayBoundaryTime: LocalTime? = null,
+    val lastLabelInputMode: String = AppSettingsEntity.LAST_LABEL_INPUT_MODE_ITEMS,
     val inputText: String = "",
     val isLoading: Boolean = true,
     val message: String? = null,
