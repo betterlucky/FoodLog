@@ -71,7 +71,6 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
 import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
-import com.betterlucky.foodlog.domain.label.toItemAmount
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import java.time.Instant
 import java.time.LocalDate
@@ -79,7 +78,6 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import kotlin.math.floor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1156,330 +1154,6 @@ private fun LabelImageSourceDialog(
 }
 
 @Composable
-private fun LabelReviewDialog(
-    review: LabelReviewState,
-    initialInputMode: LabelInputMode,
-    onDismiss: () -> Unit,
-    onInputModeChanged: (LabelInputMode) -> Unit,
-    onLog: (name: String, inputMode: LabelInputMode, amountText: String, calories: String, time: String, saveAsShortcut: Boolean) -> Unit,
-) {
-    val facts = review.facts
-    var name by remember { mutableStateOf("") }
-    var inputMode by remember(facts.rawText, initialInputMode) { mutableStateOf(initialInputMode) }
-    var amountText by remember(facts.rawText) { mutableStateOf("") }
-    var sliderAmount by remember(facts.rawText) { mutableStateOf(0.1f) }
-    val resolvedPortion = LabelPortionResolver.resolve(facts, inputMode, amountText)
-    var calories by remember(facts.rawText) { mutableStateOf("") }
-    var time by remember(facts.rawText) {
-        mutableStateOf(LocalTime.now().truncatedTo(ChronoUnit.MINUTES).toString())
-    }
-    var saveAsShortcut by remember { mutableStateOf(false) }
-    var caloriesEdited by remember(facts.rawText) { mutableStateOf(false) }
-    var step by remember(facts.rawText) { mutableStateOf(LabelDialogStep.Product) }
-    var showingAmountHelp by remember { mutableStateOf(false) }
-    LaunchedEffect(inputMode, amountText) {
-        if (inputMode == LabelInputMode.ITEMS) {
-            amountText.toItemAmount()?.let { parsedAmount ->
-                sliderAmount = parsedAmount.toFloat().snapToTenth()
-            }
-        }
-    }
-    LaunchedEffect(inputMode, amountText, resolvedPortion.calories, caloriesEdited) {
-        if (!caloriesEdited) {
-            calories = resolvedPortion.calories?.formatLabelNumber().orEmpty()
-        }
-    }
-    val canLog = name.isNotBlank() &&
-        resolvedPortion.isValidAmount &&
-        calories.toDoubleOrNull()?.let { it > 0.0 } == true
-    val canContinue = when (step) {
-        LabelDialogStep.Product -> name.isNotBlank()
-        LabelDialogStep.Portion -> resolvedPortion.isValidAmount
-        LabelDialogStep.Review -> canLog
-    }
-    val portionQuantity = resolvedPortion.amount?.let { amount ->
-        val unit = resolvedPortion.unit.orEmpty()
-        if (inputMode == LabelInputMode.ITEMS) {
-            LabelPortionResolver.displayAmount(amount, unit)
-        } else {
-            "${amount.formatLabelNumber()} $unit"
-        }
-    }.orEmpty()
-    val portionWeight = resolvedPortion.grams?.let { "${it.formatLabelNumber()}g" }.orEmpty()
-    val portionSummary = buildString {
-        append(portionQuantity)
-        if (portionWeight.isNotBlank()) {
-            if (isNotEmpty()) append(" · ")
-            append(portionWeight)
-        }
-    }
-    val itemUnit = LabelPortionResolver.itemUnit(facts)
-    val sliderPortionLabel = resolvedPortion.amount
-        ?.takeIf { inputMode == LabelInputMode.ITEMS }
-        ?.let { LabelPortionResolver.displayAmount(it, itemUnit).replaceFirstChar { char -> char.titlecase() } }
-        ?: "Choose amount"
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Log from label")
-                if (step == LabelDialogStep.Portion) {
-                    IconButton(onClick = { showingAmountHelp = true }) {
-                        Icon(
-                            imageVector = Icons.Outlined.Info,
-                            contentDescription = "Amount entry help",
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-            }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (review.isProcessing) {
-                    Text(
-                        text = "Reading label...",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else if (facts.hasRequiredCalories) {
-                    val hint = buildString {
-                        facts.kcalPer100g?.let { append("${it.toInt()} kcal/100g") }
-                        facts.kcalPerServing?.let {
-                            if (isNotEmpty()) append(" · ")
-                            append("${it.toInt()} kcal/${facts.servingUnit ?: "serving"}")
-                        }
-                        facts.servingSizeGrams?.let { append(" (${it.toInt()}g)") }
-                    }
-                    Text(
-                        text = "From label: $hint",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else {
-                    Text(
-                        text = "No calorie values found — check the label is in focus and try again, or enter manually.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                when (step) {
-                    LabelDialogStep.Product -> {
-                        Text(
-                            text = "Tell me what the product we just scanned is.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text("Item name") },
-                        )
-                    }
-                    LabelDialogStep.Portion -> {
-                        Text(
-                            text = "What's your portion size today?",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "Items",
-                                modifier = Modifier.weight(1f),
-                                fontWeight = if (inputMode == LabelInputMode.ITEMS) FontWeight.SemiBold else null,
-                            )
-                            Switch(
-                                checked = inputMode == LabelInputMode.MEASURE,
-                                onCheckedChange = { checked ->
-                                    inputMode = if (checked) LabelInputMode.MEASURE else LabelInputMode.ITEMS
-                                    amountText = ""
-                                    onInputModeChanged(inputMode)
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                    uncheckedThumbColor = MaterialTheme.colorScheme.primary,
-                                    uncheckedTrackColor = MaterialTheme.colorScheme.surface,
-                                    uncheckedBorderColor = MaterialTheme.colorScheme.primary,
-                                ),
-                            )
-                            Text(
-                                text = "g/ml",
-                                modifier = Modifier.weight(1f),
-                                fontWeight = if (inputMode == LabelInputMode.MEASURE) FontWeight.SemiBold else null,
-                            )
-                        }
-                        if (inputMode == LabelInputMode.ITEMS) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = sliderPortionLabel,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                            PortionAmountSlider(
-                                value = sliderAmount,
-                                onValueChange = { rawValue ->
-                                    val snapped = rawValue.snapToTenth()
-                                    sliderAmount = snapped
-                                    amountText = snapped.toDouble().formatLabelNumber()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
-                                    value = amountText,
-                                    onValueChange = { amountText = it },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    label = { Text("Amount") },
-                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                )
-                                OutlinedTextField(
-                                    value = itemUnit,
-                                    onValueChange = {},
-                                    modifier = Modifier.weight(1f),
-                                    readOnly = true,
-                                    singleLine = true,
-                                    label = { Text("Unit") },
-                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                )
-                            }
-                        } else {
-                            OutlinedTextField(
-                                value = amountText,
-                                onValueChange = { amountText = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                label = { Text("Amount (g/ml)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            )
-                        }
-                        if (portionSummary.isNotBlank()) {
-                            Text(
-                                text = portionSummary,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                    LabelDialogStep.Review -> {
-                        Text(
-                            text = "Preview log entry",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = listOf(time, name).joinToString(" - "),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = listOf(portionSummary.takeIf { it.isNotBlank() }, calories.toDoubleOrNull()?.let { "${it.formatLabelNumber()} kcal" })
-                                .filterNotNull()
-                                .joinToString(" - "),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TimeTextField(
-                                value = time,
-                                onValueChange = { time = it },
-                                modifier = Modifier.weight(1f),
-                                label = "Time",
-                            )
-                            OutlinedTextField(
-                                value = calories,
-                                onValueChange = {
-                                    calories = it
-                                    caloriesEdited = true
-                                },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                label = { Text("Calories") },
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = saveAsShortcut,
-                                onCheckedChange = { saveAsShortcut = it },
-                            )
-                            Text("Save as shortcut", style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    when (step) {
-                        LabelDialogStep.Product -> step = LabelDialogStep.Portion
-                        LabelDialogStep.Portion -> step = LabelDialogStep.Review
-                        LabelDialogStep.Review -> onLog(name, inputMode, amountText, calories, time, saveAsShortcut)
-                    }
-                },
-                enabled = canContinue,
-            ) {
-                Text(if (step == LabelDialogStep.Review) "Log" else "Next")
-            }
-        },
-        dismissButton = {
-            Row {
-                if (step != LabelDialogStep.Product) {
-                    TextButton(
-                        onClick = {
-                            step = when (step) {
-                                LabelDialogStep.Portion -> LabelDialogStep.Product
-                                LabelDialogStep.Review -> LabelDialogStep.Portion
-                                else -> step
-                            }
-                        },
-                    ) {
-                        Text("Back")
-                    }
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
-                }
-            }
-        },
-    )
-    if (showingAmountHelp) {
-        AlertDialog(
-            onDismissRequest = { showingAmountHelp = false },
-            title = { Text("Amount entry") },
-            text = {
-                Text("The amount and calories boxes are editable. Amount accepts decimals, fractions, and text such as 0.75, 1/3, one third, or two thirds of a can.")
-            },
-            confirmButton = {
-                TextButton(onClick = { showingAmountHelp = false }) {
-                    Text("OK")
-                }
-            },
-        )
-    }
-}
-
-@Composable
 private fun LoggingWizardDialog(
     session: LoggingWizardSession,
     onDismiss: () -> Unit,
@@ -1502,6 +1176,7 @@ private fun LoggingWizardDialog(
     val title = when (session.source) {
         LoggingWizardSource.Label -> "Log from label"
         LoggingWizardSource.Pending -> "Review pending entry"
+        LoggingWizardSource.Shortcut -> "Log shortcut"
         LoggingWizardSource.FreeText -> "Complete log entry"
     }
 
@@ -1592,18 +1267,16 @@ private fun LoggingWizardDialog(
                     }
                     LoggingWizardStep.TimeNotes -> {
                         if (currentPart != null) {
-                            if (!session.timeConfirmed) {
-                                Text(
-                                    text = "When did you have this?",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                TimeTextField(
-                                    value = session.timeText,
-                                    onValueChange = onTimeChanged,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    label = "Time",
-                                )
-                            }
+                            Text(
+                                text = "When did you have this?",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            TimeTextField(
+                                value = session.timeText,
+                                onValueChange = onTimeChanged,
+                                modifier = Modifier.fillMaxWidth(),
+                                label = "Time",
+                            )
                             OutlinedTextField(
                                 value = currentPart.notes,
                                 onValueChange = { onPartChanged(currentIndex, currentPart.copy(notes = it)) },
@@ -1614,12 +1287,21 @@ private fun LoggingWizardDialog(
                                 maxLines = 3,
                                 label = { Text("Notes") },
                             )
-                            ShortcutToggle(
-                                checked = currentPart.saveAsShortcut,
-                                enabled = !currentPart.resolvedByDefault && currentPart.hasPositiveCalories,
-                                label = "Save as shortcut",
-                                onCheckedChange = { onPartChanged(currentIndex, currentPart.copy(saveAsShortcut = it)) },
-                            )
+                            if (currentPart.resolvedByDefault) {
+                                ShortcutToggle(
+                                    checked = true,
+                                    enabled = false,
+                                    label = "Shortcut already saved",
+                                    onCheckedChange = {},
+                                )
+                            } else {
+                                ShortcutToggle(
+                                    checked = currentPart.saveAsShortcut,
+                                    enabled = currentPart.hasPositiveCalories,
+                                    label = "Save as shortcut",
+                                    onCheckedChange = { onPartChanged(currentIndex, currentPart.copy(saveAsShortcut = it)) },
+                                )
+                            }
                         }
                     }
                     LoggingWizardStep.Review -> {
@@ -1647,12 +1329,14 @@ private fun LoggingWizardDialog(
                         onTimeConfirmed()
                     }
                     val nextStep = nextWizardStep(session, currentIndex, step)
-                    if (nextStep != null) {
+                    val nextPart = session.parts.indexOfFirstIndexed { index, part ->
+                        index > currentIndex && part.needsInput
+                    }
+                    if (step == LoggingWizardStep.TimeNotes && nextPart < 0 && session.parts.all { it.isComplete }) {
+                        onSave()
+                    } else if (nextStep != null) {
                         step = nextStep
                     } else {
-                        val nextPart = session.parts.indexOfFirstIndexed { index, part ->
-                            index > currentIndex && part.needsInput
-                        }
                         if (nextPart >= 0) {
                             onCurrentPartChanged(nextPart)
                         } else {
@@ -1661,7 +1345,16 @@ private fun LoggingWizardDialog(
                     }
                 },
             ) {
-                Text(if (step == LoggingWizardStep.Review && session.parts.drop(currentIndex + 1).none { it.needsInput }) "Save" else "Next")
+                Text(
+                    if (
+                        step == LoggingWizardStep.Review && session.parts.drop(currentIndex + 1).none { it.needsInput } ||
+                        step == LoggingWizardStep.TimeNotes && session.parts.drop(currentIndex + 1).none { it.needsInput } && session.parts.all { it.isComplete }
+                    ) {
+                        "Save"
+                    } else {
+                        "Next"
+                    },
+                )
             }
         },
         dismissButton = {
@@ -1735,6 +1428,7 @@ private fun WizardContextText(session: LoggingWizardSession, completedCount: Int
             }.takeIf { it.isNotBlank() }?.let { "From label: $it" }
         }
         LoggingWizardSource.Pending -> "Pending: ${session.originalRawText}"
+        LoggingWizardSource.Shortcut -> "Shortcut: ${session.originalRawText}"
         LoggingWizardSource.FreeText -> "From text: ${session.originalRawText}"
     }
     label?.let {
@@ -1912,7 +1606,7 @@ private fun ShortcutToggle(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Checkbox(
-            checked = checked && enabled,
+            checked = checked,
             onCheckedChange = onCheckedChange,
             enabled = enabled,
         )
@@ -2067,12 +1761,6 @@ private fun PortionAmountSlider(
             center = thumbCenter,
         )
     }
-}
-
-private enum class LabelDialogStep {
-    Product,
-    Portion,
-    Review,
 }
 
 @Composable

@@ -258,47 +258,6 @@ class FoodLogRepository(
     suspend fun getActiveShortcut(trigger: String): UserDefaultEntity? =
         userDefaultDao.getActiveDefault(trigger)
 
-    suspend fun logShortcutAmount(
-        trigger: String,
-        amount: Double,
-        logDate: LocalDate,
-    ): SubmitResult.Parsed? =
-        database.withTransaction {
-            if (amount <= 0.0) return@withTransaction null
-            val default = userDefaultDao.getActiveDefault(trigger)
-                ?: return@withTransaction null
-            val now = dateTimeProvider.nowInstant()
-            val consumedTime = dateTimeProvider.localTime()
-            val calories = default.calories * amount
-            val rawEntryId = rawEntryDao.insert(
-                RawEntryEntity(
-                    createdAt = now,
-                    logDate = logDate,
-                    consumedTime = consumedTime,
-                    rawText = trigger,
-                    entryKind = EntryKind.TEXT,
-                    status = RawEntryStatus.PARSED,
-                ),
-            )
-            val foodItemId = foodItemDao.insert(
-                FoodItemEntity(
-                    rawEntryId = rawEntryId,
-                    logDate = logDate,
-                    consumedTime = consumedTime,
-                    name = default.name,
-                    amount = amount,
-                    unit = default.unit,
-                    calories = calories,
-                    source = FoodItemSource.USER_DEFAULT,
-                    confidence = ConfidenceLevel.HIGH,
-                    notes = default.notes,
-                    createdAt = now,
-                ),
-            )
-            markFoodChanged(logDate)
-            SubmitResult.Parsed(rawEntryId = rawEntryId, foodItemIds = listOf(foodItemId), logDate = logDate)
-        }
-
     suspend fun updateDefault(
         trigger: String,
         name: String,

@@ -67,17 +67,12 @@ data class PendingEntryDraft(
 data class LabelReviewState(
     val facts: LabelNutritionFacts,
     val isProcessing: Boolean = false,
-) {
-    // Pre-calculated calories from the OCR facts, preferring per-serving if available
-    val suggestedCalories: Double?
-        get() = facts.kcalPerServing ?: facts.kcalPer100g?.let { k ->
-            facts.servingSizeGrams?.let { s -> k * s / 100.0 }
-        }
-}
+)
 
 enum class LoggingWizardSource {
     FreeText,
     Pending,
+    Shortcut,
     Label,
 }
 
@@ -94,6 +89,7 @@ data class LoggingWizardSession(
     val currentPartIndex: Int = 0,
     val labelFacts: LabelNutritionFacts? = null,
     val labelInputMode: LabelInputMode = LabelInputMode.ITEMS,
+    val saveShortcutDefaultAmount: Boolean = false,
 )
 
 data class LoggingWizardPartDraft(
@@ -201,11 +197,8 @@ class TodayViewModel(
         viewModelScope.launch {
             val default = repository.getActiveShortcut(trigger)
             when {
-                default == null -> submitText(trigger, clearInput = false)
-                default.defaultAmount != null -> {
-                    repository.logShortcutAmount(trigger, default.defaultAmount, selectedDate.value)
-                    message.value = "Logged ${default.name}"
-                }
+                default == null -> previewOrSubmitText(trigger)
+                default.defaultAmount != null -> openShortcutWizard(default, default.defaultAmount, saveDefaultAmount = false)
                 else -> _pendingQuantityPicker.value = default
             }
         }
@@ -214,16 +207,31 @@ class TodayViewModel(
     fun logShortcutWithAmount(trigger: String, amount: Double, saveAsDefault: Boolean = true) {
         viewModelScope.launch {
             _pendingQuantityPicker.value = null
-            val result = repository.logShortcutAmount(trigger, amount, selectedDate.value)
-            if (result != null && saveAsDefault) {
-                repository.updateShortcutDefaultAmount(trigger, amount)
+            val default = repository.getActiveShortcut(trigger)
+            if (default == null) {
+                message.value = "Could not log shortcut."
+                return@launch
             }
-            message.value = if (result != null) null else "Could not log shortcut."
+            openShortcutWizard(default, amount, saveDefaultAmount = saveAsDefault)
         }
     }
 
     fun dismissQuantityPicker() {
         _pendingQuantityPicker.value = null
+    }
+
+    private fun openShortcutWizard(
+        default: UserDefaultEntity,
+        amount: Double,
+        saveDefaultAmount: Boolean,
+    ) {
+        _loggingWizard.value = default.toShortcutLoggingWizardSession(
+            amount = amount,
+            logDate = selectedDate.value,
+            defaultTime = currentWizardTime(),
+            saveDefaultAmount = saveDefaultAmount,
+        )
+        message.value = null
     }
 
     fun processLabelImage(uri: Uri) {
@@ -247,60 +255,6 @@ class TodayViewModel(
                     _labelReview.value = null
                     message.value = result.message
                 }
-            }
-        }
-    }
-
-    fun logLabelItem(
-        name: String,
-        inputMode: LabelInputMode,
-        amountText: String,
-        calories: String,
-        time: String,
-        saveAsShortcut: Boolean,
-    ) {
-        val parsedCalories = calories.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return
-        val parsedTime = time.takeIf { it.isNotBlank() }?.let { TimeTextParser.parseOrNull(it) }
-        viewModelScope.launch {
-            val review = _labelReview.value ?: return@launch
-            val resolvedPortion = LabelPortionResolver.resolve(review.facts, inputMode, amountText)
-            if (!resolvedPortion.isValidAmount) return@launch
-            val result = repository.logLabelProduct(
-                FoodLogRepository.LabelProductLogInput(
-                    name = name,
-                    kcalPer100g = review.facts.kcalPer100g,
-                    servingSizeGrams = review.facts.servingSizeGrams,
-                    servingUnit = review.facts.servingUnit,
-                    kcalPerServing = review.facts.kcalPerServing,
-                    amount = resolvedPortion.amount,
-                    unit = resolvedPortion.unit,
-                    grams = resolvedPortion.grams,
-                    calories = parsedCalories,
-                    logDate = selectedDate.value,
-                    consumedTime = parsedTime,
-                    notes = null,
-                ),
-            )
-            _labelReview.value = null
-            message.value = when (result) {
-                is FoodLogRepository.LabelLogResult.Logged -> {
-                    if (saveAsShortcut && name.isNotBlank()) {
-                        val shortcutCalories = resolvedPortion.amount
-                            ?.takeIf { it > 0.0 }
-                            ?.let { parsedCalories / it }
-                            ?: parsedCalories
-                        repository.addDefault(
-                            trigger = name.trim().lowercase(),
-                            name = name,
-                            calories = shortcutCalories,
-                            unit = resolvedPortion.unit ?: "item",
-                            notes = null,
-                            defaultAmount = resolvedPortion.amount,
-                        )
-                    }
-                    null
-                }
-                FoodLogRepository.LabelLogResult.InvalidInput -> "Add item name and calories."
             }
         }
     }
@@ -366,7 +320,7 @@ class TodayViewModel(
 
     fun updateLoggingWizardTime(timeText: String) {
         _loggingWizard.update { session ->
-            session?.copy(timeText = timeText)
+            session?.copy(timeText = timeText, timeConfirmed = false)
         }
     }
 
@@ -434,6 +388,16 @@ class TodayViewModel(
             )
             message.value = when (result) {
                 is FoodLogRepository.WizardSubmissionResult.Saved -> {
+                    if (session.saveShortcutDefaultAmount) {
+                        completedParts.firstOrNull()
+                            ?.let { part ->
+                                val amount = part.amount.trim().toDoubleOrNull()
+                                val trigger = part.trigger
+                                if (trigger != null && amount != null && amount > 0.0) {
+                                    repository.updateShortcutDefaultAmount(trigger, amount)
+                                }
+                            }
+                    }
                     _loggingWizard.value = null
                     _labelReview.value = null
                     inputText.value = ""
@@ -1210,6 +1174,35 @@ private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLoggin
         timeConfirmed = consumedTime != null,
         parts = parts.map { it.toLoggingWizardPartDraft() },
     ).withFirstIncompletePart()
+
+private fun UserDefaultEntity.toShortcutLoggingWizardSession(
+    amount: Double,
+    logDate: LocalDate,
+    defaultTime: LocalTime,
+    saveDefaultAmount: Boolean,
+): LoggingWizardSession =
+    LoggingWizardSession(
+        source = LoggingWizardSource.Shortcut,
+        originalRawText = trigger,
+        logDate = logDate,
+        consumedTime = null,
+        timeText = defaultTime.toString(),
+        timeWasSpecified = false,
+        timeConfirmed = false,
+        saveShortcutDefaultAmount = saveDefaultAmount,
+        parts = listOf(
+            LoggingWizardPartDraft(
+                inputText = trigger,
+                trigger = trigger,
+                resolvedByDefault = true,
+                name = name,
+                amount = amount.formatDraftAmount(),
+                unit = unit,
+                calories = (calories * amount).formatDraftAmount(),
+                notes = notes.orEmpty(),
+            ),
+        ),
+    )
 
 private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toLoggingWizardPartDraft(): LoggingWizardPartDraft {
     val default = default
