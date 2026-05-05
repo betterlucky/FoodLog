@@ -9,6 +9,7 @@ import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.EntryKind
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
+import com.betterlucky.foodlog.data.entities.ProductSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
@@ -1020,6 +1021,50 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(25.0, foodItem.calories, 0.001)
         assertEquals(localTime, foodItem.consumedTime)
         assertEquals("tea", rawEntry?.rawText)
+    }
+
+    @Test
+    fun labelProductLogCreatesAuditedFoodProductAndExportRow() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.logLabelProduct(
+            FoodLogRepository.LabelProductLogInput(
+                name = "Tomato soup",
+                kcalPer100g = 33.0,
+                servingSizeGrams = 255.0,
+                servingUnit = "cup",
+                kcalPerServing = 83.0,
+                amount = 1.0,
+                unit = "cup",
+                grams = 255.0,
+                calories = 83.0,
+                logDate = today,
+                consumedTime = LocalTime.parse("13:15"),
+                notes = "Label scan",
+            ),
+        )
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val rawEntry = database.rawEntryDao().getById(foodItem.rawEntryId)
+        val product = database.productDao().getById(foodItem.productId ?: 0)
+        val csv = repository.exportLegacyHealthCsv(today).csv
+        val status = database.dailyStatusDao().getByDate(today)
+
+        assertTrue(result is FoodLogRepository.LabelLogResult.Logged)
+        assertEquals((result as FoodLogRepository.LabelLogResult.Logged).foodItemId, foodItem.id)
+        assertEquals("Label scan: Tomato soup", rawEntry?.rawText)
+        assertEquals(RawEntryStatus.PARSED, rawEntry?.status)
+        assertEquals("Tomato soup", foodItem.name)
+        assertEquals(FoodItemSource.SAVED_LABEL, foodItem.source)
+        assertEquals(1.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals("cup", foodItem.unit)
+        assertEquals(255.0, foodItem.grams ?: 0.0, 0.001)
+        assertEquals(83.0, foodItem.calories, 0.001)
+        assertEquals(ProductSource.PACKAGING_PHOTO, product?.source)
+        assertEquals(33.0, product?.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(255.0, product?.servingSizeGrams ?: 0.0, 0.001)
+        assertEquals("food_log_2026-04-24.csv", status?.legacyExportFileName)
+        assertEquals(now, status?.legacyExportedAt)
+        assertTrue(csv.contains("2026-04-24,13:15,Tomato soup,1 cup,83,Label scan"))
     }
 
     @Test

@@ -15,12 +15,16 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,6 +47,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronLeft
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
@@ -52,16 +58,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
@@ -78,6 +88,8 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import kotlin.math.absoluteValue
 import kotlin.math.floor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,40 +119,92 @@ fun TodayScreen(
     var pendingExpanded by remember(uiState.selectedDate) { mutableStateOf(uiState.pendingEntries.isNotEmpty()) }
     var loggedExpanded by remember(uiState.selectedDate) { mutableStateOf(uiState.items.isNotEmpty()) }
     val listState = rememberLazyListState()
+    val daySwipeEnabled =
+        labelReview == null &&
+            pendingQuantityPicker == null &&
+            loggingWizard == null &&
+            editingDefault == null &&
+            forgettingDefault == null &&
+            editingFoodItem == null &&
+            !editingBoundary &&
+            !editingWeight &&
+            !showingShortcuts &&
+            !addingShortcut &&
+            !pickingDate &&
+            !choosingLabelImage
     val readiness = dailyReadiness(
         dailyStatus = uiState.dailyStatus,
         pendingCount = uiState.pendingEntries.size,
         foodItemCount = uiState.items.size,
         hasDailyWeight = uiState.dailyWeight != null,
     )
+    val dayPagerOriginPage = remember { Int.MAX_VALUE / 2 }
+    val dayPagerOriginDate = remember { uiState.selectedDate }
+    val dayPagerState = rememberPagerState(
+        initialPage = dayPagerOriginPage,
+        pageCount = { Int.MAX_VALUE },
+    )
+    val dayPagerFlingBehavior = PagerDefaults.flingBehavior(
+        state = dayPagerState,
+        snapPositionalThreshold = 0.36f,
+    )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .safeDrawingPadding()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            TextButton(onClick = viewModel::previousDay) {
-                Text("Prev")
-            }
-            OutlinedButton(onClick = { pickingDate = true }) {
-                Text(
-                    text = uiState.selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
-            TextButton(onClick = viewModel::nextDay) {
-                Text("Next")
-            }
+    fun pageForDate(date: LocalDate): Int {
+        val offset = ChronoUnit.DAYS.between(dayPagerOriginDate, date)
+            .coerceIn(
+                Int.MIN_VALUE.toLong() - dayPagerOriginPage,
+                Int.MAX_VALUE.toLong() - dayPagerOriginPage,
+            )
+        return dayPagerOriginPage + offset.toInt()
+    }
+
+    fun dateForPage(page: Int): LocalDate =
+        dayPagerOriginDate.plusDays((page - dayPagerOriginPage).toLong())
+
+    LaunchedEffect(dayPagerState, dayPagerOriginDate) {
+        snapshotFlow { dayPagerState.settledPage }.collect { page ->
+            viewModel.selectDate(dateForPage(page))
         }
+    }
 
+    LaunchedEffect(uiState.selectedDate) {
+        val targetPage = pageForDate(uiState.selectedDate)
+        if (targetPage != dayPagerState.currentPage && !dayPagerState.isScrollInProgress) {
+            dayPagerState.scrollToPage(targetPage)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        HorizontalPager(
+            state = dayPagerState,
+            modifier = Modifier.fillMaxSize(),
+            flingBehavior = dayPagerFlingBehavior,
+            userScrollEnabled = daySwipeEnabled,
+            beyondViewportPageCount = 0,
+        ) { page ->
+            val pageOffset = ((dayPagerState.currentPage - page) + dayPagerState.currentPageOffsetFraction)
+                .coerceIn(-1f, 1f)
+            ElasticDayPagerPage(pageOffset = pageOffset) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .safeDrawingPadding()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    FoodLogDateNavigator(
+                        selectedDate = dateForPage(page),
+                        readiness = readiness,
+                        pendingCount = uiState.pendingEntries.size,
+                        itemCount = uiState.items.size,
+                        hasDailyWeight = uiState.dailyWeight != null,
+                        onOpenPicker = { pickingDate = true },
+                        onPreviousDay = viewModel::previousDay,
+                        onToday = { viewModel.selectDate(LocalDate.now()) },
+                        onNextDay = viewModel::nextDay,
+                    )
+
+                    if (page == dayPagerState.settledPage) {
         FoodDaySettingsRow(
             dayBoundaryTime = uiState.dayBoundaryTime,
             onEdit = { editingBoundary = true },
@@ -328,6 +392,12 @@ fun TodayScreen(
                     hasDailyWeight = uiState.dailyWeight != null,
                     onExportLegacy = { viewModel.exportLegacyCsv(onShareCsv) },
                 )
+            }
+        }
+                    } else {
+                        DaySwipePreview()
+                    }
+                }
             }
         }
     }
@@ -659,6 +729,135 @@ private fun loggedItemsSummary(
     }
 
 private val FoodLogCardShape = RoundedCornerShape(8.dp)
+
+@Composable
+private fun DaySwipePreview() {
+    Spacer(modifier = Modifier.fillMaxWidth().height(1.dp))
+}
+
+@Composable
+private fun ElasticDayPagerPage(
+    pageOffset: Float,
+    content: @Composable () -> Unit,
+) {
+    val pull = pageOffset.absoluteValue.coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                val direction = if (pageOffset == 0f) 0f else pageOffset / pageOffset.absoluteValue
+                cameraDistance = 18f * density
+                rotationY = -direction * pull * 5.5f
+                scaleX = 1f - (pull * 0.025f)
+                scaleY = 1f - (pull * 0.012f)
+                translationX = -direction * pull * 10f
+                alpha = 1f - (pull * 0.05f)
+                transformOrigin = TransformOrigin(
+                    pivotFractionX = if (direction < 0f) 1f else 0f,
+                    pivotFractionY = 0.5f,
+                )
+            },
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun FoodLogDateNavigator(
+    selectedDate: LocalDate,
+    readiness: DailyReadiness,
+    pendingCount: Int,
+    itemCount: Int,
+    hasDailyWeight: Boolean,
+    onOpenPicker: () -> Unit,
+    onPreviousDay: () -> Unit,
+    onToday: () -> Unit,
+    onNextDay: () -> Unit,
+) {
+    val borderColor = when (readiness) {
+        DailyReadiness.AlreadyExported -> Color(0xFF2E7D60).copy(alpha = 0.55f)
+        DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+        DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.error.copy(alpha = 0.42f)
+        DailyReadiness.NoFoodLogged -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
+    }
+    val status = listOf(
+        when (itemCount) {
+            0 -> "no food logged"
+            1 -> "1 logged item"
+            else -> "$itemCount logged items"
+        },
+        when (pendingCount) {
+            0 -> "no pending"
+            1 -> "1 pending"
+            else -> "$pendingCount pending"
+        },
+        if (hasDailyWeight) "weight saved" else "no weight",
+        readiness.label.lowercase(),
+    ).joinToString(" · ")
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpenPicker),
+        shape = FoodLogCardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(
+                        text = "Active day",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Text(
+                        text = status,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onPreviousDay) {
+                    Icon(Icons.Outlined.ChevronLeft, contentDescription = "Previous day")
+                }
+                OutlinedButton(onClick = onToday) {
+                    Text("Today")
+                }
+                IconButton(onClick = onNextDay) {
+                    Icon(Icons.Outlined.ChevronRight, contentDescription = "Next day")
+                }
+            }
+        }
+    }
+}
 
 private enum class LoggedItemsViewMode(val label: String) {
     Time("Time"),

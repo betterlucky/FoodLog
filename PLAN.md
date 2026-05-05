@@ -12,6 +12,14 @@ Phase 1 proves the local data path:
 - consumed items are stored as structured database rows
 - today view and CSV exports are rendered from Room rows only
 
+Current implementation status as of 2026-05-05:
+
+- The local-first Phase 1 core is implemented: Room-backed raw entries, food rows, deterministic parsing, shortcut/default resolution, pending resolution, logged-item editing/removal, date/time handling, daily status, daily weight, and CSV export.
+- The Today screen is the active working surface for daily use.
+- Label OCR has been implemented as the current packaged-food helper using on-device ML Kit text recognition, conservative nutrition parsing, and a confirmation wizard before logging.
+- Barcode logging was tried and is being dropped for now because it was not effective enough for the daily workflow. The current `ProductEntity` schema intentionally has package, serving, nutrient, and last-logged fields, but no barcode/cache fields.
+- The immediate product direction is stabilising manual/OCR product logging, not barcode lookup.
+
 The sample file `food_log_full_2026-04-04_to_2026-04-23.csv` is retained as synthetic fixture data and as the legacy health-monitor CSV export contract. It should not contain real personal food history.
 
 ## Phase 1 Requirements
@@ -30,11 +38,12 @@ Do not implement in the local-only Phase 1 core:
 
 - OpenAI calls
 - backend/server integration
-- nutrition-label photo extraction
 - leftovers
 - corrections
 - fuzzy product matching
 - conversational summaries
+
+Nutrition-label photo extraction is now allowed only through the local on-device OCR path described below. It must remain user-reviewed and must not call a backend or AI service in Phase 1.
 
 Core behavior:
 
@@ -145,19 +154,17 @@ Define Room entities and DAOs for:
 - `ContainerEntity`
 - `UserDefaultEntity`
 
-Product, photo, and container support started as minimal Phase 1 database scaffolding. Barcode V1 now uses `ProductEntity` for local packaged-product caching; product photos and containers remain inert until later phases.
+Product, photo, and container support started as minimal Phase 1 database scaffolding. Current product storage is barcode-neutral and supports:
 
-Barcode-capable product storage includes:
-
-- nullable unique `barcode`
 - source metadata
 - package size grams
 - optional item count per pack, for products such as a 6-sausage packet
+- serving size grams and serving unit
 - kcal per 100g and kcal per serving where known
-- optional per-100g macro fields, currently protein, carbohydrate, and fat; future OCR/product work should preserve room for fibre and similar nutrients
-- optional Open Food Facts URL
-- last synced/refreshed timestamp
-- last logged grams for repeat scans
+- optional per-100g nutrient fields for protein, carbohydrate, fat, fibre, sugars, and salt
+- last logged grams for repeat label/manual product logging
+
+Do not add barcode/cache fields back during the current Phase 1 work. If barcode lookup is reconsidered in a later phase, it should be planned as a fresh experiment with a new migration rather than assumed as part of the current product model.
 
 `CorrectionEntity` is a later-phase TODO unless it is trivial to include as an inert placeholder. Phase 1 must not implement correction behavior.
 
@@ -207,6 +214,7 @@ Create a mobile-first Compose Today screen with:
 - daily-close/export status and action
 - logged item edit/remove controls
 - daily weight control near the close-day/export section
+- local label scan action for packaged foods
 
 The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data. Direct manual add is not exposed in the main UI; known-calorie manual resolution should happen through pending/staged resolution flows.
 
@@ -264,61 +272,25 @@ Current pending-entry behavior:
 - Forgetting a shortcut requires confirmation.
 - Tapping an active shortcut logs one serving for the selected day using the same raw-entry and food-row path as typing the shortcut trigger.
 
-### Barcode Logging V1
-
-Barcode logging is the first packaged-food path and comes before OCR or AI label reading.
-
-Scanner behavior:
-
-- The Today screen has a `Scan` action beside `Log` and `Shortcuts`.
-- Android uses Google Code Scanner from Play services.
-- The app does not request its own camera permission for barcode V1.
-- If the scanner module is unavailable or no barcode is read, the user is shown manual barcode entry.
-
-Lookup and cache behavior:
-
-- Use Open Food Facts as the only online product database in V1.
-- Query `https://world.openfoodfacts.org/api/v2/product/{barcode}.json` with selected fields only.
-- Send a custom FoodLog user agent.
-- Cache successful lookups in Room using `ProductEntity`.
-- Re-scanning an existing barcode opens the cached product immediately without automatic refresh.
-- The review screen has an explicit `Refresh` action to re-check Open Food Facts before the user confirms logging.
-- Offline cached barcodes remain loggable from local product data.
-- Offline uncached, not-found, or nutrition-incomplete products open the manual barcode product review path.
-- Barcode data is a convenience source, not the source of truth. User-confirmed label values should outrank cached or remote barcode values.
-- If Open Food Facts returns `nutrition_data_prepared_per`, treat the product as preparation-sensitive: prefer serving data where available and make the review state clear before logging.
-
-Review behavior:
-
-- Every scan opens a review dialog before logging.
-- Review shows product name, brand, barcode context, kcal per 100g, package grams, amount grams, time, and cache/offline notes.
-- Default amount is the product's last logged grams when present.
-- If the remembered last amount appears to be a dry-pack amount but the product has a larger prepared serving, prefer the prepared serving for review.
-- If no last amount exists and package grams are known, default visibly to the whole package.
-- If package grams are unknown, grams are required before logging.
-- Package fraction buttons are shown only when package grams are known: whole, two-thirds, half, third, and quarter.
-- When the package contains a known number of items, review can calculate grams and calories from an `Items eaten` value, for example 1 sausage from a 6-sausage pack.
-- Future OCR/AI label extraction should display conflicts explicitly, for example `Label: 83 kcal per cup` versus `Barcode: 91.8 kcal per cup`, and default to the visible label.
-- Users may edit package grams and nutrition before logging.
-
-Logging behavior:
-
-- Confirming review creates a `RawEntryEntity` audit row and one `FoodItemEntity`.
-- The food row links to `productId`, stores grams, calculates calories from kcal per 100g, and uses `source = SAVED_LABEL`.
-- Logging updates the product's `lastLoggedGrams`.
-- Existing non-barcode shortcuts stay separate. Barcode V1 does not overwrite, merge, or fuzzy-match shortcuts.
-
 ### OCR Label Capture V1
 
-Label OCR is a one-photo helper for the barcode/manual product review flow:
+Label OCR is the current packaged-food path and remains local/user-reviewed:
 
 - Use bundled on-device ML Kit Latin text recognition.
-- `Use label` in product review lets the user take one photo or choose one existing image.
-- OCR values pre-fill the same review dialog; the user still confirms before logging.
-- The parser is conservative and currently targets common UK label patterns such as `33 kcal per 100g`, `83 kcal per cup`, `1 cup (255g)`, `servings per sachet - 1`, and `6 x 50g`.
-- Label-derived values outrank barcode values when they conflict.
+- `Scan label` on the Today screen lets the user take one photo or choose one existing image.
+- OCR values open the same logging wizard style as other nontrivial entries; the user still confirms before logging.
+- The parser is conservative and currently targets common UK label patterns such as `33 kcal per 100g`, `83 kcal per cup`, `1 cup (255g)`, `servings per sachet - 1`, `6 x 50g`, and package sizes in grams or millilitres.
 - Direct serving calories such as `83 kcal per cup` can be logged with a friendly unit while grams remain stored when known.
+- Label-derived product rows use `source = SAVED_LABEL`.
 - Optional nutrient fields captured for future use include protein, fibre, carbs, fat, sugars, and salt.
+- The last label input mode is persisted so the app can remember item-count versus measured-amount entry.
+- OCR failures should leave the user in control with a clear message and no food row.
+
+Near-term label polish:
+
+- Add focused tests around `LabelOcrReader` failure/success handoff where practical.
+- Tighten the label wizard copy and validation for partial labels where calories are present but the serving unit or amount is missing.
+- Consider persisting reusable label/product records more visibly once the daily workflow is stable.
 
 ## CSV Export
 
@@ -468,20 +440,34 @@ Add focused tests for Phase 1 behavior:
 - Logged item blank-calorie edits can reparse known shortcuts/defaults into replacement food rows.
 - Logged item removal deletes the food row and updates totals/exports.
 - Daily weight can be saved, edited, exported as a `weight` row, and does not affect calorie totals.
-- Scanner-unavailable barcode path shows manual barcode entry.
-- Open Food Facts lookup maps barcode, name, brand, package size, kcal per 100g, serving data, URL, and source.
-- Cached barcode re-scan opens review without network refresh.
-- Barcode refresh fetches updated Open Food Facts data and still requires user review before logging.
-- Unknown or nutrition-incomplete barcodes can be completed manually and saved as local barcode products.
-- Barcode review reuses the last logged amount on later scans.
-- Whole, two-thirds, half, third, and quarter package buttons calculate grams and calories when package size is known.
-- Barcode/manual product review can calculate grams and calories from pack item count, for example `6 x 50g` and `1 item`.
-- Barcode products log into daily totals and the Health Monitor CSV like other food rows.
 - OCR label parser extracts the tomato soup label as `33 kcal per 100g`, `83 kcal per cup`, prepared/cup serving, and obvious per-100g nutrients.
+- OCR/label logging can calculate grams and calories from package size, serving size, item count, and measured grams/millilitres.
+- Label-scanned products log into daily totals and the Health Monitor CSV like other food rows.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.
 - `AuditCsvExporter` header matches the rich schema exactly.
 - CSV export includes active rows, handles blank times, and escapes commas/quotes/newlines.
 - Repository submit flow keeps raw and food rows consistent.
+
+## Recommended Next Work
+
+Agent-facing docs have been refreshed now that local OCR and the logging wizard have landed:
+
+- `AGENTS.md` records current product reality and agent guardrails.
+- `README.md` points humans and agents at the same high-level state.
+- Barcode lookup is explicitly parked.
+
+Verification pass completed after the docs refresh:
+
+- Unit tests pass.
+- Android smoke launch/render pass succeeds.
+- Full connected instrumented tests pass on the attached device.
+- The smoke script now preserves app-private data if a signature mismatch forces a reinstall, and it uses the normal Android debug keystore by default to avoid creating mismatches with connected tests.
+
+Next, choose between:
+
+- Label/manual product polish, if awkward labels still feel clunky after real use.
+- Shortcut/product polish, if the goal is making daily manual use faster and less error-prone.
+- Daily close/export polish, if the next priority is making the Health Monitor handoff feel dependable.
 
 Prefer local unit tests for parser, export, and totals logic. Use instrumented tests only where Room or Android framework behavior makes that necessary.
 
@@ -496,6 +482,7 @@ Later phases may add:
 - optional protein/fibre and broader nutrient logging once the food-row/export contracts are ready
 - product review and confirmation screens
 - product matching with stale-cache protection
+- reconsidering barcode lookup only if a better data source or UX hypothesis emerges
 - active leftover/container handling
 - correction handling with audit trail
 - conversational day summaries from database-derived context
@@ -515,7 +502,7 @@ Backend-backed AI remains out of scope until the local-first app works well for 
 - Consider Play Integrity attestation as a later hardening layer for release builds.
 - Rate-limit by anonymous install ID, IP, and request class before calling paid providers.
 - Cache normalized requests and structured results before calling an AI provider.
-- Prefer deterministic routes first: shortcut/defaults, local history, barcode/product lookup, nutrition databases, and on-device OCR.
+- Prefer deterministic routes first: shortcut/defaults, local history, saved products, nutrition databases, and on-device OCR.
 - Use AI only as a fallback for ambiguous text, label parsing failures, or richer review/summarization.
 - Require strict JSON responses; never parse markdown tables or prose as the app contract.
 - Version the request and response schema so cache entries can be invalidated safely.
