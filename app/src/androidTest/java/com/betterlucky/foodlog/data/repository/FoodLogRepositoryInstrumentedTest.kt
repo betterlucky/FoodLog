@@ -228,6 +228,114 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun previewSubmissionWithKnownShortcutIsReadyAndNonMutating() = runTest {
+        repository.seedDefaults()
+
+        val preview = repository.previewSubmission("tea", today)
+
+        assertTrue(preview is FoodLogRepository.SubmissionPreviewResult.Ready)
+        assertEquals(emptyList<RawEntryEntity>(), repository.observePendingEntriesForDate(today).first())
+        assertEquals(emptyList<FoodItemEntity>(), repository.observeFoodItemsForDate(today).first())
+    }
+
+    @Test
+    fun previewSubmissionWithMixedKnownAndUnknownPartsNeedsResolutionAndIsNonMutating() = runTest {
+        repository.seedDefaults()
+
+        val preview = repository.previewSubmission("tea and curry", today)
+
+        assertTrue(preview is FoodLogRepository.SubmissionPreviewResult.NeedsResolution)
+        val parts = (preview as FoodLogRepository.SubmissionPreviewResult.NeedsResolution).parts
+        assertEquals(listOf("tea", "curry"), parts.map { it.inputText })
+        assertEquals(listOf("Tea", null), parts.map { it.default?.name })
+        assertEquals(emptyList<RawEntryEntity>(), repository.observePendingEntriesForDate(today).first())
+        assertEquals(emptyList<FoodItemEntity>(), repository.observeFoodItemsForDate(today).first())
+    }
+
+    @Test
+    fun previewSubmissionReportsDateMismatchWithoutMutating() = runTest {
+        repository.seedDefaults()
+
+        val preview = repository.previewSubmission("yesterday tea", today)
+
+        assertEquals(
+            FoodLogRepository.SubmissionPreviewResult.DateMismatch(
+                requestedLogDate = today.minusDays(1),
+                selectedLogDate = today,
+            ),
+            preview,
+        )
+        assertEquals(emptyList<RawEntryEntity>(), repository.observePendingEntries().first())
+        assertEquals(emptyList<FoodItemEntity>(), repository.observeFoodItemsForDate(today).first())
+    }
+
+    @Test
+    fun wizardPartialSaveLogsCompletedPartsAndKeepsRemainderPending() = runTest {
+        repository.seedDefaults()
+
+        val result = repository.saveWizardSubmission(
+            sourceRawEntryId = null,
+            originalRawText = "tea and curry",
+            completedRawText = "tea",
+            pendingRawText = "curry",
+            logDate = today,
+            consumedTime = LocalTime.parse("13:00"),
+            parts = listOf(
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Tea",
+                    amount = 1.0,
+                    unit = "cup",
+                    calories = 25.0,
+                    source = FoodItemSource.USER_DEFAULT,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                ),
+            ),
+        )
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+
+        assertTrue(result is FoodLogRepository.WizardSubmissionResult.Saved)
+        assertEquals(listOf("Tea"), foodItems.map { it.name })
+        assertEquals(listOf("curry"), pendingEntries.map { it.rawText })
+        assertEquals(LocalTime.parse("13:00"), foodItems.single().consumedTime)
+        assertEquals(LocalTime.parse("13:00"), pendingEntries.single().consumedTime)
+    }
+
+    @Test
+    fun wizardSaveCanCreatePerItemShortcut() = runTest {
+        repository.seedDefaults()
+
+        repository.saveWizardSubmission(
+            sourceRawEntryId = null,
+            originalRawText = "toast",
+            completedRawText = "toast",
+            pendingRawText = null,
+            logDate = today,
+            consumedTime = null,
+            parts = listOf(
+                FoodLogRepository.FoodItemEditReplacementPart(
+                    name = "Toast",
+                    amount = 2.0,
+                    unit = "slices",
+                    calories = 180.0,
+                    source = FoodItemSource.MANUAL_OVERRIDE,
+                    confidence = ConfidenceLevel.HIGH,
+                    notes = null,
+                    saveDefaultTrigger = "toast",
+                ),
+            ),
+        )
+
+        val nextResult = repository.submitText("toast")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(2, foodItems.size)
+        assertEquals(90.0, foodItems.last().calories, 0.001)
+    }
+
+    @Test
     fun unsupportedDatedSubmissionStaysPendingWithParsedLogDate() = runTest {
         repository.seedDefaults()
 

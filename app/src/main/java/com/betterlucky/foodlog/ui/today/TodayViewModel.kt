@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.temporal.ChronoUnit
 
 data class LoggedFoodEditResolution(
     val rawText: String,
@@ -74,6 +75,49 @@ data class LabelReviewState(
         }
 }
 
+enum class LoggingWizardSource {
+    FreeText,
+    Pending,
+    Label,
+}
+
+data class LoggingWizardSession(
+    val source: LoggingWizardSource,
+    val sourceRawEntryId: Long? = null,
+    val originalRawText: String,
+    val logDate: LocalDate,
+    val consumedTime: LocalTime?,
+    val timeText: String,
+    val timeWasSpecified: Boolean,
+    val timeConfirmed: Boolean,
+    val parts: List<LoggingWizardPartDraft>,
+    val currentPartIndex: Int = 0,
+    val labelFacts: LabelNutritionFacts? = null,
+    val labelInputMode: LabelInputMode = LabelInputMode.ITEMS,
+)
+
+data class LoggingWizardPartDraft(
+    val inputText: String,
+    val trigger: String?,
+    val resolvedByDefault: Boolean,
+    val name: String,
+    val amount: String,
+    val unit: String,
+    val calories: String,
+    val notes: String = "",
+    val saveAsShortcut: Boolean = false,
+    val deferred: Boolean = false,
+) {
+    val hasPositiveCalories: Boolean
+        get() = calories.toDoubleOrNull()?.let { it > 0.0 } == true
+
+    val isComplete: Boolean
+        get() = name.isNotBlank() && hasPositiveCalories && !deferred
+
+    val needsInput: Boolean
+        get() = !isComplete && !deferred
+}
+
 private fun Double.formatForMessage(): String =
     if (this % 1.0 == 0.0) {
         toInt().toString()
@@ -95,6 +139,9 @@ class TodayViewModel(
 
     private val _pendingQuantityPicker = MutableStateFlow<UserDefaultEntity?>(null)
     val pendingQuantityPicker: StateFlow<UserDefaultEntity?> = _pendingQuantityPicker.asStateFlow()
+
+    private val _loggingWizard = MutableStateFlow<LoggingWizardSession?>(null)
+    val loggingWizard: StateFlow<LoggingWizardSession?> = _loggingWizard.asStateFlow()
 
     val uiState: StateFlow<TodayUiState> =
         combine(
@@ -147,7 +194,7 @@ class TodayViewModel(
         val text = inputText.value
         if (text.isBlank()) return
 
-        submitText(text, clearInput = true)
+        previewOrSubmitText(text)
     }
 
     fun logShortcut(trigger: String) {
@@ -187,7 +234,15 @@ class TodayViewModel(
         viewModelScope.launch {
             _labelReview.value = LabelReviewState(facts = LabelNutritionFacts(rawText = ""), isProcessing = true)
             when (val result = reader.read(uri)) {
-                is LabelOcrResult.Read -> _labelReview.value = LabelReviewState(facts = result.facts)
+                is LabelOcrResult.Read -> {
+                    _labelReview.value = null
+                    _loggingWizard.value = result.facts.toLabelLoggingWizardSession(
+                        logDate = selectedDate.value,
+                        consumedTime = null,
+                        defaultTime = currentWizardTime(),
+                        inputMode = LabelInputMode.fromStorage(uiState.value.lastLabelInputMode),
+                    )
+                }
                 is LabelOcrResult.Failed -> {
                     _labelReview.value = null
                     message.value = result.message
@@ -260,6 +315,198 @@ class TodayViewModel(
         _labelReview.value = null
     }
 
+    fun openPendingEntryWizard(rawEntryId: Long) {
+        viewModelScope.launch {
+            when (val preview = repository.previewPendingEntryResolution(rawEntryId)) {
+                is FoodLogRepository.PendingEntryResolutionPreviewResult.Ready ->
+                    _loggingWizard.value = preview.toLoggingWizardSession(rawEntryId = rawEntryId, defaultTime = currentWizardTime())
+                is FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart -> {
+                    val part = preview.part
+                    if (part != null) {
+                        _loggingWizard.value = LoggingWizardSession(
+                            source = LoggingWizardSource.Pending,
+                            sourceRawEntryId = rawEntryId,
+                            originalRawText = part.inputText,
+                            logDate = preview.logDate,
+                            consumedTime = preview.consumedTime,
+                            timeText = (preview.consumedTime ?: currentWizardTime()).toString(),
+                            timeWasSpecified = preview.consumedTime != null,
+                            timeConfirmed = preview.consumedTime != null,
+                            parts = listOf(part.toLoggingWizardPartDraft()),
+                        ).withFirstIncompletePart()
+                    }
+                }
+                FoodLogRepository.PendingEntryResolutionPreviewResult.NotFound ->
+                    message.value = "That pending entry no longer exists."
+                FoodLogRepository.PendingEntryResolutionPreviewResult.NotPending ->
+                    message.value = "That entry has already been handled."
+            }
+        }
+    }
+
+    fun clearLoggingWizard() {
+        _loggingWizard.value = null
+    }
+
+    fun updateLoggingWizardPart(index: Int, part: LoggingWizardPartDraft) {
+        _loggingWizard.update { session ->
+            session?.copy(
+                parts = session.parts.mapIndexed { partIndex, existing ->
+                    if (partIndex == index) part else existing
+                },
+            )
+        }
+    }
+
+    fun setLoggingWizardCurrentPart(index: Int) {
+        _loggingWizard.update { session ->
+            session?.copy(currentPartIndex = index.coerceIn(0, session.parts.lastIndex.coerceAtLeast(0)))
+        }
+    }
+
+    fun updateLoggingWizardTime(timeText: String) {
+        _loggingWizard.update { session ->
+            session?.copy(timeText = timeText)
+        }
+    }
+
+    fun confirmLoggingWizardTime() {
+        _loggingWizard.update { session ->
+            session?.copy(timeConfirmed = true)
+        }
+    }
+
+    fun saveLoggingWizard() {
+        val session = _loggingWizard.value ?: return
+        if (session.source == LoggingWizardSource.Label) {
+            saveLabelWizard(session)
+            return
+        }
+        val parsedTime = TimeTextParser.parseOrNull(session.timeText)
+        if (session.timeText.isBlank() || parsedTime == null) {
+            message.value = "Time must use HH:mm, such as 08:30."
+            return
+        }
+        val completedParts = session.parts.filter { it.isComplete }
+        val pendingParts = session.parts.filter { !it.isComplete }
+        val pendingRawText = pendingParts
+            .joinToString(" and ") { it.inputText.ifBlank { it.name } }
+            .ifBlank { null }
+        val completedRawText = completedParts
+            .joinToString(" and ") { it.inputText.ifBlank { it.name } }
+            .ifBlank { session.originalRawText }
+        val replacements = completedParts.mapNotNull { part ->
+            val calories = part.calories.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return@mapNotNull null
+            FoodLogRepository.FoodItemEditReplacementPart(
+                name = part.name,
+                amount = part.amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull(),
+                unit = part.unit,
+                calories = calories,
+                source = if (part.resolvedByDefault) FoodItemSource.USER_DEFAULT else FoodItemSource.MANUAL_OVERRIDE,
+                confidence = ConfidenceLevel.HIGH,
+                notes = part.notes,
+                saveDefaultTrigger = if (part.saveAsShortcut && !part.resolvedByDefault) {
+                    part.trigger?.takeIf { it.isNotBlank() } ?: part.name
+                } else {
+                    null
+                },
+            )
+        }
+
+        if (completedParts.isNotEmpty() && replacements.size != completedParts.size) {
+            message.value = "Add item names and calories before saving."
+            return
+        }
+        if (completedParts.isEmpty() && pendingRawText == null) {
+            message.value = "Complete or defer at least one item."
+            return
+        }
+
+        viewModelScope.launch {
+            val result = repository.saveWizardSubmission(
+                sourceRawEntryId = session.sourceRawEntryId,
+                originalRawText = session.originalRawText,
+                completedRawText = completedRawText,
+                pendingRawText = pendingRawText,
+                logDate = session.logDate,
+                consumedTime = parsedTime,
+                parts = replacements,
+            )
+            message.value = when (result) {
+                is FoodLogRepository.WizardSubmissionResult.Saved -> {
+                    _loggingWizard.value = null
+                    _labelReview.value = null
+                    inputText.value = ""
+                    when {
+                        result.foodItemIds.isNotEmpty() && result.pendingRawEntryId != null ->
+                            "Logged ${result.foodItemIds.size} item(s); kept ${pendingParts.size} pending."
+                        result.foodItemIds.isNotEmpty() -> "Logged ${result.foodItemIds.size} item(s)."
+                        result.pendingRawEntryId != null -> "Kept pending."
+                        else -> null
+                    }
+                }
+                FoodLogRepository.WizardSubmissionResult.InvalidInput -> "Add item names and calories before saving."
+                FoodLogRepository.WizardSubmissionResult.NotFound -> "That pending entry no longer exists."
+                FoodLogRepository.WizardSubmissionResult.NotPending -> "That entry has already been handled."
+            }
+        }
+    }
+
+    private fun saveLabelWizard(session: LoggingWizardSession) {
+        val facts = session.labelFacts ?: return
+        val part = session.parts.singleOrNull() ?: return
+        val parsedCalories = part.calories.toDoubleOrNull()?.takeIf { it > 0.0 }
+        val parsedTime = TimeTextParser.parseOrNull(session.timeText)
+        val resolvedPortion = LabelPortionResolver.resolve(facts, session.labelInputMode, part.amount)
+        if (part.name.isBlank() || parsedCalories == null || !resolvedPortion.isValidAmount) {
+            message.value = "Add item name and calories."
+            return
+        }
+        if (session.timeText.isBlank() || parsedTime == null) {
+            message.value = "Time must use HH:mm, such as 08:30."
+            return
+        }
+        viewModelScope.launch {
+            val result = repository.logLabelProduct(
+                FoodLogRepository.LabelProductLogInput(
+                    name = part.name,
+                    kcalPer100g = facts.kcalPer100g,
+                    servingSizeGrams = facts.servingSizeGrams,
+                    servingUnit = facts.servingUnit,
+                    kcalPerServing = facts.kcalPerServing,
+                    amount = resolvedPortion.amount,
+                    unit = resolvedPortion.unit,
+                    grams = resolvedPortion.grams,
+                    calories = parsedCalories,
+                    logDate = session.logDate,
+                    consumedTime = parsedTime,
+                    notes = part.notes.ifBlank { null },
+                ),
+            )
+            message.value = when (result) {
+                is FoodLogRepository.LabelLogResult.Logged -> {
+                    if (part.saveAsShortcut) {
+                        val shortcutCalories = resolvedPortion.amount
+                            ?.takeIf { it > 0.0 }
+                            ?.let { parsedCalories / it }
+                            ?: parsedCalories
+                        repository.addDefault(
+                            trigger = part.name.trim().lowercase(),
+                            name = part.name,
+                            calories = shortcutCalories,
+                            unit = resolvedPortion.unit ?: "item",
+                            notes = part.notes.ifBlank { null },
+                            defaultAmount = resolvedPortion.amount,
+                        )
+                    }
+                    _loggingWizard.value = null
+                    null
+                }
+                FoodLogRepository.LabelLogResult.InvalidInput -> "Add item name and calories."
+            }
+        }
+    }
+
     private fun submitText(
         text: String,
         clearInput: Boolean,
@@ -288,6 +535,32 @@ class TodayViewModel(
             }
         }
     }
+
+    private fun previewOrSubmitText(text: String) {
+        viewModelScope.launch {
+            when (val preview = repository.previewSubmission(text, selectedDate.value)) {
+                is FoodLogRepository.SubmissionPreviewResult.Ready -> {
+                    if (preview.consumedTime == null) {
+                        _loggingWizard.value = preview.toLoggingWizardSession(defaultTime = currentWizardTime())
+                        message.value = null
+                    } else {
+                        submitText(text, clearInput = true)
+                    }
+                }
+                is FoodLogRepository.SubmissionPreviewResult.NeedsResolution -> {
+                    _loggingWizard.value = preview.toLoggingWizardSession(defaultTime = currentWizardTime())
+                    message.value = null
+                }
+                is FoodLogRepository.SubmissionPreviewResult.NonFood -> submitText(text, clearInput = true)
+                is FoodLogRepository.SubmissionPreviewResult.DateMismatch ->
+                    message.value = "Switch to ${preview.requestedLogDate} before adding that entry."
+                FoodLogRepository.SubmissionPreviewResult.InvalidInput -> Unit
+            }
+        }
+    }
+
+    private fun currentWizardTime(): LocalTime =
+        repository.currentLocalTime().truncatedTo(ChronoUnit.MINUTES)
 
     fun selectDate(date: LocalDate) {
         selectedDate.value = date
@@ -897,6 +1170,103 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready.toLoggedFoo
             )
         },
     )
+
+private fun FoodLogRepository.SubmissionPreviewResult.Ready.toLoggingWizardSession(defaultTime: LocalTime): LoggingWizardSession =
+    LoggingWizardSession(
+        source = LoggingWizardSource.FreeText,
+        originalRawText = rawText,
+        logDate = logDate,
+        consumedTime = consumedTime,
+        timeText = (consumedTime ?: defaultTime).toString(),
+        timeWasSpecified = consumedTime != null,
+        timeConfirmed = consumedTime != null,
+        parts = parts.map { it.toLoggingWizardPartDraft() },
+    ).withFirstIncompletePart()
+
+private fun FoodLogRepository.SubmissionPreviewResult.NeedsResolution.toLoggingWizardSession(defaultTime: LocalTime): LoggingWizardSession =
+    LoggingWizardSession(
+        source = LoggingWizardSource.FreeText,
+        originalRawText = rawText,
+        logDate = logDate,
+        consumedTime = consumedTime,
+        timeText = (consumedTime ?: defaultTime).toString(),
+        timeWasSpecified = consumedTime != null,
+        timeConfirmed = consumedTime != null,
+        parts = parts.map { it.toLoggingWizardPartDraft() },
+    ).withFirstIncompletePart()
+
+private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLoggingWizardSession(
+    rawEntryId: Long,
+    defaultTime: LocalTime,
+): LoggingWizardSession =
+    LoggingWizardSession(
+        source = LoggingWizardSource.Pending,
+        sourceRawEntryId = rawEntryId,
+        originalRawText = rawText,
+        logDate = logDate,
+        consumedTime = consumedTime,
+        timeText = (consumedTime ?: defaultTime).toString(),
+        timeWasSpecified = consumedTime != null,
+        timeConfirmed = consumedTime != null,
+        parts = parts.map { it.toLoggingWizardPartDraft() },
+    ).withFirstIncompletePart()
+
+private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toLoggingWizardPartDraft(): LoggingWizardPartDraft {
+    val default = default
+    return LoggingWizardPartDraft(
+        inputText = inputText,
+        trigger = trigger,
+        resolvedByDefault = default != null,
+        name = default?.name ?: trigger?.replaceFirstChar { it.titlecase() } ?: inputText,
+        amount = quantity
+            .takeIf { quantityUnit != null || it != 1.0 }
+            ?.formatDraftAmount()
+            .orEmpty(),
+        unit = default?.unit ?: quantityUnit.orEmpty(),
+        calories = default?.calories?.times(quantity)?.formatDraftAmount().orEmpty(),
+        notes = default?.notes.orEmpty(),
+    )
+}
+
+private fun LabelNutritionFacts.toLabelLoggingWizardSession(
+    logDate: LocalDate,
+    consumedTime: LocalTime?,
+    defaultTime: LocalTime,
+    inputMode: LabelInputMode,
+): LoggingWizardSession {
+    val itemUnit = LabelPortionResolver.itemUnit(this)
+    val amount = servingAmount?.takeIf { it > 0.0 } ?: 1.0
+    val amountText = amount.formatDraftAmount()
+    val resolved = LabelPortionResolver.resolve(this, inputMode, amountText)
+    return LoggingWizardSession(
+        source = LoggingWizardSource.Label,
+        originalRawText = rawText,
+        logDate = logDate,
+        consumedTime = consumedTime,
+        timeText = (consumedTime ?: defaultTime).toString(),
+        timeWasSpecified = consumedTime != null,
+        timeConfirmed = consumedTime != null,
+        labelFacts = this,
+        labelInputMode = inputMode,
+        parts = listOf(
+            LoggingWizardPartDraft(
+                inputText = "Label scan",
+                trigger = null,
+                resolvedByDefault = false,
+                name = "",
+                amount = amountText,
+                unit = resolved.unit ?: itemUnit,
+                calories = resolved.calories?.formatDraftAmount().orEmpty(),
+            ),
+        ),
+    ).withFirstIncompletePart()
+}
+
+private fun LoggingWizardSession.withFirstIncompletePart(): LoggingWizardSession {
+    val firstIncomplete = parts.indexOfFirst { it.needsInput }
+    val firstPart = if (firstIncomplete >= 0) firstIncomplete else 0
+    return copy(currentPartIndex = firstPart)
+}
 
 private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLoggedFoodEditResolution(): LoggedFoodEditResolution =
     LoggedFoodEditResolution(
