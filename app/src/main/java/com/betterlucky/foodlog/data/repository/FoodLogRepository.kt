@@ -197,9 +197,10 @@ class FoodLogRepository(
         userDefaultDao.deactivate(trigger)
     }
 
-    suspend fun updateShortcutDefaultAmount(trigger: String, amount: Double?) {
-        val existing = userDefaultDao.getActiveDefault(trigger) ?: return
+    suspend fun updateShortcutDefaultAmount(trigger: String, amount: Double?): Boolean {
+        val existing = userDefaultDao.getActiveDefault(trigger) ?: return false
         userDefaultDao.upsert(existing.copy(defaultAmount = amount))
+        return true
     }
 
     suspend fun getActiveShortcut(trigger: String): UserDefaultEntity? =
@@ -211,6 +212,7 @@ class FoodLogRepository(
         logDate: LocalDate,
     ): SubmitResult.Parsed? =
         database.withTransaction {
+            if (amount <= 0.0) return@withTransaction null
             val default = userDefaultDao.getActiveDefault(trigger)
                 ?: return@withTransaction null
             val now = dateTimeProvider.nowInstant()
@@ -281,6 +283,7 @@ class FoodLogRepository(
         calories: Double,
         unit: String,
         notes: String?,
+        defaultAmount: Double? = null,
     ): DefaultUpdateResult {
         val normalizedTrigger = trigger.shortcutTrigger()
         val trimmedName = name.trim()
@@ -298,6 +301,7 @@ class FoodLogRepository(
                 calories = calories,
                 unit = trimmedUnit,
                 notes = normalizedNotes,
+                defaultAmount = defaultAmount,
             ),
         )
         return DefaultUpdateResult.Updated
@@ -312,19 +316,25 @@ class FoodLogRepository(
             val now = dateTimeProvider.nowInstant()
             val consumedTime = input.consumedTime ?: dateTimeProvider.localTime()
 
-            // Upsert product entry for this OCR-scanned item (cached for future reference)
-            val product = ProductEntity(
-                name = name,
-                servingSizeGrams = input.servingSizeGrams,
-                servingUnit = input.servingUnit,
-                kcalPer100g = input.kcalPer100g,
-                kcalPerServing = input.kcalPerServing,
-                source = ProductSource.PACKAGING_PHOTO,
-                confidence = ConfidenceLevel.HIGH,
-                lastLoggedGrams = input.grams,
-                createdAt = now,
-            )
-            val productId = productDao.insert(product)
+            // Reuse an existing product by name, or insert a new one
+            val existingProduct = productDao.getByName(name)
+            val productId = if (existingProduct != null) {
+                existingProduct.id
+            } else {
+                productDao.insert(
+                    ProductEntity(
+                        name = name,
+                        servingSizeGrams = input.servingSizeGrams,
+                        servingUnit = input.servingUnit,
+                        kcalPer100g = input.kcalPer100g,
+                        kcalPerServing = input.kcalPerServing,
+                        source = ProductSource.PACKAGING_PHOTO,
+                        confidence = ConfidenceLevel.HIGH,
+                        lastLoggedGrams = input.grams,
+                        createdAt = now,
+                    ),
+                )
+            }
 
             val rawEntryId = rawEntryDao.insert(
                 RawEntryEntity(

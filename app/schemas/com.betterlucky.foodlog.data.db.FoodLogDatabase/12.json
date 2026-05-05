@@ -647,7 +647,8 @@
             "fieldPath": "lastLabelInputMode",
             "columnName": "lastLabelInputMode",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'ITEMS'"
           }
         ],
         "primaryKey": {

@@ -120,8 +120,8 @@ class TodayViewModel(
                 userDefaults = values[6] as List<com.betterlucky.foodlog.data.entities.UserDefaultEntity>,
                 dailyStatus = values[7] as com.betterlucky.foodlog.data.entities.DailyStatusEntity?,
                 dailyWeight = values[8] as com.betterlucky.foodlog.data.entities.DailyWeightEntity?,
-                dayBoundaryTime = (values[9] as AppSettingsEntity?)?.dayBoundaryTime,
-                lastLabelInputMode = (values[9] as AppSettingsEntity?)?.lastLabelInputMode
+                dayBoundaryTime = (values[9] as? AppSettingsEntity)?.dayBoundaryTime,
+                lastLabelInputMode = (values[9] as? AppSettingsEntity)?.lastLabelInputMode
                     ?: AppSettingsEntity.LAST_LABEL_INPUT_MODE_ITEMS,
                 isLoading = false,
             )
@@ -167,10 +167,10 @@ class TodayViewModel(
     fun logShortcutWithAmount(trigger: String, amount: Double, saveAsDefault: Boolean = true) {
         viewModelScope.launch {
             _pendingQuantityPicker.value = null
-            if (saveAsDefault) {
+            val result = repository.logShortcutAmount(trigger, amount, selectedDate.value)
+            if (result != null && saveAsDefault) {
                 repository.updateShortcutDefaultAmount(trigger, amount)
             }
-            val result = repository.logShortcutAmount(trigger, amount, selectedDate.value)
             message.value = if (result != null) null else "Could not log shortcut."
         }
     }
@@ -180,9 +180,12 @@ class TodayViewModel(
     }
 
     fun processLabelImage(uri: Uri) {
-        val reader = labelOcrReader ?: return
+        val reader = labelOcrReader ?: run {
+            message.value = "Label scan is not available on this device."
+            return
+        }
         viewModelScope.launch {
-            _labelReview.value = LabelReviewState(facts = com.betterlucky.foodlog.domain.label.LabelNutritionFacts(rawText = ""), isProcessing = true)
+            _labelReview.value = LabelReviewState(facts = LabelNutritionFacts(rawText = ""), isProcessing = true)
             when (val result = reader.read(uri)) {
                 is LabelOcrResult.Read -> _labelReview.value = LabelReviewState(facts = result.facts)
                 is LabelOcrResult.Failed -> {
@@ -237,6 +240,7 @@ class TodayViewModel(
                             calories = shortcutCalories,
                             unit = resolvedPortion.unit ?: "item",
                             notes = null,
+                            defaultAmount = resolvedPortion.amount,
                         )
                     }
                     null

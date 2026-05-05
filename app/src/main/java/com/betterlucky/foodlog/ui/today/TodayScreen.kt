@@ -11,11 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -41,8 +37,12 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.TimeInput
 import androidx.compose.material3.TimePicker
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
@@ -1265,19 +1265,11 @@ private fun LabelReviewDialog(
             ) {
                 Text("Log from label")
                 if (step == LabelDialogStep.Portion) {
-                    Box(
-                        modifier = Modifier
-                            .size(42.dp)
-                            .background(Color(0xFF1F51FF), CircleShape)
-                            .border(2.dp, Color.Black, CircleShape)
-                            .clickable { showingAmountHelp = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = "i",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.headlineMedium,
+                    IconButton(onClick = { showingAmountHelp = true }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = "Amount entry help",
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
                 }
@@ -1399,6 +1391,7 @@ private fun LabelReviewDialog(
                                     singleLine = true,
                                     label = { Text("Amount") },
                                     textStyle = MaterialTheme.typography.bodyLarge,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 )
                                 OutlinedTextField(
                                     value = itemUnit,
@@ -1417,6 +1410,7 @@ private fun LabelReviewDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                                 label = { Text("Amount (g/ml)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             )
                         }
                         if (portionSummary.isNotBlank()) {
@@ -1500,7 +1494,7 @@ private fun LabelReviewDialog(
                             step = when (step) {
                                 LabelDialogStep.Portion -> LabelDialogStep.Product
                                 LabelDialogStep.Review -> LabelDialogStep.Portion
-                                LabelDialogStep.Product -> LabelDialogStep.Product
+                                else -> step
                             }
                         },
                     ) {
@@ -1533,24 +1527,6 @@ private enum class LabelDialogStep {
     Product,
     Portion,
     Review,
-}
-
-@Composable
-private fun LabelInputModeButton(
-    text: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    if (selected) {
-        Button(onClick = onClick, modifier = modifier) {
-            Text(text)
-        }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier) {
-            Text(text)
-        }
-    }
 }
 
 @Composable
@@ -2445,7 +2421,7 @@ private fun EditFoodItemDialog(
                     supportingText = {
                         if (caloriesRecalculated) {
                             Text("Recalculated from shortcut rate")
-                        } else {
+                        } else if (caloriesPerUnit != null) {
                             Text("Blank = use defaults")
                         }
                     },

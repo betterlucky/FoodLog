@@ -27,7 +27,7 @@ data class LabelNutritionFacts(
 
 class LabelNutritionParser {
     private val servingUnitPattern = """cup|serving|sachet|slice|item|bar|portion|can|bag|pack|bottle|pot|tub"""
-    private val servingAmountPattern = """(?:\d+(?:[.,]\d+)?|[1ilt]\s*/\s*\d+|[½⅓⅔¼¾])"""
+    private val servingAmountPattern = """(?:\d+(?:[.,]\d+)?|\d+\s*/\s*\d+|[½⅓⅔¼¾])"""
 
     fun parse(rawText: String): LabelNutritionFacts {
         val normalized = rawText
@@ -93,7 +93,8 @@ class LabelNutritionParser {
                     // Both values may be on the same 100g line (e.g. "450kcal 135kcal per 100g per serving")
                     kcalPattern.findAll(lineWith100UnitKcal).mapNotNull { it.groupValues[1].toDoubleValue() }.drop(1).firstOrNull()
                 }
-            return if (Regex("""100\s*ml\b""").containsMatchIn(lineLower)) {
+            val has100g = Regex("""100\s*g\b""").containsMatchIn(lineLower)
+            return if (!has100g && Regex("""100\s*ml\b""").containsMatchIn(lineLower)) {
                 KcalValues(per100ml = per100, perServing = perServing)
             } else {
                 KcalValues(per100g = per100, perServing = perServing)
@@ -188,10 +189,11 @@ class LabelNutritionParser {
 
         val countWithUnit = Regex("""\b(\d+(?:[.,]\d+)?)\s*(bags?|packs?|bars?|bottles?|pots?|cans?)\b""")
             .find(lower)
+        val nutrientLinePattern = Regex("""^\s*(salt|sugars?|fat|protein|fibre|fiber|carbohydrate|carbs|energy)\b""")
         return PackageQuantity(
             grams = lower.lineSequence()
                 .firstNotNullOfOrNull { line ->
-                    if (Regex("""per\s*100\s*g""").containsMatchIn(line)) {
+                    if (Regex("""per\s*100\s*g""").containsMatchIn(line) || nutrientLinePattern.containsMatchIn(line)) {
                         null
                     } else {
                         Regex("""\b(\d+(?:[.,]\d+)?)\s*(kg|g)\b""")
@@ -201,7 +203,7 @@ class LabelNutritionParser {
                 },
             milliliters = lower.lineSequence()
                 .firstNotNullOfOrNull { line ->
-                    if (Regex("""per\s*100\s*ml""").containsMatchIn(line)) {
+                    if (Regex("""per\s*100\s*ml""").containsMatchIn(line) || nutrientLinePattern.containsMatchIn(line)) {
                         null
                     } else {
                         Regex("""\b(\d+(?:[.,]\d+)?)\s*(ml|l)\b""")
@@ -238,15 +240,16 @@ private fun formatServingUnit(
     amount: Double,
     unit: String,
 ): String {
-    val formattedAmount = when (amount) {
-        0.5 -> "1/2"
-        1.0 / 3.0 -> "1/3"
-        2.0 / 3.0 -> "2/3"
-        0.25 -> "1/4"
-        0.75 -> "3/4"
+    fun near(target: Double) = kotlin.math.abs(amount - target) < 1e-6
+    val formattedAmount = when {
+        near(0.5) -> "1/2"
+        near(1.0 / 3.0) -> "1/3"
+        near(2.0 / 3.0) -> "2/3"
+        near(0.25) -> "1/4"
+        near(0.75) -> "3/4"
         else -> amount.formatClean()
     }
-    return if (amount == 1.0) unit else "$formattedAmount $unit"
+    return if (near(1.0)) unit else "$formattedAmount $unit"
 }
 
 private fun String.toServingAmount(): Double? =
