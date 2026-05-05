@@ -27,7 +27,7 @@ data class LabelNutritionFacts(
 
 class LabelNutritionParser {
     private val servingUnitPattern = """cup|serving|sachet|slice|item|bar|portion|can|bag|pack|bottle|pot|tub"""
-    private val servingAmountPattern = """(?:\d+(?:[.,]\d+)?|\d+\s*/\s*\d+|[½⅓⅔¼¾])"""
+    private val servingAmountPattern = """(?:\d+(?:[.,]\d+)?|\d+\s*/\s*\d+|[ilt]\s*/\s*\d+|[½⅓⅔¼¾])"""
 
     fun parse(rawText: String): LabelNutritionFacts {
         val normalized = rawText
