@@ -1,5 +1,6 @@
 package com.betterlucky.foodlog.ui.today
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -30,8 +33,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -56,6 +57,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -1203,7 +1208,7 @@ private fun LabelReviewDialog(
     var name by remember { mutableStateOf("") }
     var inputMode by remember(facts.rawText, initialInputMode) { mutableStateOf(initialInputMode) }
     var amountText by remember(facts.rawText) { mutableStateOf("") }
-    var sliderAmount by remember(facts.rawText) { mutableStateOf(0f) }
+    var sliderAmount by remember(facts.rawText) { mutableStateOf(0.1f) }
     val resolvedPortion = LabelPortionResolver.resolve(facts, inputMode, amountText)
     var calories by remember(facts.rawText) { mutableStateOf("") }
     var time by remember(facts.rawText) {
@@ -1216,7 +1221,7 @@ private fun LabelReviewDialog(
     LaunchedEffect(inputMode, amountText) {
         if (inputMode == LabelInputMode.ITEMS) {
             amountText.toItemAmount()?.let { parsedAmount ->
-                sliderAmount = parsedAmount.toFloat().coerceIn(0f, 1f)
+                sliderAmount = parsedAmount.toFloat().snapToTenth()
             }
         }
     }
@@ -1366,22 +1371,14 @@ private fun LabelReviewDialog(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
-                            Slider(
+                            PortionAmountSlider(
                                 value = sliderAmount,
                                 onValueChange = { rawValue ->
                                     val snapped = rawValue.snapToTenth()
                                     sliderAmount = snapped
-                                    amountText = if (snapped == 0f) "" else snapped.toDouble().formatLabelNumber()
+                                    amountText = snapped.toDouble().formatLabelNumber()
                                 },
-                                valueRange = 0f..1f,
-                                steps = 9,
-                                colors = SliderDefaults.colors(
-                                    thumbColor = MaterialTheme.colorScheme.primary,
-                                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                                    inactiveTrackColor = Color.White,
-                                    activeTickColor = Color.Black,
-                                    inactiveTickColor = Color.Black,
-                                ),
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedTextField(
@@ -1519,6 +1516,67 @@ private fun LabelReviewDialog(
                     Text("OK")
                 }
             },
+        )
+    }
+}
+
+@Composable
+private fun PortionAmountSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val activeColor = MaterialTheme.colorScheme.primary
+    val inactiveColor = Color.White
+
+    fun amountAtOffset(offsetX: Float, width: Float, thumbRadius: Float): Float {
+        val start = thumbRadius
+        val end = width - thumbRadius
+        val fraction = ((offsetX - start) / (end - start)).coerceIn(0f, 1f)
+        return (0.1f + (fraction * 0.9f)).snapToTenth()
+    }
+
+    Canvas(
+        modifier = modifier
+            .height(48.dp)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    onValueChange(amountAtOffset(offset.x, size.width.toFloat(), 11.dp.toPx()))
+                }
+            }
+            .pointerInput(Unit) {
+                detectDragGestures { change, _ ->
+                    change.consume()
+                    onValueChange(amountAtOffset(change.position.x, size.width.toFloat(), 11.dp.toPx()))
+                }
+            },
+    ) {
+        val thumbRadius = 11.dp.toPx()
+        val trackHeight = 10.dp.toPx()
+        val trackStart = thumbRadius
+        val trackEnd = size.width - thumbRadius
+        val trackWidth = trackEnd - trackStart
+        val trackTop = (size.height - trackHeight) / 2f
+        val fraction = ((value.snapToTenth() - 0.1f) / 0.9f).coerceIn(0f, 1f)
+        val thumbCenter = Offset(trackStart + (trackWidth * fraction), size.height / 2f)
+        val corner = CornerRadius(trackHeight / 2f, trackHeight / 2f)
+
+        drawRoundRect(
+            color = inactiveColor,
+            topLeft = Offset(trackStart, trackTop),
+            size = Size(trackWidth, trackHeight),
+            cornerRadius = corner,
+        )
+        drawRoundRect(
+            color = activeColor,
+            topLeft = Offset(trackStart, trackTop),
+            size = Size(thumbCenter.x - trackStart, trackHeight),
+            cornerRadius = corner,
+        )
+        drawCircle(
+            color = activeColor,
+            radius = thumbRadius,
+            center = thumbCenter,
         )
     }
 }
