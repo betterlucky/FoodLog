@@ -170,7 +170,7 @@ class TodayViewModel(
         )
 
     fun dayState(date: LocalDate): StateFlow<TodayDayUiState> =
-        dayStateCache.getOrPut(date) {
+        dayStateCache.computeIfAbsent(date) {
             combine(
                 repository.observeFoodItemsForDate(date),
                 repository.observeCaloriesForDate(date),
@@ -197,7 +197,7 @@ class TodayViewModel(
     init {
         viewModelScope.launch {
             repository.seedDefaults()
-            selectedDate.value = repository.currentFoodDate()
+            setSelectedDate(repository.currentFoodDate())
         }
     }
 
@@ -566,24 +566,37 @@ class TodayViewModel(
     private fun currentWizardTime(): LocalTime =
         repository.currentLocalTime().truncatedTo(ChronoUnit.MINUTES)
 
-    fun selectDate(date: LocalDate) {
+    private fun setSelectedDate(date: LocalDate) {
         selectedDate.value = date
+        pruneDayStateCache(centerDate = date)
+    }
+
+    private fun pruneDayStateCache(centerDate: LocalDate) {
+        val firstKeptDate = centerDate.minusDays(DAY_STATE_CACHE_RADIUS_DAYS)
+        val lastKeptDate = centerDate.plusDays(DAY_STATE_CACHE_RADIUS_DAYS)
+        dayStateCache.keys.removeIf { date ->
+            date < firstKeptDate || date > lastKeptDate
+        }
+    }
+
+    fun selectDate(date: LocalDate) {
+        setSelectedDate(date)
     }
 
     fun selectCurrentFoodDate(onSelected: (LocalDate) -> Unit) {
         viewModelScope.launch {
             val date = repository.currentFoodDate()
-            selectedDate.value = date
+            setSelectedDate(date)
             onSelected(date)
         }
     }
 
     fun previousDay() {
-        selectedDate.update { it.minusDays(1) }
+        setSelectedDate(selectedDate.value.minusDays(1))
     }
 
     fun nextDay() {
-        selectedDate.update { it.plusDays(1) }
+        setSelectedDate(selectedDate.value.plusDays(1))
     }
 
     fun exportLegacyCsv(date: LocalDate, onExported: (String, String) -> Unit) {
@@ -609,7 +622,7 @@ class TodayViewModel(
 
         viewModelScope.launch {
             repository.setDayBoundaryTime(parsedTime)
-            selectedDate.value = repository.currentFoodDate()
+            setSelectedDate(repository.currentFoodDate())
             message.value = if (parsedTime == null) {
                 "Using calendar days"
             } else {
@@ -754,7 +767,7 @@ class TodayViewModel(
                 is FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults -> {
                     val missing = result.missingTriggers.joinToString(", ")
                     if (missing.isBlank()) {
-                        "Add calories or save shortcuts for: $missing."
+                        "Add calories or save shortcuts for the missing items."
                     } else {
                         "Add calories or save shortcuts for: $missing."
                     }
@@ -1106,6 +1119,10 @@ class TodayViewModel(
                 FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
             }
         }
+    }
+
+    private companion object {
+        const val DAY_STATE_CACHE_RADIUS_DAYS = 2L
     }
 }
 

@@ -982,201 +982,42 @@ internal fun LoggingWizardDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                WizardContextText(session = session, completedCount = completedCount, pendingCount = pendingCount)
-                if (currentPart != null && step != LoggingWizardStep.Review) {
-                    Text(
-                        text = if (session.parts.size > 1) "Item ${currentIndex + 1} of ${session.parts.size}: ${currentPart.inputText}" else currentPart.inputText,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                when (step) {
-                    LoggingWizardStep.Product -> {
-                        OutlinedTextField(
-                            value = currentPart?.name.orEmpty(),
-                            onValueChange = { value ->
-                                currentPart?.let { onPartChanged(currentIndex, it.copy(name = value, deferred = false)) }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            label = { Text("Item") },
-                        )
-                    }
-                    LoggingWizardStep.Portion -> {
-                        if (currentPart != null) {
-                            if (session.source == LoggingWizardSource.Label && session.labelFacts != null) {
-                                LabelWizardPortionStep(
-                                    facts = session.labelFacts,
-                                    inputMode = session.labelInputMode,
-                                    part = currentPart,
-                                    onInputModeChanged = { mode ->
-                                        onInputModeChanged(mode)
-                                        val resolved = LabelPortionResolver.resolve(session.labelFacts, mode, currentPart.amount)
-                                        onPartChanged(
-                                            currentIndex,
-                                            currentPart.copy(
-                                                unit = resolved.unit ?: currentPart.unit,
-                                                calories = resolved.calories?.formatLabelNumber() ?: currentPart.calories,
-                                                deferred = false,
-                                            ),
-                                        )
-                                    },
-                                    onPartChanged = { onPartChanged(currentIndex, it) },
-                                )
-                            } else {
-                                AmountUnitFields(
-                                    amount = currentPart.amount,
-                                    unit = currentPart.unit,
-                                    onAmountChange = { onPartChanged(currentIndex, currentPart.copy(amount = it, deferred = false)) },
-                                    onUnitChange = { onPartChanged(currentIndex, currentPart.copy(unit = it, deferred = false)) },
-                                )
-                            }
-                        }
-                    }
-                    LoggingWizardStep.Calories -> {
-                        OutlinedTextField(
-                            value = currentPart?.calories.orEmpty(),
-                            onValueChange = { value ->
-                                currentPart?.let { onPartChanged(currentIndex, it.copy(calories = value, deferred = false)) }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            label = { Text("Calories") },
-                        )
-                    }
-                    LoggingWizardStep.TimeNotes -> {
-                        if (currentPart != null) {
-                            Text(
-                                text = "When did you have this?",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                            TimeTextField(
-                                value = session.timeText,
-                                onValueChange = onTimeChanged,
-                                modifier = Modifier.fillMaxWidth(),
-                                label = "Time",
-                            )
-                            OutlinedTextField(
-                                value = currentPart.notes,
-                                onValueChange = { onPartChanged(currentIndex, currentPart.copy(notes = it)) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 72.dp),
-                                minLines = 2,
-                                maxLines = 3,
-                                label = { Text("Notes") },
-                            )
-                            if (currentPart.resolvedByDefault) {
-                                ShortcutToggle(
-                                    checked = true,
-                                    enabled = false,
-                                    label = "Shortcut already saved",
-                                    onCheckedChange = {},
-                                )
-                            } else {
-                                ShortcutToggle(
-                                    checked = currentPart.saveAsShortcut,
-                                    enabled = currentPart.hasPositiveCalories,
-                                    label = "Save as shortcut",
-                                    onCheckedChange = { onPartChanged(currentIndex, currentPart.copy(saveAsShortcut = it)) },
-                                )
-                            }
-                        }
-                    }
-                    LoggingWizardStep.Review -> {
-                        Text("Review log entry", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                        session.parts.forEachIndexed { index, part ->
-                            val status = when {
-                                part.isComplete -> "${part.name} - ${part.calories} kcal"
-                                else -> "${part.inputText} - pending"
-                            }
-                            Text(
-                                text = status,
-                                color = if (index == currentIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
-            }
+            LoggingWizardBody(
+                session = session,
+                currentIndex = currentIndex,
+                currentPart = currentPart,
+                step = step,
+                completedCount = completedCount,
+                pendingCount = pendingCount,
+                onPartChanged = onPartChanged,
+                onTimeChanged = onTimeChanged,
+                onInputModeChanged = onInputModeChanged,
+            )
         },
         confirmButton = {
-            Button(
-                enabled = canAdvanceWizardStep(session, currentPart, step),
-                onClick = {
-                    if (step == LoggingWizardStep.TimeNotes) {
-                        onTimeConfirmed()
-                    }
-                    val nextStep = nextWizardStep(session, currentIndex, step)
-                    val nextPart = session.parts.indexOfFirstIndexed { index, part ->
-                        index > currentIndex && part.needsInput
-                    }
-                    if (step == LoggingWizardStep.TimeNotes && nextPart < 0 && session.parts.all { it.isComplete }) {
-                        onSave()
-                    } else if (nextStep != null) {
-                        step = nextStep
-                    } else {
-                        if (nextPart >= 0) {
-                            onCurrentPartChanged(nextPart)
-                        } else {
-                            onSave()
-                        }
-                    }
-                },
-            ) {
-                Text(
-                    if (
-                        step == LoggingWizardStep.Review && session.parts.drop(currentIndex + 1).none { it.needsInput } ||
-                        step == LoggingWizardStep.TimeNotes && session.parts.drop(currentIndex + 1).none { it.needsInput } && session.parts.all { it.isComplete }
-                    ) {
-                        "Save"
-                    } else {
-                        "Next"
-                    },
-                )
-            }
+            LoggingWizardConfirmButton(
+                session = session,
+                currentIndex = currentIndex,
+                currentPart = currentPart,
+                step = step,
+                onStepChanged = { step = it },
+                onTimeConfirmed = onTimeConfirmed,
+                onCurrentPartChanged = onCurrentPartChanged,
+                onSave = onSave,
+            )
         },
         dismissButton = {
-            Row {
-                onRemove?.let {
-                    TextButton(onClick = it) {
-                        Text("Remove")
-                    }
-                }
-                currentPart?.takeIf { session.source != LoggingWizardSource.Label && !it.isComplete }?.let { part ->
-                    TextButton(
-                        onClick = {
-                            onPartChanged(currentIndex, part.copy(deferred = true))
-                            val nextPart = session.parts.indexOfFirstIndexed { index, candidate ->
-                                index > currentIndex && candidate.needsInput
-                            }
-                            if (nextPart >= 0) {
-                                onCurrentPartChanged(nextPart)
-                            } else {
-                                step = LoggingWizardStep.Review
-                            }
-                        },
-                    ) {
-                        Text("Keep pending")
-                    }
-                }
-                TextButton(
-                    onClick = {
-                        val previous = previousWizardStep(step)
-                        if (previous != null) {
-                            step = previous
-                        } else if (currentIndex > 0) {
-                            onCurrentPartChanged(currentIndex - 1)
-                        } else {
-                            onDismiss()
-                        }
-                    },
-                ) {
-                    Text(if (step == LoggingWizardStep.Product && currentIndex == 0) "Cancel" else "Back")
-                }
-            }
+            LoggingWizardDismissButtons(
+                session = session,
+                currentIndex = currentIndex,
+                currentPart = currentPart,
+                step = step,
+                onRemove = onRemove,
+                onPartChanged = onPartChanged,
+                onCurrentPartChanged = onCurrentPartChanged,
+                onStepChanged = { step = it },
+                onDismiss = onDismiss,
+            )
         },
     )
     if (showingAmountHelp) {
@@ -1192,6 +1033,304 @@ internal fun LoggingWizardDialog(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun LoggingWizardBody(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft?,
+    step: LoggingWizardStep,
+    completedCount: Int,
+    pendingCount: Int,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+    onTimeChanged: (String) -> Unit,
+    onInputModeChanged: (LabelInputMode) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        WizardContextText(session = session, completedCount = completedCount, pendingCount = pendingCount)
+        if (currentPart != null && step != LoggingWizardStep.Review) {
+            Text(
+                text = if (session.parts.size > 1) {
+                    "Item ${currentIndex + 1} of ${session.parts.size}: ${currentPart.inputText}"
+                } else {
+                    currentPart.inputText
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        WizardStepContent(
+            session = session,
+            currentIndex = currentIndex,
+            currentPart = currentPart,
+            step = step,
+            onPartChanged = onPartChanged,
+            onTimeChanged = onTimeChanged,
+            onInputModeChanged = onInputModeChanged,
+        )
+    }
+}
+
+@Composable
+private fun WizardStepContent(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft?,
+    step: LoggingWizardStep,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+    onTimeChanged: (String) -> Unit,
+    onInputModeChanged: (LabelInputMode) -> Unit,
+) {
+    when (step) {
+        LoggingWizardStep.Product -> WizardProductStep(currentIndex, currentPart, onPartChanged)
+        LoggingWizardStep.Portion -> {
+            if (currentPart != null) {
+                WizardPortionStep(session, currentIndex, currentPart, onPartChanged, onInputModeChanged)
+            }
+        }
+        LoggingWizardStep.Calories -> WizardCaloriesStep(currentIndex, currentPart, onPartChanged)
+        LoggingWizardStep.TimeNotes -> {
+            if (currentPart != null) {
+                WizardTimeNotesStep(session, currentIndex, currentPart, onPartChanged, onTimeChanged)
+            }
+        }
+        LoggingWizardStep.Review -> WizardReviewStep(session, currentIndex)
+    }
+}
+
+@Composable
+private fun WizardProductStep(
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft?,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+) {
+    OutlinedTextField(
+        value = currentPart?.name.orEmpty(),
+        onValueChange = { value ->
+            currentPart?.let { onPartChanged(currentIndex, it.copy(name = value, deferred = false)) }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text("Item") },
+    )
+}
+
+@Composable
+private fun WizardPortionStep(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+    onInputModeChanged: (LabelInputMode) -> Unit,
+) {
+    if (session.source == LoggingWizardSource.Label && session.labelFacts != null) {
+        LabelWizardPortionStep(
+            facts = session.labelFacts,
+            inputMode = session.labelInputMode,
+            part = currentPart,
+            onInputModeChanged = { mode ->
+                onInputModeChanged(mode)
+                val resolved = LabelPortionResolver.resolve(session.labelFacts, mode, currentPart.amount)
+                onPartChanged(
+                    currentIndex,
+                    currentPart.copy(
+                        unit = resolved.unit ?: currentPart.unit,
+                        calories = resolved.calories?.formatLabelNumber() ?: currentPart.calories,
+                        deferred = false,
+                    ),
+                )
+            },
+            onPartChanged = { onPartChanged(currentIndex, it) },
+        )
+    } else {
+        AmountUnitFields(
+            amount = currentPart.amount,
+            unit = currentPart.unit,
+            onAmountChange = { onPartChanged(currentIndex, currentPart.copy(amount = it, deferred = false)) },
+            onUnitChange = { onPartChanged(currentIndex, currentPart.copy(unit = it, deferred = false)) },
+        )
+    }
+}
+
+@Composable
+private fun WizardCaloriesStep(
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft?,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+) {
+    OutlinedTextField(
+        value = currentPart?.calories.orEmpty(),
+        onValueChange = { value ->
+            currentPart?.let { onPartChanged(currentIndex, it.copy(calories = value, deferred = false)) }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        label = { Text("Calories") },
+    )
+}
+
+@Composable
+private fun WizardTimeNotesStep(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+    onTimeChanged: (String) -> Unit,
+) {
+    Text(
+        text = "When did you have this?",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    TimeTextField(
+        value = session.timeText,
+        onValueChange = onTimeChanged,
+        modifier = Modifier.fillMaxWidth(),
+        label = "Time",
+    )
+    OutlinedTextField(
+        value = currentPart.notes,
+        onValueChange = { onPartChanged(currentIndex, currentPart.copy(notes = it)) },
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp),
+        minLines = 2,
+        maxLines = 3,
+        label = { Text("Notes") },
+    )
+    if (currentPart.resolvedByDefault) {
+        ShortcutToggle(
+            checked = true,
+            enabled = false,
+            label = "Shortcut already saved",
+            onCheckedChange = {},
+        )
+    } else {
+        ShortcutToggle(
+            checked = currentPart.saveAsShortcut,
+            enabled = currentPart.hasPositiveCalories,
+            label = "Save as shortcut",
+            onCheckedChange = { onPartChanged(currentIndex, currentPart.copy(saveAsShortcut = it)) },
+        )
+    }
+}
+
+@Composable
+private fun WizardReviewStep(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+) {
+    Text("Review log entry", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+    session.parts.forEachIndexed { index, part ->
+        val status = when {
+            part.isComplete -> "${part.name} - ${part.calories} kcal"
+            else -> "${part.inputText} - pending"
+        }
+        Text(
+            text = status,
+            color = if (index == currentIndex) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun LoggingWizardConfirmButton(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft?,
+    step: LoggingWizardStep,
+    onStepChanged: (LoggingWizardStep) -> Unit,
+    onTimeConfirmed: () -> Unit,
+    onCurrentPartChanged: (Int) -> Unit,
+    onSave: () -> Unit,
+) {
+    Button(
+        enabled = canAdvanceWizardStep(session, currentPart, step),
+        onClick = {
+            if (step == LoggingWizardStep.TimeNotes) {
+                onTimeConfirmed()
+            }
+            val nextStep = nextWizardStep(session, currentIndex, step)
+            val nextPart = session.parts.indexOfFirstIndexed { index, part ->
+                index > currentIndex && part.needsInput
+            }
+            when {
+                step == LoggingWizardStep.TimeNotes && nextPart < 0 && session.parts.all { it.isComplete } -> onSave()
+                nextStep != null -> onStepChanged(nextStep)
+                nextPart >= 0 -> onCurrentPartChanged(nextPart)
+                else -> onSave()
+            }
+        },
+    ) {
+        Text(wizardConfirmLabel(session, step, currentIndex))
+    }
+}
+
+private fun wizardConfirmLabel(
+    session: LoggingWizardSession,
+    step: LoggingWizardStep,
+    currentIndex: Int,
+): String {
+    val noMoreInput = session.parts.drop(currentIndex + 1).none { it.needsInput }
+    val willSave = (step == LoggingWizardStep.Review && noMoreInput) ||
+        (step == LoggingWizardStep.TimeNotes && noMoreInput && session.parts.all { it.isComplete })
+    return if (willSave) "Save" else "Next"
+}
+
+@Composable
+private fun LoggingWizardDismissButtons(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft?,
+    step: LoggingWizardStep,
+    onRemove: (() -> Unit)?,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+    onCurrentPartChanged: (Int) -> Unit,
+    onStepChanged: (LoggingWizardStep) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Row {
+        onRemove?.let {
+            TextButton(onClick = it) {
+                Text("Remove")
+            }
+        }
+        currentPart?.takeIf { session.source != LoggingWizardSource.Label && !it.isComplete }?.let { part ->
+            TextButton(
+                onClick = {
+                    onPartChanged(currentIndex, part.copy(deferred = true))
+                    val nextPart = session.parts.indexOfFirstIndexed { index, candidate ->
+                        index > currentIndex && candidate.needsInput
+                    }
+                    if (nextPart >= 0) {
+                        onCurrentPartChanged(nextPart)
+                    } else {
+                        onStepChanged(LoggingWizardStep.Review)
+                    }
+                },
+            ) {
+                Text("Keep pending")
+            }
+        }
+        TextButton(
+            onClick = {
+                val previous = previousWizardStep(step)
+                when {
+                    previous != null -> onStepChanged(previous)
+                    currentIndex > 0 -> onCurrentPartChanged(currentIndex - 1)
+                    else -> onDismiss()
+                }
+            },
+        ) {
+            Text(if (step == LoggingWizardStep.Product && currentIndex == 0) "Cancel" else "Back")
+        }
     }
 }
 
@@ -1685,15 +1824,18 @@ private fun nextWizardStep(
     step: LoggingWizardStep,
 ): LoggingWizardStep? {
     val part = session.parts.getOrNull(currentIndex)
-    return when (step) {
+    val rawNext = when (step) {
         LoggingWizardStep.Product -> if (session.source == LoggingWizardSource.Label) LoggingWizardStep.Portion else nextAfterCalories(session, part)
         LoggingWizardStep.Portion -> LoggingWizardStep.Calories
         LoggingWizardStep.Calories -> if (session.timeConfirmed) LoggingWizardStep.Review else LoggingWizardStep.TimeNotes
         LoggingWizardStep.TimeNotes -> LoggingWizardStep.Review
-        LoggingWizardStep.Review -> null
-    }.takeUnless { next ->
-        next == LoggingWizardStep.Calories && part?.hasPositiveCalories == true
-    } ?: if (session.timeConfirmed) LoggingWizardStep.Review else LoggingWizardStep.TimeNotes
+        LoggingWizardStep.Review -> return null
+    }
+    return if (rawNext == LoggingWizardStep.Calories && part?.hasPositiveCalories == true) {
+        if (session.timeConfirmed) LoggingWizardStep.Review else LoggingWizardStep.TimeNotes
+    } else {
+        rawNext
+    }
 }
 
 private fun nextAfterCalories(

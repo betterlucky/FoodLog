@@ -282,7 +282,7 @@ internal fun FoodLogDayPage(
                                 )
                             }
                             if (isExpanded) {
-                                items(clump.items.sortedFor(LoggedItemsViewMode.Time)) { item ->
+                                items(clump.items) { item ->
                                     FoodItemRow(
                                         item = item,
                                         onClick = { onEditFoodItem(item) },
@@ -496,7 +496,7 @@ private fun TodayStatusSummary(
             }
             if (readiness != DailyReadiness.NoFoodLogged) {
                 Text(
-                    text = "Health Monitor: ${dailyStatus.exportText(dailyStatus?.legacyExportedAt, dailyStatus?.legacyExportFileName)}",
+                    text = "Health Monitor: ${dailyStatus.exportText()}",
                     color = color,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -602,7 +602,7 @@ private fun DailyWeightRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "Weight: ${dailyWeight?.let { displayWeight(it) } ?: "not recorded"}",
+                text = "Weight: ${dailyWeight?.displayWeight() ?: "not recorded"}",
                 fontWeight = FontWeight.SemiBold,
                 style = MaterialTheme.typography.bodyMedium,
             )
@@ -862,16 +862,15 @@ private fun DailyStatusEntity?.isLegacyExportCurrent(): Boolean {
     return changedAt <= exportedAt
 }
 
-private fun DailyStatusEntity?.exportText(
-    exportedAt: Instant?,
-    fileName: String?,
-): String =
-    when {
-        exportedAt == null -> "not exported"
-        this?.lastFoodChangedAt != null && lastFoodChangedAt > exportedAt ->
-            "changed since ${exportedAt.displayTime()}${fileName.exportFileSuffix()}"
-        else -> "exported ${exportedAt.displayTime()}${fileName.exportFileSuffix()}"
+private fun DailyStatusEntity?.exportText(): String {
+    val exportedAt = this?.legacyExportedAt ?: return "not exported"
+    val suffix = legacyExportFileName.exportFileSuffix()
+    return if (lastFoodChangedAt != null && lastFoodChangedAt > exportedAt) {
+        "changed since ${exportedAt.displayTime()}$suffix"
+    } else {
+        "exported ${exportedAt.displayTime()}$suffix"
     }
+}
 
 private fun String?.exportFileSuffix(): String =
     if (isNullOrBlank()) "" else " - $this"
@@ -918,14 +917,6 @@ private fun pluralizedUnit(
         unit == "cup" -> "cups"
         else -> unit
     }
-
-private fun displayWeight(entity: DailyWeightEntity): String {
-    val stonePounds = entity.weightKg.toStonePounds()
-    return "${stonePounds.stone} st ${stonePounds.pounds.formatPounds()} lb (${entity.weightKg.formatWeightKg()} kg)"
-}
-
-private fun Double.formatWeightKg(): String =
-    String.format(java.util.Locale.US, "%.1f", this)
 
 private data class LoggedItemClump(
     val key: String,
