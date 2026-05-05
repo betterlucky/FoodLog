@@ -1185,15 +1185,26 @@ private fun LabelReviewDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
-                } else {
-                    facts.kcalPer100g?.let {
-                        Text(
-                            text = "Label: ${it.toInt()} kcal/100g" +
-                                (facts.servingSizeGrams?.let { s -> ", serving ${s.toInt()}g" } ?: ""),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                } else if (facts.hasRequiredCalories) {
+                    val hint = buildString {
+                        facts.kcalPer100g?.let { append("${it.toInt()} kcal/100g") }
+                        facts.kcalPerServing?.let {
+                            if (isNotEmpty()) append(" · ")
+                            append("${it.toInt()} kcal/serving")
+                        }
+                        facts.servingSizeGrams?.let { append(" (${it.toInt()}g)") }
                     }
+                    Text(
+                        text = "From label: $hint",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text(
+                        text = "No calorie values found — check the label is in focus and try again, or enter manually.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
                 OutlinedTextField(
                     value = name,

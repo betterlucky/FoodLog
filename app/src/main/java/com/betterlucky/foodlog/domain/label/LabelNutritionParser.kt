@@ -27,10 +27,8 @@ class LabelNutritionParser {
             .replace(Regex("""[ \t]+"""), " ")
             .trim()
         val lower = normalized.lowercase()
-        val kcalValues = Regex("""(\d+(?:[.,]\d+)?)\s*kcal""", RegexOption.IGNORE_CASE)
-            .findAll(normalized)
-            .mapNotNull { it.groupValues[1].toDoubleValue() }
-            .toList()
+        val kcalPattern = Regex("""(\d+(?:[.,]\d+)?)\s*kcal""", RegexOption.IGNORE_CASE)
+        val (kcalPer100g, kcalPerServing) = extractKcalValues(normalized, lower, kcalPattern)
         val servingUnit = extractServingUnit(lower)
         val servingSizeGrams = extractServingSizeGrams(lower)
         val packageQuantity = parsePackageQuantity(lower)
@@ -38,8 +36,8 @@ class LabelNutritionParser {
 
         return LabelNutritionFacts(
             rawText = rawText,
-            kcalPer100g = if (lower.contains("per 100g") || lower.contains("per 100 g")) kcalValues.firstOrNull() else null,
-            kcalPerServing = kcalValues.drop(if (lower.contains("per 100g") || lower.contains("per 100 g")) 1 else 0).firstOrNull(),
+            kcalPer100g = kcalPer100g,
+            kcalPerServing = kcalPerServing,
             servingUnit = servingUnit,
             servingSizeGrams = servingSizeGrams,
             packageSizeGrams = packageQuantity.grams,
@@ -52,6 +50,45 @@ class LabelNutritionParser {
             saltPer100g = extractPer100gNutrient(lower, "salt"),
             prepared = prepared,
         )
+    }
+
+    private fun extractKcalValues(
+        normalized: String,
+        lower: String,
+        kcalPattern: Regex,
+    ): Pair<Double?, Double?> {
+        // Try line-contextual approach: find a line that mentions 100g and contains kcal.
+        // This handles labels where serving and 100g rows appear in any order.
+        val lines = normalized.lines()
+        val lineWith100gKcal = lines.firstOrNull { line ->
+            val ll = line.lowercase()
+            (ll.contains("100g") || ll.contains("100 g")) && kcalPattern.containsMatchIn(line)
+        }
+
+        if (lineWith100gKcal != null) {
+            val per100g = kcalPattern.find(lineWith100gKcal)?.groupValues?.get(1)?.toDoubleValue()
+            // Per-serving: look for kcal on a line that does NOT mention 100g
+            val servingLine = lines.firstOrNull { line ->
+                if (line === lineWith100gKcal) return@firstOrNull false
+                val ll = line.lowercase()
+                !(ll.contains("100g") || ll.contains("100 g")) && kcalPattern.containsMatchIn(line)
+            }
+            val perServing = servingLine?.let { kcalPattern.find(it)?.groupValues?.get(1)?.toDoubleValue() }
+                ?: run {
+                    // Both values may be on the same 100g line (e.g. "450kcal 135kcal per 100g per serving")
+                    kcalPattern.findAll(lineWith100gKcal).mapNotNull { it.groupValues[1].toDoubleValue() }.drop(1).firstOrNull()
+                }
+            return per100g to perServing
+        }
+
+        // Fallback: positional approach \u2014 first kcal is per 100g if the document mentions it
+        val allKcal = kcalPattern.findAll(normalized).mapNotNull { it.groupValues[1].toDoubleValue() }.toList()
+        val has100gContext = lower.contains("per 100g") || lower.contains("per 100 g")
+        return if (has100gContext) {
+            allKcal.getOrNull(0) to allKcal.getOrNull(1)
+        } else {
+            null to allKcal.firstOrNull()
+        }
     }
 
     private fun extractServingUnit(lower: String): String? {
@@ -73,12 +110,18 @@ class LabelNutritionParser {
             ?.get(1)
     }
 
-    private fun extractServingSizeGrams(lower: String): Double? =
+    private fun extractServingSizeGrams(lower: String): Double? {
+        // "1 serving (30g)" / "1 cup (255g)" / "per serving (30g)"
         Regex("""\b(?:1\s+)?(?:cup|serving|sachet|slice|item|bar|portion)\s*\((\d+(?:[.,]\d+)?)\s*g\)""")
-            .find(lower)
-            ?.groupValues
-            ?.get(1)
-            ?.toDoubleValue()
+            .find(lower)?.groupValues?.get(1)?.toDoubleValue()?.let { return it }
+        // "serving size: 30g" / "serving size 30g"
+        Regex("""\bserving size:?\s*(\d+(?:[.,]\d+)?)\s*g\b""")
+            .find(lower)?.groupValues?.get(1)?.toDoubleValue()?.let { return it }
+        // "per 30g serving" / "per 30 g serving"
+        Regex("""\bper\s+(\d+(?:[.,]\d+)?)\s*g\s+(?:serving|portion)\b""")
+            .find(lower)?.groupValues?.get(1)?.toDoubleValue()?.let { return it }
+        return null
+    }
 
     private fun extractPer100gNutrient(
         lower: String,

@@ -54,4 +54,41 @@ class LabelNutritionParserTest {
         assertEquals(6.0, facts.packageItemCount ?: 0.0, 0.001)
         assertEquals(240.0, facts.kcalPer100g ?: 0.0, 0.001)
     }
+
+    @Test
+    fun servingFirstLayoutAssignsKcalCorrectly() {
+        val facts = parser.parse(
+            """
+            Per serving (30g): 135kcal
+            Per 100g: 450kcal
+            """.trimIndent(),
+        )
+
+        assertEquals(450.0, facts.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(135.0, facts.kcalPerServing ?: 0.0, 0.001)
+        assertEquals(30.0, facts.servingSizeGrams ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun servingSizeFormatsAreExtracted() {
+        assertEquals(
+            30.0,
+            parser.parse("Energy 450kcal per 100g\nServing size: 30g").servingSizeGrams ?: 0.0,
+            0.001,
+        )
+        assertEquals(
+            30.0,
+            parser.parse("Energy 135kcal per 30g serving").servingSizeGrams ?: 0.0,
+            0.001,
+        )
+    }
+
+    @Test
+    fun noKcalValuesLeavesCaloriesNull() {
+        val facts = parser.parse("Protein 5g\nCarbohydrate 10g\nFat 2g")
+
+        assertEquals(null, facts.kcalPer100g)
+        assertEquals(null, facts.kcalPerServing)
+        assertTrue(!facts.hasRequiredCalories)
+    }
 }
