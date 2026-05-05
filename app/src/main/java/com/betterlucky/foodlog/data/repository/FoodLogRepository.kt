@@ -672,6 +672,7 @@ class FoodLogRepository(
         val previewParts = parsed.parts.map { part -> part.toPreviewPart() }
         if (previewParts.size <= 1) {
             return PendingEntryResolutionPreviewResult.SinglePart(
+                rawText = rawEntry.rawText.trim(),
                 part = previewParts.singleOrNull(),
                 logDate = rawEntry.logDate,
                 consumedTime = rawEntry.consumedTime,
@@ -1339,6 +1340,7 @@ class FoodLogRepository(
         ) : PendingEntryResolutionPreviewResult
 
         data class SinglePart(
+            val rawText: String,
             val part: FoodItemDefaultEditPreviewPart?,
             val logDate: LocalDate,
             val consumedTime: LocalTime?,

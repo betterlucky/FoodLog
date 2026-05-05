@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -126,6 +128,9 @@ class TodayViewModel(
     private val repository: FoodLogRepository,
     private val labelOcrReader: LabelOcrReader? = null,
 ) : ViewModel() {
+    private var currentLabelOcrJob: Job? = null
+    private var labelOcrRequestId: Long = 0
+
     private val selectedDate = MutableStateFlow(LocalDate.now())
     private val inputText = MutableStateFlow("")
     private val message = MutableStateFlow<String?>(null)
@@ -239,9 +244,14 @@ class TodayViewModel(
             message.value = "Label scan is not available on this device."
             return
         }
-        viewModelScope.launch {
+        currentLabelOcrJob?.cancel()
+        val requestId = ++labelOcrRequestId
+        currentLabelOcrJob = viewModelScope.launch {
             _labelReview.value = LabelReviewState(facts = LabelNutritionFacts(rawText = ""), isProcessing = true)
-            when (val result = reader.read(uri)) {
+            val result = reader.read(uri)
+            if (!isActive || requestId != labelOcrRequestId || _labelReview.value == null) return@launch
+            currentLabelOcrJob = null
+            when (result) {
                 is LabelOcrResult.Read -> {
                     _labelReview.value = null
                     _loggingWizard.value = result.facts.toLabelLoggingWizardSession(
@@ -262,10 +272,18 @@ class TodayViewModel(
     fun setLastLabelInputMode(mode: LabelInputMode) {
         viewModelScope.launch {
             repository.setLastLabelInputMode(mode.storageValue)
+            _loggingWizard.update { session ->
+                session?.takeIf { it.source == LoggingWizardSource.Label }
+                    ?.copy(labelInputMode = mode)
+                    ?: session
+            }
         }
     }
 
     fun clearLabelReview() {
+        labelOcrRequestId++
+        currentLabelOcrJob?.cancel()
+        currentLabelOcrJob = null
         _labelReview.value = null
     }
 
@@ -280,7 +298,7 @@ class TodayViewModel(
                         _loggingWizard.value = LoggingWizardSession(
                             source = LoggingWizardSource.Pending,
                             sourceRawEntryId = rawEntryId,
-                            originalRawText = part.inputText,
+                            originalRawText = preview.rawText,
                             logDate = preview.logDate,
                             consumedTime = preview.consumedTime,
                             timeText = (preview.consumedTime ?: currentWizardTime()).toString(),
