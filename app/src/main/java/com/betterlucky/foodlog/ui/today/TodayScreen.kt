@@ -1131,26 +1131,77 @@ private fun LabelImageSourceDialog(
     onTakePhoto: () -> Unit,
     onChooseImage: () -> Unit,
 ) {
+    var showingHelp by remember { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Use label") },
-        text = { Text("Use one clear photo of the nutrition label. You can check and edit the values before logging.") },
-        confirmButton = {
-            Button(onClick = onTakePhoto) {
-                Text("Take photo")
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Use label")
+                IconButton(onClick = { showingHelp = true }) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = "Label scan help",
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         },
-        dismissButton = {
-            Row {
-                TextButton(onClick = onChooseImage) {
-                    Text("Choose image")
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                Text(
+                    text = "Use one clear photo of the nutrition label. You can check and edit the values before logging.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onTakePhoto,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Take photo")
                 }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(
+                        onClick = onChooseImage,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Choose image")
+                    }
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text("Cancel")
+                    }
                 }
             }
         },
+        confirmButton = {},
     )
+    if (showingHelp) {
+        AlertDialog(
+            onDismissRequest = { showingHelp = false },
+            title = { Text("Label scan") },
+            text = {
+                Text("Take or choose one clear photo of the nutrition label. FoodLog reads the calories locally, then lets you check and edit everything before saving.")
+            },
+            confirmButton = {
+                TextButton(onClick = { showingHelp = false }) {
+                    Text("OK")
+                }
+            },
+        )
+    }
 }
 
 @Composable
