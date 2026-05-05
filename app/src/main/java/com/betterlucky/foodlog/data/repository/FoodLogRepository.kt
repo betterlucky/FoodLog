@@ -143,6 +143,55 @@ class FoodLogRepository(
             }
         }
 
+    suspend fun previewSubmission(
+        input: String,
+        targetLogDate: LocalDate,
+    ): SubmissionPreviewResult {
+        val trimmedInput = input.trim()
+        if (trimmedInput.isBlank()) {
+            return SubmissionPreviewResult.InvalidInput
+        }
+
+        val intent = intentClassifier.classify(trimmedInput)
+        val calendarToday = dateTimeProvider.today()
+        val parsed = parser.parse(
+            input = trimmedInput,
+            today = calendarToday,
+            defaultLogDate = targetLogDate,
+        )
+        if (parsed.logDate != targetLogDate) {
+            return SubmissionPreviewResult.DateMismatch(
+                requestedLogDate = parsed.logDate,
+                selectedLogDate = targetLogDate,
+            )
+        }
+        if (intent != EntryIntent.FOOD_LOG) {
+            return SubmissionPreviewResult.NonFood(
+                rawText = trimmedInput,
+                logDate = parsed.logDate,
+                consumedTime = parsed.consumedTime,
+                intent = intent,
+            )
+        }
+
+        val parts = parsed.parts.map { part -> part.toPreviewPart() }
+        return if (parts.isNotEmpty() && parts.all { it.default != null }) {
+            SubmissionPreviewResult.Ready(
+                rawText = trimmedInput,
+                logDate = parsed.logDate,
+                consumedTime = parsed.consumedTime,
+                parts = parts,
+            )
+        } else {
+            SubmissionPreviewResult.NeedsResolution(
+                rawText = trimmedInput,
+                logDate = parsed.logDate,
+                consumedTime = parsed.consumedTime,
+                parts = parts,
+            )
+        }
+    }
+
     fun observeFoodItemsForDate(date: LocalDate): Flow<List<FoodItemEntity>> =
         foodItemDao.observeFoodItemsForDate(date)
 
@@ -172,6 +221,9 @@ class FoodLogRepository(
             calendarToday = dateTimeProvider.today(),
             localTime = dateTimeProvider.localTime(),
         )
+
+    fun currentLocalTime(): LocalTime =
+        dateTimeProvider.localTime()
 
     suspend fun setDayBoundaryTime(dayBoundaryTime: LocalTime?) {
         if (appSettingsDao.getById() == null) {
@@ -205,47 +257,6 @@ class FoodLogRepository(
 
     suspend fun getActiveShortcut(trigger: String): UserDefaultEntity? =
         userDefaultDao.getActiveDefault(trigger)
-
-    suspend fun logShortcutAmount(
-        trigger: String,
-        amount: Double,
-        logDate: LocalDate,
-    ): SubmitResult.Parsed? =
-        database.withTransaction {
-            if (amount <= 0.0) return@withTransaction null
-            val default = userDefaultDao.getActiveDefault(trigger)
-                ?: return@withTransaction null
-            val now = dateTimeProvider.nowInstant()
-            val consumedTime = dateTimeProvider.localTime()
-            val calories = default.calories * amount
-            val rawEntryId = rawEntryDao.insert(
-                RawEntryEntity(
-                    createdAt = now,
-                    logDate = logDate,
-                    consumedTime = consumedTime,
-                    rawText = trigger,
-                    entryKind = EntryKind.TEXT,
-                    status = RawEntryStatus.PARSED,
-                ),
-            )
-            val foodItemId = foodItemDao.insert(
-                FoodItemEntity(
-                    rawEntryId = rawEntryId,
-                    logDate = logDate,
-                    consumedTime = consumedTime,
-                    name = default.name,
-                    amount = amount,
-                    unit = default.unit,
-                    calories = calories,
-                    source = FoodItemSource.USER_DEFAULT,
-                    confidence = ConfidenceLevel.HIGH,
-                    notes = default.notes,
-                    createdAt = now,
-                ),
-            )
-            markFoodChanged(logDate)
-            SubmitResult.Parsed(rawEntryId = rawEntryId, foodItemIds = listOf(foodItemId), logDate = logDate)
-        }
 
     suspend fun updateDefault(
         trigger: String,
@@ -661,13 +672,17 @@ class FoodLogRepository(
         val previewParts = parsed.parts.map { part -> part.toPreviewPart() }
         if (previewParts.size <= 1) {
             return PendingEntryResolutionPreviewResult.SinglePart(
+                rawText = rawEntry.rawText.trim(),
                 part = previewParts.singleOrNull(),
+                logDate = rawEntry.logDate,
                 consumedTime = rawEntry.consumedTime,
             )
         }
 
         return PendingEntryResolutionPreviewResult.Ready(
             rawText = rawEntry.rawText.trim(),
+            logDate = rawEntry.logDate,
+            consumedTime = rawEntry.consumedTime,
             parts = previewParts,
         )
     }
@@ -735,6 +750,117 @@ class FoodLogRepository(
             PendingEntryUpdateResult.Parsed(
                 foodItemIds = foodItemIds,
                 logDate = rawEntry.logDate,
+            )
+        }
+
+    suspend fun saveWizardSubmission(
+        sourceRawEntryId: Long?,
+        originalRawText: String,
+        completedRawText: String,
+        pendingRawText: String?,
+        logDate: LocalDate,
+        consumedTime: LocalTime?,
+        parts: List<FoodItemEditReplacementPart>,
+    ): WizardSubmissionResult =
+        database.withTransaction {
+            val trimmedOriginal = originalRawText.trim()
+            val trimmedCompleted = completedRawText.trim()
+            val trimmedPending = pendingRawText?.trim().orEmpty().ifBlank { null }
+            if (trimmedOriginal.isBlank()) {
+                return@withTransaction WizardSubmissionResult.InvalidInput
+            }
+            if (parts.any { it.name.isBlank() || it.calories <= 0.0 }) {
+                return@withTransaction WizardSubmissionResult.InvalidInput
+            }
+
+            val sourceRawEntry = sourceRawEntryId?.let { rawEntryDao.getById(it) }
+            if (sourceRawEntryId != null && sourceRawEntry == null) {
+                return@withTransaction WizardSubmissionResult.NotFound
+            }
+            if (sourceRawEntry != null && sourceRawEntry.status != RawEntryStatus.PENDING) {
+                return@withTransaction WizardSubmissionResult.NotPending
+            }
+
+            val resolvedTime = consumedTime ?: sourceRawEntry?.consumedTime ?: dateTimeProvider.localTime()
+            val createdAt = dateTimeProvider.nowInstant()
+            val parsedRawEntryId = if (parts.isNotEmpty()) {
+                if (sourceRawEntry != null && trimmedPending == null) {
+                    sourceRawEntry.id.also { id ->
+                        rawEntryDao.updatePendingDetails(
+                            id = id,
+                            logDate = logDate,
+                            rawText = trimmedCompleted.ifBlank { trimmedOriginal },
+                            consumedTime = resolvedTime,
+                            notes = null,
+                        )
+                    }
+                } else {
+                    rawEntryDao.insert(
+                        RawEntryEntity(
+                            createdAt = createdAt,
+                            logDate = logDate,
+                            consumedTime = resolvedTime,
+                            rawText = trimmedCompleted.ifBlank { trimmedOriginal },
+                            entryKind = EntryKind.TEXT,
+                            status = RawEntryStatus.PENDING,
+                        ),
+                    )
+                }
+            } else {
+                null
+            }
+
+            val foodItemIds = if (parsedRawEntryId != null) {
+                val ids = insertReplacementParts(
+                    rawEntryId = parsedRawEntryId,
+                    logDate = logDate,
+                    consumedTime = resolvedTime,
+                    createdAt = createdAt,
+                    parts = parts,
+                )
+                rawEntryDao.updateStatus(parsedRawEntryId, RawEntryStatus.PARSED)
+                markFoodChanged(logDate)
+                ids
+            } else {
+                emptyList()
+            }
+
+            val pendingRawEntryId = when {
+                trimmedPending == null -> {
+                    if (sourceRawEntry != null && parts.isNotEmpty()) {
+                        null
+                    } else {
+                        sourceRawEntry?.id
+                    }
+                }
+
+                sourceRawEntry != null -> {
+                    rawEntryDao.updatePendingDetails(
+                        id = sourceRawEntry.id,
+                        logDate = logDate,
+                        rawText = trimmedPending,
+                        consumedTime = resolvedTime,
+                        notes = null,
+                    )
+                    sourceRawEntry.id
+                }
+
+                else -> rawEntryDao.insert(
+                    RawEntryEntity(
+                        createdAt = createdAt,
+                        logDate = logDate,
+                        consumedTime = resolvedTime,
+                        rawText = trimmedPending,
+                        entryKind = EntryKind.TEXT,
+                        status = RawEntryStatus.PENDING,
+                    ),
+                )
+            }
+
+            WizardSubmissionResult.Saved(
+                foodItemIds = foodItemIds,
+                pendingRawEntryId = pendingRawEntryId,
+                logDate = logDate,
             )
         }
 
@@ -998,6 +1124,47 @@ class FoodLogRepository(
             default = shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
         )
 
+    private suspend fun insertReplacementParts(
+        rawEntryId: Long,
+        logDate: LocalDate,
+        consumedTime: LocalTime?,
+        createdAt: java.time.Instant,
+        parts: List<FoodItemEditReplacementPart>,
+    ): List<Long> =
+        parts.map { part ->
+            val foodItemId = foodItemDao.insert(
+                FoodItemEntity(
+                    rawEntryId = rawEntryId,
+                    logDate = logDate,
+                    consumedTime = consumedTime,
+                    name = part.name.trim(),
+                    amount = part.amount?.takeIf { it > 0.0 },
+                    unit = part.unit?.trim().orEmpty().ifBlank { null },
+                    calories = part.calories,
+                    source = part.source,
+                    confidence = part.confidence,
+                    notes = part.notes?.trim().orEmpty().ifBlank { null },
+                    createdAt = createdAt,
+                ),
+            )
+            part.saveDefaultTrigger
+                ?.shortcutTrigger()
+                ?.takeIf { it.isNotBlank() }
+                ?.also { trigger ->
+                    userDefaultDao.upsert(
+                        UserDefaultEntity(
+                            trigger = trigger,
+                            name = part.name.trim(),
+                            calories = part.calories / (part.amount?.takeIf { it > 0.0 } ?: 1.0),
+                            unit = part.unit?.trim().orEmpty().ifBlank { "serving" },
+                            notes = part.notes?.trim().orEmpty().ifBlank { null },
+                            defaultAmount = part.amount?.takeIf { it > 0.0 },
+                        ),
+                    )
+                }
+            foodItemId
+        }
+
     sealed interface SubmitResult {
         val rawEntryId: Long
         val logDate: LocalDate
@@ -1029,6 +1196,48 @@ class FoodLogRepository(
             override val rawEntryId: Long = 0
             override val logDate: LocalDate = requestedLogDate
         }
+    }
+
+    sealed interface SubmissionPreviewResult {
+        data class Ready(
+            val rawText: String,
+            val logDate: LocalDate,
+            val consumedTime: LocalTime?,
+            val parts: List<FoodItemDefaultEditPreviewPart>,
+        ) : SubmissionPreviewResult
+
+        data class NeedsResolution(
+            val rawText: String,
+            val logDate: LocalDate,
+            val consumedTime: LocalTime?,
+            val parts: List<FoodItemDefaultEditPreviewPart>,
+        ) : SubmissionPreviewResult
+
+        data class NonFood(
+            val rawText: String,
+            val logDate: LocalDate,
+            val consumedTime: LocalTime?,
+            val intent: EntryIntent,
+        ) : SubmissionPreviewResult
+
+        data class DateMismatch(
+            val requestedLogDate: LocalDate,
+            val selectedLogDate: LocalDate,
+        ) : SubmissionPreviewResult
+
+        data object InvalidInput : SubmissionPreviewResult
+    }
+
+    sealed interface WizardSubmissionResult {
+        data class Saved(
+            val foodItemIds: List<Long>,
+            val pendingRawEntryId: Long?,
+            val logDate: LocalDate,
+        ) : WizardSubmissionResult
+
+        data object InvalidInput : WizardSubmissionResult
+        data object NotFound : WizardSubmissionResult
+        data object NotPending : WizardSubmissionResult
     }
 
     sealed interface ManualResolveResult {
@@ -1125,11 +1334,15 @@ class FoodLogRepository(
     sealed interface PendingEntryResolutionPreviewResult {
         data class Ready(
             val rawText: String,
+            val logDate: LocalDate,
+            val consumedTime: LocalTime?,
             val parts: List<FoodItemDefaultEditPreviewPart>,
         ) : PendingEntryResolutionPreviewResult
 
         data class SinglePart(
+            val rawText: String,
             val part: FoodItemDefaultEditPreviewPart?,
+            val logDate: LocalDate,
             val consumedTime: LocalTime?,
         ) : PendingEntryResolutionPreviewResult
         data object NotFound : PendingEntryResolutionPreviewResult

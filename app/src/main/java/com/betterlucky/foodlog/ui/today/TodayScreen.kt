@@ -71,7 +71,6 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.entities.DailyStatusEntity
 import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
-import com.betterlucky.foodlog.domain.label.toItemAmount
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import java.time.Instant
 import java.time.LocalDate
@@ -79,7 +78,6 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import kotlin.math.floor
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,8 +91,8 @@ fun TodayScreen(
     val uiState by viewModel.uiState.collectAsState()
     val labelReview by viewModel.labelReview.collectAsState()
     val pendingQuantityPicker by viewModel.pendingQuantityPicker.collectAsState()
+    val loggingWizard by viewModel.loggingWizard.collectAsState()
     val focusManager = LocalFocusManager.current
-    var resolvingEntry by remember { mutableStateOf<RawEntryEntity?>(null) }
     var editingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
     var forgettingDefault by remember { mutableStateOf<UserDefaultEntity?>(null) }
     var editingFoodItem by remember { mutableStateOf<FoodItemEntity?>(null) }
@@ -240,7 +238,7 @@ fun TodayScreen(
                 items(uiState.pendingEntries) { entry ->
                     PendingEntryRow(
                         entry = entry,
-                        onResolve = { resolvingEntry = entry },
+                        onResolve = { viewModel.openPendingEntryWizard(entry.id) },
                     )
                 }
             }
@@ -349,65 +347,6 @@ fun TodayScreen(
                 forgettingDefault = userDefault
             },
         )
-    }
-
-    resolvingEntry?.let { entry ->
-        var pendingResolution by remember(entry.id) { mutableStateOf<LoggedFoodEditResolution?>(null) }
-        var pendingResolutionError by remember(entry.id) { mutableStateOf<String?>(null) }
-        var pendingDraft by remember(entry.id) { mutableStateOf<PendingEntryDraft?>(null) }
-        LaunchedEffect(entry.id) {
-            viewModel.previewPendingEntryResolution(
-                rawEntryId = entry.id,
-                onReady = { pendingResolution = it },
-                onSinglePart = { pendingDraft = it },
-            )
-        }
-        val resolution = pendingResolution
-        if (resolution == null) {
-            ResolvePendingDialog(
-                entry = entry,
-                draft = pendingDraft,
-                onDismiss = { resolvingEntry = null },
-                onRemove = {
-                    viewModel.removePendingEntry(
-                        id = entry.id,
-                        onRemoved = { resolvingEntry = null },
-                    )
-                },
-                onResolve = { name, amount, unit, calories, time, notes, saveAsDefault ->
-                    viewModel.resolvePendingEntry(
-                        rawEntryId = entry.id,
-                        name = name,
-                        amount = amount,
-                        unit = unit,
-                        calories = calories,
-                        time = time,
-                        notes = notes,
-                        saveAsDefault = saveAsDefault,
-                        onResolved = { resolvingEntry = null },
-                    )
-                },
-            )
-        } else {
-            ResolveLoggedFoodEditDialog(
-                resolution = resolution,
-                title = "Resolve pending meal",
-                contextText = entry.consumedTime?.let { "Time: $it" },
-                dismissLabel = "Keep pending",
-                errorMessage = pendingResolutionError,
-                onDismiss = { resolvingEntry = null },
-                onSave = { parts ->
-                    pendingResolutionError = null
-                    viewModel.saveResolvedPendingEntry(
-                        rawEntryId = entry.id,
-                        rawText = resolution.rawText,
-                        parts = parts,
-                        onResolved = { resolvingEntry = null },
-                        onError = { pendingResolutionError = it },
-                    )
-                },
-            )
-        }
     }
 
     editingDefault?.let { userDefault ->
@@ -559,21 +498,39 @@ fun TodayScreen(
     }
 
     labelReview?.let { review ->
-        LabelReviewDialog(
-            review = review,
-            initialInputMode = LabelInputMode.fromStorage(uiState.lastLabelInputMode),
-            onDismiss = { viewModel.clearLabelReview() },
+        if (review.isProcessing) {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearLabelReview() },
+                title = { Text("Log from label") },
+                text = { Text("Reading label...") },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { viewModel.clearLabelReview() }) {
+                        Text("Cancel")
+                    }
+                },
+            )
+        }
+    }
+
+    loggingWizard?.let { session ->
+        LoggingWizardDialog(
+            session = session,
+            onDismiss = { viewModel.clearLoggingWizard() },
+            onPartChanged = viewModel::updateLoggingWizardPart,
+            onCurrentPartChanged = viewModel::setLoggingWizardCurrentPart,
+            onTimeChanged = viewModel::updateLoggingWizardTime,
+            onTimeConfirmed = viewModel::confirmLoggingWizardTime,
             onInputModeChanged = { viewModel.setLastLabelInputMode(it) },
-            onLog = { name, inputMode, amountText, calories, time, saveAsShortcut ->
-                viewModel.logLabelItem(
-                    name = name,
-                    inputMode = inputMode,
-                    amountText = amountText,
-                    calories = calories,
-                    time = time,
-                    saveAsShortcut = saveAsShortcut,
-                )
+            onRemove = session.sourceRawEntryId?.let { rawEntryId ->
+                {
+                    viewModel.removePendingEntry(
+                        id = rawEntryId,
+                        onRemoved = { viewModel.clearLoggingWizard() },
+                    )
+                }
             },
+            onSave = { viewModel.saveLoggingWizard() },
         )
     }
 
@@ -1197,68 +1154,31 @@ private fun LabelImageSourceDialog(
 }
 
 @Composable
-private fun LabelReviewDialog(
-    review: LabelReviewState,
-    initialInputMode: LabelInputMode,
+private fun LoggingWizardDialog(
+    session: LoggingWizardSession,
     onDismiss: () -> Unit,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+    onCurrentPartChanged: (Int) -> Unit,
+    onTimeChanged: (String) -> Unit,
+    onTimeConfirmed: () -> Unit,
     onInputModeChanged: (LabelInputMode) -> Unit,
-    onLog: (name: String, inputMode: LabelInputMode, amountText: String, calories: String, time: String, saveAsShortcut: Boolean) -> Unit,
+    onRemove: (() -> Unit)?,
+    onSave: () -> Unit,
 ) {
-    val facts = review.facts
-    var name by remember { mutableStateOf("") }
-    var inputMode by remember(facts.rawText, initialInputMode) { mutableStateOf(initialInputMode) }
-    var amountText by remember(facts.rawText) { mutableStateOf("") }
-    var sliderAmount by remember(facts.rawText) { mutableStateOf(0.1f) }
-    val resolvedPortion = LabelPortionResolver.resolve(facts, inputMode, amountText)
-    var calories by remember(facts.rawText) { mutableStateOf("") }
-    var time by remember(facts.rawText) {
-        mutableStateOf(LocalTime.now().truncatedTo(ChronoUnit.MINUTES).toString())
+    val currentIndex = session.currentPartIndex.coerceIn(0, session.parts.lastIndex.coerceAtLeast(0))
+    val currentPart = session.parts.getOrNull(currentIndex)
+    var step by remember(session.originalRawText, currentIndex) {
+        mutableStateOf(firstWizardStep(session, currentPart))
     }
-    var saveAsShortcut by remember { mutableStateOf(false) }
-    var caloriesEdited by remember(facts.rawText) { mutableStateOf(false) }
-    var step by remember(facts.rawText) { mutableStateOf(LabelDialogStep.Product) }
     var showingAmountHelp by remember { mutableStateOf(false) }
-    LaunchedEffect(inputMode, amountText) {
-        if (inputMode == LabelInputMode.ITEMS) {
-            amountText.toItemAmount()?.let { parsedAmount ->
-                sliderAmount = parsedAmount.toFloat().snapToTenth()
-            }
-        }
+    val completedCount = session.parts.count { it.isComplete }
+    val pendingCount = session.parts.count { !it.isComplete }
+    val title = when (session.source) {
+        LoggingWizardSource.Label -> "Log from label"
+        LoggingWizardSource.Pending -> "Review pending entry"
+        LoggingWizardSource.Shortcut -> "Log shortcut"
+        LoggingWizardSource.FreeText -> "Complete log entry"
     }
-    LaunchedEffect(inputMode, amountText, resolvedPortion.calories, caloriesEdited) {
-        if (!caloriesEdited) {
-            calories = resolvedPortion.calories?.formatLabelNumber().orEmpty()
-        }
-    }
-    val canLog = name.isNotBlank() &&
-        resolvedPortion.isValidAmount &&
-        calories.toDoubleOrNull()?.let { it > 0.0 } == true
-    val canContinue = when (step) {
-        LabelDialogStep.Product -> name.isNotBlank()
-        LabelDialogStep.Portion -> resolvedPortion.isValidAmount
-        LabelDialogStep.Review -> canLog
-    }
-    val portionQuantity = resolvedPortion.amount?.let { amount ->
-        val unit = resolvedPortion.unit.orEmpty()
-        if (inputMode == LabelInputMode.ITEMS) {
-            LabelPortionResolver.displayAmount(amount, unit)
-        } else {
-            "${amount.formatLabelNumber()} $unit"
-        }
-    }.orEmpty()
-    val portionWeight = resolvedPortion.grams?.let { "${it.formatLabelNumber()}g" }.orEmpty()
-    val portionSummary = buildString {
-        append(portionQuantity)
-        if (portionWeight.isNotBlank()) {
-            if (isNotEmpty()) append(" · ")
-            append(portionWeight)
-        }
-    }
-    val itemUnit = LabelPortionResolver.itemUnit(facts)
-    val sliderPortionLabel = resolvedPortion.amount
-        ?.takeIf { inputMode == LabelInputMode.ITEMS }
-        ?.let { LabelPortionResolver.displayAmount(it, itemUnit).replaceFirstChar { char -> char.titlecase() } }
-        ?: "Choose amount"
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1268,8 +1188,8 @@ private fun LabelReviewDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Log from label")
-                if (step == LabelDialogStep.Portion) {
+                Text(title)
+                if (step == LoggingWizardStep.Portion && session.source == LoggingWizardSource.Label) {
                     IconButton(onClick = { showingAmountHelp = true }) {
                         Icon(
                             imageVector = Icons.Outlined.Info,
@@ -1282,188 +1202,120 @@ private fun LabelReviewDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (review.isProcessing) {
+                WizardContextText(session = session, completedCount = completedCount, pendingCount = pendingCount)
+                if (currentPart != null && step != LoggingWizardStep.Review) {
                     Text(
-                        text = "Reading label...",
+                        text = if (session.parts.size > 1) "Item ${currentIndex + 1} of ${session.parts.size}: ${currentPart.inputText}" else currentPart.inputText,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else if (facts.hasRequiredCalories) {
-                    val hint = buildString {
-                        facts.kcalPer100g?.let { append("${it.toInt()} kcal/100g") }
-                        facts.kcalPerServing?.let {
-                            if (isNotEmpty()) append(" · ")
-                            append("${it.toInt()} kcal/${facts.servingUnit ?: "serving"}")
-                        }
-                        facts.servingSizeGrams?.let { append(" (${it.toInt()}g)") }
-                    }
-                    Text(
-                        text = "From label: $hint",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                } else {
-                    Text(
-                        text = "No calorie values found — check the label is in focus and try again, or enter manually.",
-                        color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
                 when (step) {
-                    LabelDialogStep.Product -> {
-                        Text(
-                            text = "Tell me what the product we just scanned is.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                    LoggingWizardStep.Product -> {
                         OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
+                            value = currentPart?.name.orEmpty(),
+                            onValueChange = { value ->
+                                currentPart?.let { onPartChanged(currentIndex, it.copy(name = value, deferred = false)) }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            label = { Text("Item name") },
+                            label = { Text("Item") },
                         )
                     }
-                    LabelDialogStep.Portion -> {
-                        Text(
-                            text = "What's your portion size today?",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Row(
+                    LoggingWizardStep.Portion -> {
+                        if (currentPart != null) {
+                            if (session.source == LoggingWizardSource.Label && session.labelFacts != null) {
+                                LabelWizardPortionStep(
+                                    facts = session.labelFacts,
+                                    inputMode = session.labelInputMode,
+                                    part = currentPart,
+                                    onInputModeChanged = { mode ->
+                                        onInputModeChanged(mode)
+                                        val resolved = LabelPortionResolver.resolve(session.labelFacts, mode, currentPart.amount)
+                                        onPartChanged(
+                                            currentIndex,
+                                            currentPart.copy(
+                                                unit = resolved.unit ?: currentPart.unit,
+                                                calories = resolved.calories?.formatLabelNumber() ?: currentPart.calories,
+                                                deferred = false,
+                                            ),
+                                        )
+                                    },
+                                    onPartChanged = { onPartChanged(currentIndex, it) },
+                                )
+                            } else {
+                                AmountUnitFields(
+                                    amount = currentPart.amount,
+                                    unit = currentPart.unit,
+                                    onAmountChange = { onPartChanged(currentIndex, currentPart.copy(amount = it, deferred = false)) },
+                                    onUnitChange = { onPartChanged(currentIndex, currentPart.copy(unit = it, deferred = false)) },
+                                )
+                            }
+                        }
+                    }
+                    LoggingWizardStep.Calories -> {
+                        OutlinedTextField(
+                            value = currentPart?.calories.orEmpty(),
+                            onValueChange = { value ->
+                                currentPart?.let { onPartChanged(currentIndex, it.copy(calories = value, deferred = false)) }
+                            },
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "Items",
-                                modifier = Modifier.weight(1f),
-                                fontWeight = if (inputMode == LabelInputMode.ITEMS) FontWeight.SemiBold else null,
-                            )
-                            Switch(
-                                checked = inputMode == LabelInputMode.MEASURE,
-                                onCheckedChange = { checked ->
-                                    inputMode = if (checked) LabelInputMode.MEASURE else LabelInputMode.ITEMS
-                                    amountText = ""
-                                    onInputModeChanged(inputMode)
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                    uncheckedThumbColor = MaterialTheme.colorScheme.primary,
-                                    uncheckedTrackColor = MaterialTheme.colorScheme.surface,
-                                    uncheckedBorderColor = MaterialTheme.colorScheme.primary,
-                                ),
-                            )
-                            Text(
-                                text = "g/ml",
-                                modifier = Modifier.weight(1f),
-                                fontWeight = if (inputMode == LabelInputMode.MEASURE) FontWeight.SemiBold else null,
-                            )
-                        }
-                        if (inputMode == LabelInputMode.ITEMS) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = sliderPortionLabel,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                            }
-                            PortionAmountSlider(
-                                value = sliderAmount,
-                                onValueChange = { rawValue ->
-                                    val snapped = rawValue.snapToTenth()
-                                    sliderAmount = snapped
-                                    amountText = snapped.toDouble().formatLabelNumber()
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedTextField(
-                                    value = amountText,
-                                    onValueChange = { amountText = it },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    label = { Text("Amount") },
-                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                )
-                                OutlinedTextField(
-                                    value = itemUnit,
-                                    onValueChange = {},
-                                    modifier = Modifier.weight(1f),
-                                    readOnly = true,
-                                    singleLine = true,
-                                    label = { Text("Unit") },
-                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                )
-                            }
-                        } else {
-                            OutlinedTextField(
-                                value = amountText,
-                                onValueChange = { amountText = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                label = { Text("Amount (g/ml)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            )
-                        }
-                        if (portionSummary.isNotBlank()) {
-                            Text(
-                                text = portionSummary,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            label = { Text("Calories") },
+                        )
                     }
-                    LabelDialogStep.Review -> {
-                        Text(
-                            text = "Preview log entry",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = listOf(time, name).joinToString(" - "),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = listOf(portionSummary.takeIf { it.isNotBlank() }, calories.toDoubleOrNull()?.let { "${it.formatLabelNumber()} kcal" })
-                                .filterNotNull()
-                                .joinToString(" - "),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LoggingWizardStep.TimeNotes -> {
+                        if (currentPart != null) {
+                            Text(
+                                text = "When did you have this?",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
                             TimeTextField(
-                                value = time,
-                                onValueChange = { time = it },
-                                modifier = Modifier.weight(1f),
+                                value = session.timeText,
+                                onValueChange = onTimeChanged,
+                                modifier = Modifier.fillMaxWidth(),
                                 label = "Time",
                             )
                             OutlinedTextField(
-                                value = calories,
-                                onValueChange = {
-                                    calories = it
-                                    caloriesEdited = true
-                                },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                label = { Text("Calories") },
+                                value = currentPart.notes,
+                                onValueChange = { onPartChanged(currentIndex, currentPart.copy(notes = it)) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 72.dp),
+                                minLines = 2,
+                                maxLines = 3,
+                                label = { Text("Notes") },
                             )
+                            if (currentPart.resolvedByDefault) {
+                                ShortcutToggle(
+                                    checked = true,
+                                    enabled = false,
+                                    label = "Shortcut already saved",
+                                    onCheckedChange = {},
+                                )
+                            } else {
+                                ShortcutToggle(
+                                    checked = currentPart.saveAsShortcut,
+                                    enabled = currentPart.hasPositiveCalories,
+                                    label = "Save as shortcut",
+                                    onCheckedChange = { onPartChanged(currentIndex, currentPart.copy(saveAsShortcut = it)) },
+                                )
+                            }
                         }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = saveAsShortcut,
-                                onCheckedChange = { saveAsShortcut = it },
+                    }
+                    LoggingWizardStep.Review -> {
+                        Text("Review log entry", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        session.parts.forEachIndexed { index, part ->
+                            val status = when {
+                                part.isComplete -> "${part.name} - ${part.calories} kcal"
+                                else -> "${part.inputText} - pending"
+                            }
+                            Text(
+                                text = status,
+                                color = if (index == currentIndex) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
                             )
-                            Text("Save as shortcut", style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -1471,35 +1323,77 @@ private fun LabelReviewDialog(
         },
         confirmButton = {
             Button(
+                enabled = canAdvanceWizardStep(session, currentPart, step),
                 onClick = {
-                    when (step) {
-                        LabelDialogStep.Product -> step = LabelDialogStep.Portion
-                        LabelDialogStep.Portion -> step = LabelDialogStep.Review
-                        LabelDialogStep.Review -> onLog(name, inputMode, amountText, calories, time, saveAsShortcut)
+                    if (step == LoggingWizardStep.TimeNotes) {
+                        onTimeConfirmed()
+                    }
+                    val nextStep = nextWizardStep(session, currentIndex, step)
+                    val nextPart = session.parts.indexOfFirstIndexed { index, part ->
+                        index > currentIndex && part.needsInput
+                    }
+                    if (step == LoggingWizardStep.TimeNotes && nextPart < 0 && session.parts.all { it.isComplete }) {
+                        onSave()
+                    } else if (nextStep != null) {
+                        step = nextStep
+                    } else {
+                        if (nextPart >= 0) {
+                            onCurrentPartChanged(nextPart)
+                        } else {
+                            onSave()
+                        }
                     }
                 },
-                enabled = canContinue,
             ) {
-                Text(if (step == LabelDialogStep.Review) "Log" else "Next")
+                Text(
+                    if (
+                        step == LoggingWizardStep.Review && session.parts.drop(currentIndex + 1).none { it.needsInput } ||
+                        step == LoggingWizardStep.TimeNotes && session.parts.drop(currentIndex + 1).none { it.needsInput } && session.parts.all { it.isComplete }
+                    ) {
+                        "Save"
+                    } else {
+                        "Next"
+                    },
+                )
             }
         },
         dismissButton = {
             Row {
-                if (step != LabelDialogStep.Product) {
+                onRemove?.let {
+                    TextButton(onClick = it) {
+                        Text("Remove")
+                    }
+                }
+                currentPart?.takeIf { session.source != LoggingWizardSource.Label && !it.isComplete }?.let { part ->
                     TextButton(
                         onClick = {
-                            step = when (step) {
-                                LabelDialogStep.Portion -> LabelDialogStep.Product
-                                LabelDialogStep.Review -> LabelDialogStep.Portion
-                                else -> step
+                            onPartChanged(currentIndex, part.copy(deferred = true))
+                            val nextPart = session.parts.indexOfFirstIndexed { index, candidate ->
+                                index > currentIndex && candidate.needsInput
+                            }
+                            if (nextPart >= 0) {
+                                onCurrentPartChanged(nextPart)
+                            } else {
+                                step = LoggingWizardStep.Review
                             }
                         },
                     ) {
-                        Text("Back")
+                        Text("Keep pending")
                     }
                 }
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel")
+                TextButton(
+                    onClick = {
+                        val previous = previousWizardStep(step)
+                        if (previous != null) {
+                            step = previous
+                        } else if (currentIndex > 0) {
+                            onCurrentPartChanged(currentIndex - 1)
+                        } else {
+                            onDismiss()
+                        }
+                    },
+                ) {
+                    Text(if (step == LoggingWizardStep.Product && currentIndex == 0) "Cancel" else "Back")
                 }
             }
         },
@@ -1518,6 +1412,294 @@ private fun LabelReviewDialog(
             },
         )
     }
+}
+
+@Composable
+private fun WizardContextText(session: LoggingWizardSession, completedCount: Int, pendingCount: Int) {
+    val label = when (session.source) {
+        LoggingWizardSource.Label -> session.labelFacts?.let { facts ->
+            buildString {
+                facts.kcalPer100g?.let { append("${it.toInt()} kcal/100g") }
+                facts.kcalPerServing?.let {
+                    if (isNotEmpty()) append(" · ")
+                    append("${it.toInt()} kcal/${facts.servingUnit ?: "serving"}")
+                }
+                facts.servingSizeGrams?.let { append(" (${it.toInt()}g)") }
+            }.takeIf { it.isNotBlank() }?.let { "From label: $it" }
+        }
+        LoggingWizardSource.Pending -> "Pending: ${session.originalRawText}"
+        LoggingWizardSource.Shortcut -> "Shortcut: ${session.originalRawText}"
+        LoggingWizardSource.FreeText -> "From text: ${session.originalRawText}"
+    }
+    label?.let {
+        Text(
+            text = it,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    if (session.parts.size > 1) {
+        Text(
+            text = "$completedCount complete · $pendingCount pending",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun AmountUnitFields(
+    amount: String,
+    unit: String,
+    onAmountChange: (String) -> Unit,
+    onUnitChange: (String) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = amount,
+            onValueChange = onAmountChange,
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            label = { Text("Amount") },
+        )
+        OutlinedTextField(
+            value = unit,
+            onValueChange = onUnitChange,
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            label = { Text("Unit") },
+        )
+    }
+}
+
+@Composable
+private fun LabelWizardPortionStep(
+    facts: com.betterlucky.foodlog.domain.label.LabelNutritionFacts,
+    inputMode: LabelInputMode,
+    part: LoggingWizardPartDraft,
+    onInputModeChanged: (LabelInputMode) -> Unit,
+    onPartChanged: (LoggingWizardPartDraft) -> Unit,
+) {
+    val itemUnit = LabelPortionResolver.itemUnit(facts)
+    val resolvedPortion = LabelPortionResolver.resolve(facts, inputMode, part.amount)
+    val sliderAmount = part.amount.toFloatOrNull()?.coerceIn(0.1f, 1f) ?: 0.1f
+    val sliderPortionLabel = resolvedPortion.amount
+        ?.let { LabelPortionResolver.displayAmount(it, itemUnit).replaceFirstChar { char -> char.titlecase() } }
+        ?: "Choose amount"
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Items",
+            modifier = Modifier.weight(1f),
+            fontWeight = if (inputMode == LabelInputMode.ITEMS) FontWeight.SemiBold else null,
+        )
+        Switch(
+            checked = inputMode == LabelInputMode.MEASURE,
+            onCheckedChange = { checked ->
+                onInputModeChanged(if (checked) LabelInputMode.MEASURE else LabelInputMode.ITEMS)
+            },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = MaterialTheme.colorScheme.primary,
+                uncheckedTrackColor = MaterialTheme.colorScheme.surface,
+                uncheckedBorderColor = MaterialTheme.colorScheme.primary,
+            ),
+        )
+        Text(
+            text = "g/ml",
+            modifier = Modifier.weight(1f),
+            fontWeight = if (inputMode == LabelInputMode.MEASURE) FontWeight.SemiBold else null,
+        )
+    }
+    if (inputMode == LabelInputMode.ITEMS) {
+        Text(
+            text = sliderPortionLabel,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        PortionAmountSlider(
+            value = sliderAmount,
+            onValueChange = { rawValue ->
+                val snapped = rawValue.snapToTenth()
+                val resolved = LabelPortionResolver.resolve(facts, inputMode, snapped.toDouble().formatLabelNumber())
+                onPartChanged(
+                    part.copy(
+                        amount = snapped.toDouble().formatLabelNumber(),
+                        unit = resolved.unit ?: itemUnit,
+                        calories = resolved.calories?.formatLabelNumber() ?: part.calories,
+                        deferred = false,
+                    ),
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        AmountUnitFields(
+            amount = part.amount,
+            unit = itemUnit,
+            onAmountChange = { value ->
+                val resolved = LabelPortionResolver.resolve(facts, inputMode, value)
+                onPartChanged(
+                    part.copy(
+                        amount = value,
+                        unit = resolved.unit ?: itemUnit,
+                        calories = resolved.calories?.formatLabelNumber() ?: part.calories,
+                        deferred = false,
+                    ),
+                )
+            },
+            onUnitChange = {},
+        )
+    } else {
+        OutlinedTextField(
+            value = part.amount,
+            onValueChange = { value ->
+                val resolved = LabelPortionResolver.resolve(facts, inputMode, value)
+                onPartChanged(
+                    part.copy(
+                        amount = value,
+                        unit = resolved.unit ?: part.unit,
+                        calories = resolved.calories?.formatLabelNumber() ?: part.calories,
+                        deferred = false,
+                    ),
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Amount (g/ml)") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        )
+    }
+    val portionQuantity = resolvedPortion.amount?.let { amount ->
+        if (inputMode == LabelInputMode.ITEMS) {
+            LabelPortionResolver.displayAmount(amount, resolvedPortion.unit.orEmpty())
+        } else {
+            "${amount.formatLabelNumber()} ${resolvedPortion.unit.orEmpty()}"
+        }
+    }.orEmpty()
+    val portionWeight = resolvedPortion.grams?.let { "${it.formatLabelNumber()}g" }.orEmpty()
+    val summary = listOf(portionQuantity.takeIf { it.isNotBlank() }, portionWeight.takeIf { it.isNotBlank() })
+        .filterNotNull()
+        .joinToString(" · ")
+    if (summary.isNotBlank()) {
+        Text(
+            text = summary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun ShortcutToggle(
+    checked: Boolean,
+    enabled: Boolean,
+    label: String,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+        )
+        Text(
+            text = label,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+private enum class LoggingWizardStep {
+    Product,
+    Portion,
+    Calories,
+    TimeNotes,
+    Review,
+}
+
+private fun firstWizardStep(
+    session: LoggingWizardSession,
+    part: LoggingWizardPartDraft?,
+): LoggingWizardStep =
+    when {
+        part == null -> LoggingWizardStep.Review
+        part.name.isBlank() -> LoggingWizardStep.Product
+        session.source == LoggingWizardSource.Label && session.labelFacts != null &&
+            !LabelPortionResolver.resolve(session.labelFacts, session.labelInputMode, part.amount).isValidAmount -> LoggingWizardStep.Portion
+        !part.hasPositiveCalories -> LoggingWizardStep.Calories
+        !session.timeConfirmed -> LoggingWizardStep.TimeNotes
+        else -> LoggingWizardStep.Review
+    }
+
+private fun canAdvanceWizardStep(
+    session: LoggingWizardSession,
+    part: LoggingWizardPartDraft?,
+    step: LoggingWizardStep,
+): Boolean =
+    when (step) {
+        LoggingWizardStep.Product -> part?.name?.isNotBlank() == true
+        LoggingWizardStep.Portion -> {
+            if (session.source == LoggingWizardSource.Label && session.labelFacts != null && part != null) {
+                LabelPortionResolver.resolve(session.labelFacts, session.labelInputMode, part.amount).isValidAmount
+            } else {
+                true
+            }
+        }
+        LoggingWizardStep.Calories -> part?.hasPositiveCalories == true
+        LoggingWizardStep.TimeNotes -> session.timeConfirmed || TimeTextParser.parseOrNull(session.timeText) != null
+        LoggingWizardStep.Review -> true
+    }
+
+private fun nextWizardStep(
+    session: LoggingWizardSession,
+    currentIndex: Int,
+    step: LoggingWizardStep,
+): LoggingWizardStep? {
+    val part = session.parts.getOrNull(currentIndex)
+    return when (step) {
+        LoggingWizardStep.Product -> if (session.source == LoggingWizardSource.Label) LoggingWizardStep.Portion else nextAfterCalories(session, part)
+        LoggingWizardStep.Portion -> LoggingWizardStep.Calories
+        LoggingWizardStep.Calories -> if (session.timeConfirmed) LoggingWizardStep.Review else LoggingWizardStep.TimeNotes
+        LoggingWizardStep.TimeNotes -> LoggingWizardStep.Review
+        LoggingWizardStep.Review -> null
+    }.takeUnless { next ->
+        next == LoggingWizardStep.Calories && part?.hasPositiveCalories == true
+    } ?: if (session.timeConfirmed) LoggingWizardStep.Review else LoggingWizardStep.TimeNotes
+}
+
+private fun nextAfterCalories(
+    session: LoggingWizardSession,
+    part: LoggingWizardPartDraft?,
+): LoggingWizardStep =
+    if (part?.hasPositiveCalories == true) {
+        if (session.timeConfirmed) LoggingWizardStep.Review else LoggingWizardStep.TimeNotes
+    } else {
+        LoggingWizardStep.Calories
+    }
+
+private fun previousWizardStep(step: LoggingWizardStep): LoggingWizardStep? =
+    when (step) {
+        LoggingWizardStep.Product -> null
+        LoggingWizardStep.Portion -> LoggingWizardStep.Product
+        LoggingWizardStep.Calories -> LoggingWizardStep.Portion
+        LoggingWizardStep.TimeNotes -> LoggingWizardStep.Calories
+        LoggingWizardStep.Review -> LoggingWizardStep.TimeNotes
+    }
+
+private inline fun <T> List<T>.indexOfFirstIndexed(predicate: (Int, T) -> Boolean): Int {
+    forEachIndexed { index, item ->
+        if (predicate(index, item)) return index
+    }
+    return -1
 }
 
 @Composable
@@ -1579,12 +1761,6 @@ private fun PortionAmountSlider(
             center = thumbCenter,
         )
     }
-}
-
-private enum class LabelDialogStep {
-    Product,
-    Portion,
-    Review,
 }
 
 @Composable
