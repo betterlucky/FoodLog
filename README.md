@@ -38,8 +38,10 @@ JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home 
 To run connected/instrumented tests on an attached Android device:
 
 ```sh
-JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home ./gradlew connectedDebugAndroidTest
+scripts/android-connected-test.sh
 ```
+
+The wrapper wakes the phone, asks Android to dismiss the keyguard, keeps the screen awake, and nudges you to unlock the device if it still appears locked. Compose tests need the test activity to stay foregrounded.
 
 To build, install, launch, and capture a phone screenshot:
 
