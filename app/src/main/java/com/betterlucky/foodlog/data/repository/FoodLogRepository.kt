@@ -286,6 +286,14 @@ class FoodLogRepository(
             ?: return DefaultUpdateResult.NotFound
         val normalizedItemUnit = itemUnit?.trim().orEmpty().ifBlank { null }
         val normalizedItemSizeUnit = itemSizeUnit?.trim().orEmpty().lowercase().ifBlank { null }
+        if (
+            (defaultAmount != null && defaultAmount <= 0.0) ||
+            (itemSizeAmount != null && itemSizeAmount <= 0.0) ||
+            (kcalPer100g != null && kcalPer100g <= 0.0) ||
+            (kcalPer100ml != null && kcalPer100ml <= 0.0)
+        ) {
+            return DefaultUpdateResult.InvalidInput
+        }
         val metadataChanged = normalizedItemUnit != existing.itemUnit ||
             itemSizeAmount != existing.itemSizeAmount ||
             normalizedItemSizeUnit != existing.itemSizeUnit ||
@@ -301,10 +309,10 @@ class FoodLogRepository(
                 defaultAmount = defaultAmount,
                 portionMode = portionMode ?: existing.portionMode,
                 itemUnit = normalizedItemUnit,
-                itemSizeAmount = itemSizeAmount?.takeIf { it > 0.0 },
+                itemSizeAmount = itemSizeAmount,
                 itemSizeUnit = normalizedItemSizeUnit,
-                kcalPer100g = kcalPer100g?.takeIf { it > 0.0 },
-                kcalPer100ml = kcalPer100ml?.takeIf { it > 0.0 },
+                kcalPer100g = kcalPer100g,
+                kcalPer100ml = kcalPer100ml,
                 nutritionBasisName = when {
                     metadataChanged -> trimmedName
                     trimmedName == existing.name -> existing.nutritionBasisName

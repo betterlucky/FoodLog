@@ -54,6 +54,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
@@ -1841,7 +1846,15 @@ private fun PortionModeToggle(
         modifier = Modifier
             .width(68.dp)
             .height(44.dp)
-            .clickable {
+            .semantics {
+                role = Role.Switch
+                contentDescription = "Portion input mode"
+                stateDescription = if (selectedRight) "Measure" else "Items"
+            }
+            .clickable(
+                role = Role.Switch,
+                onClickLabel = "Switch portion input mode",
+            ) {
                 onInputModeChanged(
                     if (selectedRight) LabelInputMode.ITEMS else LabelInputMode.MEASURE,
                 )

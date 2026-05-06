@@ -1,5 +1,6 @@
 package com.betterlucky.foodlog.data.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -15,6 +16,7 @@ data class UserDefaultEntity(
     val confidence: ConfidenceLevel = ConfidenceLevel.HIGH,
     val active: Boolean = true,
     val defaultAmount: Double? = null,
+    @ColumnInfo(defaultValue = "PLAIN")
     val portionMode: ShortcutPortionMode = ShortcutPortionMode.PLAIN,
     val itemUnit: String? = null,
     val itemSizeAmount: Double? = null,

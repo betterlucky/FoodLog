@@ -455,7 +455,15 @@ class TodayViewModel(
                     if (session.saveShortcutDefaultAmount) {
                         completedParts.firstOrNull()
                             ?.let { part ->
-                                val amount = part.amount.trim().toDoubleOrNull()
+                                val amount = session.labelFacts
+                                    ?.let { facts ->
+                                        LabelPortionResolver.resolve(
+                                            facts = facts,
+                                            mode = session.labelInputMode,
+                                            amountText = part.amount,
+                                        ).takeIf { it.isValidAmount }?.amount
+                                    }
+                                    ?: part.amount.trim().toDoubleOrNull()
                                 val trigger = part.trigger
                                 if (trigger != null && amount != null && amount > 0.0) {
                                     repository.updateShortcutDefaultAmount(trigger, amount)

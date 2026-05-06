@@ -237,7 +237,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
-        private val MIGRATION_13_14 = object : Migration(13, 14) {
+        internal val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.addColumnIfMissing(
                     tableName = "user_defaults",

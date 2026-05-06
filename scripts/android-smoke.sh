@@ -10,6 +10,7 @@ SCREENSHOT_PATH="${1:-/tmp/foodlog-smoke.png}"
 DATA_BACKUP=""
 KEEP_DATA_BACKUP=0
 APK_BACKUP_DIR=""
+KEEP_APK_BACKUP=0
 
 cleanup() {
     if [[ -d "$GRADLE_USER_HOME" ]]; then
@@ -18,7 +19,7 @@ cleanup() {
     if [[ -n "$DATA_BACKUP" && "$KEEP_DATA_BACKUP" != "1" ]]; then
         rm -f "$DATA_BACKUP"
     fi
-    if [[ -n "$APK_BACKUP_DIR" ]]; then
+    if [[ -n "$APK_BACKUP_DIR" && "$KEEP_APK_BACKUP" != "1" ]]; then
         rm -rf "$APK_BACKUP_DIR"
     fi
 }
@@ -103,14 +104,8 @@ restore_installed_apks() {
 
 backup_app_data() {
     DATA_BACKUP="$(mktemp "${TMPDIR:-/tmp}/foodlog-data-backup.XXXXXX.tar")"
-    if "$ADB" exec-out run-as "$PACKAGE" sh -c \
-        "cd /data/data/$PACKAGE || exit 1; paths=''; for d in databases shared_prefs files no_backup; do [ -e \"\$d\" ] && paths=\"\$paths \$d\"; done; if [ -n \"\$paths\" ]; then tar -cf - \$paths; fi" \
-        > "$DATA_BACKUP"; then
-        if [[ -s "$DATA_BACKUP" ]]; then
-            echo "Backed up app-private data before reinstall." >&2
-        else
-            echo "No app-private data directories found to back up." >&2
-        fi
+    if ADB="$ADB" PACKAGE="$PACKAGE" "$ROOT_DIR/scripts/android-backup-app-data.sh" "$DATA_BACKUP" >&2; then
+        echo "Backed up app-private data before reinstall." >&2
         return 0
     fi
 
@@ -124,7 +119,7 @@ restore_app_data() {
         return 0
     fi
 
-    if ! "$ADB" exec-in run-as "$PACKAGE" sh -c "cd /data/data/$PACKAGE && tar -xf -" < "$DATA_BACKUP"; then
+    if ! "$ADB" exec-in run-as "$PACKAGE" sh -c "cd /data/data/$PACKAGE && tar -xf - 2>/dev/null" < "$DATA_BACKUP"; then
         return 1
     fi
     echo "Restored app-private data after reinstall." >&2
@@ -144,7 +139,9 @@ safe_restore_previous_install() {
     fi
 
     KEEP_DATA_BACKUP=1
+    KEEP_APK_BACKUP=1
     echo "Rollback failed. Preserved data backup at: $DATA_BACKUP" >&2
+    echo "Preserved APK backup at: $APK_BACKUP_DIR" >&2
     return 1
 }
 

@@ -12,6 +12,7 @@ if ! "$ADB" shell pm path "$PACKAGE" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Include no_backup here intentionally: this script is a test-data safety net, not Android's cloud backup contract.
 if ! "$ADB" exec-out run-as "$PACKAGE" sh -c \
     "cd /data/data/$PACKAGE || exit 1; paths=''; for d in databases shared_prefs files no_backup; do [ -e \"\$d\" ] && paths=\"\$paths \$d\"; done; if [ -n \"\$paths\" ]; then tar -cf - \$paths; fi" \
     > "$OUTPUT"; then

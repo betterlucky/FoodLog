@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 14,
-    "identityHash": "9aeeee1e1866ded29b18fabd011c683a",
+    "identityHash": "853f464d2d5a2957d28b72de9b34841b",
     "entities": [
       {
         "tableName": "raw_entries",
@@ -523,7 +523,7 @@
       },
       {
         "tableName": "user_defaults",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trigger` TEXT NOT NULL, `name` TEXT NOT NULL, `calories` REAL NOT NULL, `unit` TEXT NOT NULL, `notes` TEXT, `source` TEXT NOT NULL, `confidence` TEXT NOT NULL, `active` INTEGER NOT NULL, `defaultAmount` REAL, `portionMode` TEXT NOT NULL, `itemUnit` TEXT, `itemSizeAmount` REAL, `itemSizeUnit` TEXT, `kcalPer100g` REAL, `kcalPer100ml` REAL, `nutritionBasisName` TEXT, PRIMARY KEY(`trigger`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`trigger` TEXT NOT NULL, `name` TEXT NOT NULL, `calories` REAL NOT NULL, `unit` TEXT NOT NULL, `notes` TEXT, `source` TEXT NOT NULL, `confidence` TEXT NOT NULL, `active` INTEGER NOT NULL, `defaultAmount` REAL, `portionMode` TEXT NOT NULL DEFAULT 'PLAIN', `itemUnit` TEXT, `itemSizeAmount` REAL, `itemSizeUnit` TEXT, `kcalPer100g` REAL, `kcalPer100ml` REAL, `nutritionBasisName` TEXT, PRIMARY KEY(`trigger`))",
         "fields": [
           {
             "fieldPath": "trigger",
@@ -581,7 +581,8 @@
             "fieldPath": "portionMode",
             "columnName": "portionMode",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'PLAIN'"
           },
           {
             "fieldPath": "itemUnit",
@@ -739,7 +740,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9aeeee1e1866ded29b18fabd011c683a')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '853f464d2d5a2957d28b72de9b34841b')"
     ]
   }
 }

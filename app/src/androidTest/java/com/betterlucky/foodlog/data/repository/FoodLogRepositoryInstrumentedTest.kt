@@ -2,8 +2,10 @@ package com.betterlucky.foodlog.data.repository
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.betterlucky.foodlog.data.db.FoodLogDatabase
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.EntryKind
@@ -23,8 +25,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.Instant
@@ -33,6 +37,12 @@ import java.time.LocalTime
 
 @RunWith(AndroidJUnit4::class)
 class FoodLogRepositoryInstrumentedTest {
+    @get:Rule
+    val migrationHelper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        FoodLogDatabase::class.java,
+    )
+
     private lateinit var database: FoodLogDatabase
     private lateinit var repository: FoodLogRepository
     private lateinit var dateTimeProvider: MutableDateTimeProvider
@@ -75,6 +85,81 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(25.0, tea?.calories)
         assertEquals(FoodItemSource.USER_DEFAULT, tea?.source)
         assertEquals(ConfidenceLevel.HIGH, tea?.confidence)
+    }
+
+    @Test
+    fun migration13To14BackfillsShortcutPortionColumns() {
+        val databaseName = "migration-13-14-${System.nanoTime()}"
+        migrationHelper.createDatabase(databaseName, 13).apply {
+            execSQL(
+                """
+                INSERT INTO user_defaults (
+                    `trigger`,
+                    name,
+                    calories,
+                    unit,
+                    notes,
+                    source,
+                    confidence,
+                    active,
+                    defaultAmount
+                ) VALUES (
+                    'tea',
+                    'Tea',
+                    25.0,
+                    'cup',
+                    'milk',
+                    'USER_DEFAULT',
+                    'HIGH',
+                    1,
+                    2.0
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            14,
+            true,
+            FoodLogDatabase.MIGRATION_13_14,
+        ).apply {
+            query(
+                """
+                SELECT
+                    name,
+                    calories,
+                    unit,
+                    notes,
+                    defaultAmount,
+                    portionMode,
+                    itemUnit,
+                    itemSizeAmount,
+                    itemSizeUnit,
+                    kcalPer100g,
+                    kcalPer100ml,
+                    nutritionBasisName
+                FROM user_defaults
+                WHERE `trigger` = 'tea'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Tea", cursor.getString(0))
+                assertEquals(25.0, cursor.getDouble(1), 0.001)
+                assertEquals("cup", cursor.getString(2))
+                assertEquals("milk", cursor.getString(3))
+                assertEquals(2.0, cursor.getDouble(4), 0.001)
+                assertEquals("PLAIN", cursor.getString(5))
+                assertNull(cursor.getString(6))
+                assertTrue(cursor.isNull(7))
+                assertNull(cursor.getString(8))
+                assertTrue(cursor.isNull(9))
+                assertTrue(cursor.isNull(10))
+                assertNull(cursor.getString(11))
+            }
+            close()
+        }
     }
 
     @Test
