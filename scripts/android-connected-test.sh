@@ -6,13 +6,13 @@ JAVA_HOME="${JAVA_HOME:-/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/
 GRADLE_USER_HOME="${GRADLE_USER_HOME:-$ROOT_DIR/.gradle-user-home}"
 ADB="${ADB:-adb}"
 PACKAGE="com.betterlucky.foodlog"
-DATA_BACKUP=""
-RESTORE_DATA_BACKUP=0
-KEEP_DATA_BACKUP=0
+TEST_PACKAGE="com.betterlucky.foodlog.test"
+TEST_RUNNER="androidx.test.runner.AndroidJUnitRunner"
+INSTRUMENTATION_OUTPUT=""
 
 cleanup() {
-    if [[ -n "$DATA_BACKUP" && "$KEEP_DATA_BACKUP" != "1" ]]; then
-        rm -f "$DATA_BACKUP"
+    if [[ -n "$INSTRUMENTATION_OUTPUT" ]]; then
+        rm -f "$INSTRUMENTATION_OUTPUT"
     fi
 }
 trap cleanup EXIT
@@ -49,47 +49,7 @@ wake_device() {
 }
 
 package_installed() {
-    "$ADB" shell pm path "$PACKAGE" 2>/dev/null | tr -d '\r' | grep -q '^package:'
-}
-
-backup_app_data() {
-    if ! package_installed; then
-        return 0
-    fi
-
-    DATA_BACKUP="$(mktemp "${TMPDIR:-/tmp}/foodlog-connected-test-data.XXXXXX.tar")"
-    if ADB="$ADB" PACKAGE="$PACKAGE" "$ROOT_DIR/scripts/android-backup-app-data.sh" "$DATA_BACKUP" >&2; then
-        RESTORE_DATA_BACKUP=1
-        echo "Backed up app-private data before connected tests." >&2
-        return 0
-    fi
-
-    rm -f "$DATA_BACKUP"
-    DATA_BACKUP=""
-    return 1
-}
-
-restore_app_after_tests() {
-    local apk_path="$ROOT_DIR/app/build/outputs/apk/debug/app-debug.apk"
-    if ! package_installed; then
-        if [[ ! -f "$apk_path" ]]; then
-            echo "FoodLog was removed during connected tests, and no debug APK is available to reinstall." >&2
-            return 1
-        fi
-        echo "FoodLog was removed during connected tests; reinstalling debug APK." >&2
-        "$ADB" install -r "$apk_path" >/dev/null
-    fi
-
-    if [[ "$RESTORE_DATA_BACKUP" == "1" && -s "$DATA_BACKUP" ]]; then
-        if "$ADB" exec-in run-as "$PACKAGE" sh -c "cd /data/data/$PACKAGE && tar -xf - 2>/dev/null" < "$DATA_BACKUP"; then
-            echo "Restored app-private data after connected tests." >&2
-        else
-            KEEP_DATA_BACKUP=1
-            echo "Could not restore app-private data after connected tests." >&2
-            echo "Preserved data backup at: $DATA_BACKUP" >&2
-            return 1
-        fi
-    fi
+    "$ADB" shell pm path "$1" 2>/dev/null | tr -d '\r' | grep -q '^package:'
 }
 
 wake_device
@@ -111,25 +71,40 @@ if device_appears_locked; then
     exit 1
 fi
 
-if ! backup_app_data; then
-    if [[ "${FOODLOG_ALLOW_DATA_LOSS:-0}" == "1" ]]; then
-        echo "Warning: could not back up app data; continuing because FOODLOG_ALLOW_DATA_LOSS=1." >&2
-    else
-        echo "Refusing to run connected tests because app-private data could not be backed up." >&2
-        echo "Set FOODLOG_ALLOW_DATA_LOSS=1 to override." >&2
-        exit 1
-    fi
+env "${GRADLE_ENV[@]}" ./gradlew assembleDebug assembleDebugAndroidTest
+
+APP_APK="$ROOT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+TEST_APK="$ROOT_DIR/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+
+echo "Installing FoodLog debug APK with adb install -r, preserving app data." >&2
+if ! "$ADB" install -r "$APP_APK"; then
+    echo "Could not install $PACKAGE with adb install -r." >&2
+    echo "Refusing to uninstall the app because that would wipe local FoodLog data." >&2
+    exit 1
+fi
+
+echo "Installing instrumentation APK." >&2
+if ! "$ADB" install -r "$TEST_APK"; then
+    echo "Could not install $TEST_PACKAGE. Removing only the test package and retrying once." >&2
+    "$ADB" uninstall "$TEST_PACKAGE" >/dev/null 2>&1 || true
+    "$ADB" install -r "$TEST_APK"
 fi
 
 set +e
-env "${GRADLE_ENV[@]}" ./gradlew connectedDebugAndroidTest "$@"
+INSTRUMENTATION_OUTPUT="$(mktemp "${TMPDIR:-/tmp}/foodlog-instrumentation.XXXXXX.txt")"
+"$ADB" shell am instrument -w -r "$@" "$TEST_PACKAGE/$TEST_RUNNER" 2>&1 | tee "$INSTRUMENTATION_OUTPUT"
 test_status=$?
 set -e
-
-restore_app_after_tests
-restore_status=$?
-
-if [[ "$test_status" -ne 0 ]]; then
-    exit "$test_status"
+if [[ "$test_status" -eq 0 ]] && ! grep -q '^OK ([0-9][0-9]* tests*)' "$INSTRUMENTATION_OUTPUT"; then
+    test_status=1
 fi
-exit "$restore_status"
+
+echo "Removing instrumentation APK; leaving FoodLog installed." >&2
+"$ADB" uninstall "$TEST_PACKAGE" >/dev/null 2>&1 || true
+
+if ! package_installed "$PACKAGE"; then
+    echo "$PACKAGE is not installed after instrumentation; this should not happen in the custom runner." >&2
+    exit 1
+fi
+
+exit "$test_status"
