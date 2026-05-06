@@ -10,6 +10,9 @@ SCREENSHOT_PATH="${1:-/tmp/foodlog-smoke.png}"
 DATA_BACKUP=""
 
 cleanup() {
+    if [[ -d "$GRADLE_USER_HOME" ]]; then
+        (cd "$ROOT_DIR" && env "JAVA_HOME=$JAVA_HOME" "GRADLE_USER_HOME=$GRADLE_USER_HOME" ./gradlew --stop >/dev/null 2>&1) || true
+    fi
     if [[ -n "$DATA_BACKUP" ]]; then
         rm -f "$DATA_BACKUP"
     fi
