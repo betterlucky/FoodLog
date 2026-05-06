@@ -1,63 +1,88 @@
-# FoodLog Phase 1 Plan
+# FoodLog Plan
 
-## Summary
+FoodLog is a local-first Android food logging app. The current goal is to make the existing daily workflow dependable enough for ordinary use, then add optional AI extras for harder capture cases, recent-data questions, meal ideas, and nutritional advice.
 
-FoodLog is a private, local-first native Android food logging app in Kotlin. The app should feel like a small chat-style food log, but the source of truth is a deterministic local Room database, not the rendered chat UI, previous conversational text, or exported CSV.
+Room is the source of truth. Raw entries, food rows, daily weight, daily status, shortcuts, products, and exports must come from database state, not rendered UI text, chat history, or CSV files.
 
-Phase 1 proves the local data path:
+## Current State
 
-- user submits text
-- raw text is saved immediately
-- deterministic local parsing resolves known shortcuts
-- consumed items are stored as structured database rows
-- today view and CSV exports are rendered from Room rows only
+Implemented local core:
 
-Current implementation status as of 2026-05-05:
+- Kotlin native Android app using Compose, Room, coroutines, Flow, and MVVM-style screen state.
+- Raw-entry audit records, deterministic shortcut/default parsing, pending resolution, logged-item editing/removal, daily totals, daily weight, daily status, and Lodestone CSV export.
+- Today screen as the main daily working surface.
+- Shortcut picker with search, immediate logging, add/edit/forget actions, and shortcut-backed compound logging.
+- Pending and logged-item resolver flows that can stage recognised shortcut parts and ask only for unresolved parts.
+- Local on-device OCR label scan flow using ML Kit text recognition, conservative nutrition parsing, and a user-confirmed logging wizard.
 
-- The local-first Phase 1 core is implemented: Room-backed raw entries, food rows, deterministic parsing, shortcut/default resolution, pending resolution, logged-item editing/removal, date/time handling, daily status, daily weight, and CSV export.
-- The Today screen is the active working surface for daily use.
-- Label OCR has been implemented as the current packaged-food helper using on-device ML Kit text recognition, conservative nutrition parsing, and a confirmation wizard before logging.
-- Barcode logging was tried and is being dropped for now because it was not effective enough for the daily workflow. The current `ProductEntity` schema intentionally has package, serving, nutrient, and last-logged fields, but no barcode/cache fields.
-- The immediate product direction is stabilising manual/OCR product logging, not barcode lookup.
+Out of scope for the current local core:
 
-The sample file `food_log_full_2026-04-04_to_2026-04-23.csv` is retained as synthetic fixture data and as the legacy health-monitor CSV export contract. It should not contain real personal food history.
+- Barcode logging was tried and is parked. The current product schema intentionally has no barcode/cache/Open Food Facts fields.
+- Leftovers, correction entities/flows, fuzzy product matching, and unsolicited conversational summaries.
+- Treating exported CSV files as canonical data.
 
-## Phase 1 Requirements
+The retained `food_log_full_2026-04-04_to_2026-04-23.csv` file is synthetic fixture/context for the legacy Health Monitor CSV contract now consumed by Lodestone. It must not contain real personal food history.
 
-Use:
+## Product Direction
 
-- Kotlin
-- native Android
-- Jetpack Compose
-- Room
-- Coroutines and Flow
-- MVVM-style structure
-- local-only storage
+Near-term work should make daily use faster, clearer, and harder to get subtly wrong.
 
-Do not implement in the local-only Phase 1 core:
+Current priorities:
 
-- OpenAI calls
-- backend/server integration
-- leftovers
-- corrections
-- fuzzy product matching
-- conversational summaries
+1. Label/manual product polish: make scanned and manually entered packaged foods reliable, understandable, and quick to repeat.
+2. Shortcut/product polish: make common foods easy to save, find, edit, forget, and log without creating duplicate or confusing defaults.
+3. Daily close/export polish: make the Lodestone handoff obvious, current, and trustworthy.
 
-Nutrition-label photo extraction is now allowed only through the local on-device OCR path described below. It must remain user-reviewed and must not call a backend or AI service in Phase 1.
+## Next Horizon
 
-Core behavior:
+After daily workflow polish, begin optional AI integration. AI should help where deterministic local flows are weak, while staying grounded in Room data and user review.
 
-- Save every submitted text as `RawEntryEntity` before interpretation.
-- Store consumed foods only as `FoodItemEntity` rows generated from deterministic local logic.
-- Unsupported inputs become pending raw entries and create no food item.
-- Use a repository/database transaction for raw-entry insertion, parsing/default resolution, food-item insertion, and raw-entry status update.
-- Raw entries are audit records and should not be deleted in normal app flows.
-- Totals and exports use active `FoodItemEntity` rows.
-- User-facing removal is called `Remove` and hard-deletes the selected `FoodItemEntity`.
-- Removing a food item does not delete the associated `RawEntryEntity` audit record.
-- Pending entries can be removed before resolution when the user chooses to enter the food another way; this hard-deletes only unresolved `RawEntryEntity` rows.
+AI capture assistance:
 
-Seed tea as the first `UserDefaultEntity`:
+- fuzzy or unknown meals, such as homemade food at a friend's house
+- a picture of a plate of food
+- OCR-unreadable or partial nutrition labels
+- ambiguous text entries that deterministic shortcuts cannot resolve
+
+Optional AI conversation:
+
+- user-initiated questions about recent logged data
+- meal ideas
+- nutritional advice
+- no commentary on the user's day unless they specifically ask for it
+
+AI calls should eventually be served to the app through a Cloudflare Worker or similarly thin backend proxy.
+
+## Non-Negotiable Rules
+
+- Save raw submitted text before interpretation whenever a text entry is submitted.
+- Preserve raw-entry audit records in normal flows.
+- Use repository/database transactions for workflows that create or update raw entries and food rows together.
+- Unsupported deterministic text inputs become pending raw entries and create no food rows.
+- Exports are generated from active Room rows only.
+- Totals use active `FoodItemEntity` rows only.
+- Daily weight is separate daily metadata, not a food item, and never affects calories.
+- Keep parsing, export generation, totals, label parsing, and product calorie calculations out of composables where practical.
+- Keep Phase 1 local-first and deterministic unless this plan is explicitly changed.
+- Do not commit real food logs, personal exports, SDK paths, keystores, tokens, or API keys.
+
+## Core Data Contracts
+
+Primary entities:
+
+- `RawEntryEntity`: immutable-ish audit record for submitted or staged text.
+- `FoodItemEntity`: confirmed consumed food row used for totals and exports.
+- `UserDefaultEntity`: shortcut/default definition used by deterministic parsing.
+- `ProductEntity`: barcode-neutral reusable product/label metadata.
+- `ProductPhotoEntity`: photo metadata for product/label capture.
+- `ContainerEntity`: retained local model support; active leftover/container behavior is later-phase.
+- `DailyWeightEntity`: one optional weight record per food day.
+- `DailyStatusEntity`: export and change status per food day.
+- `AppSettingsEntity`: local app settings such as food-day boundary.
+
+Product storage should remain barcode-neutral for now. It may store source metadata, package size, item count, serving size/unit, calories per 100g, calories per serving, optional nutrients, and last-logged grams. Do not add barcode/cache fields unless barcode lookup is deliberately reopened as a fresh experiment.
+
+The seeded tea default remains the first shortcut/default example:
 
 - `trigger = "tea"`
 - `name = "Tea"`
@@ -67,454 +92,155 @@ Seed tea as the first `UserDefaultEntity`:
 - `source = USER_DEFAULT`
 - `confidence = HIGH`
 
-Tea is the first example of the shortcut/default mechanism, not one-off hardcoded business logic. Similar compound items such as cranberry mix should eventually use the same default mechanism; until configured, they remain pending.
+## Daily Workflow
 
-## Parsing And Dates
+The Today screen is the main product surface. It should support:
 
-Implement a small deterministic parser for Phase 1.
+- selected food day and day navigation
+- text entry for deterministic shortcut logging
+- shortcut picker near the input area
+- today's confirmed food rows and calorie total
+- pending entries and resolver flows
+- logged-item edit/remove controls
+- daily weight entry
+- local label scan/manual product logging
+- daily close/readiness status
+- Lodestone export action
 
-Normalization:
+Important behavior:
 
-- trim leading/trailing whitespace
-- collapse repeated whitespace
-- match case-insensitively
-- do not fuzzy-match arbitrary text
+- Date prefixes and food-day boundary logic should set the intended `logDate`; explicit dates override default food-day fallback.
+- The app should avoid silently logging to a different selected day from the one the user is viewing.
+- Time parsing should be shared between free-text parsing and editable time fields where practical.
+- Logged-item removal deletes the selected `FoodItemEntity`; it does not delete the associated raw audit record.
+- Pending-entry removal can hard-delete unresolved raw entries when the user intentionally discards them.
+- Manual resolutions require at least item name and calories.
+- Optional "save as shortcut" should create reusable deterministic defaults without storing confusing per-total values; parsed quantities should normalize to per-unit or per-gram defaults.
 
-Supported shortcut phrases:
+## Label And Product Logging
 
-- `tea`
-- `a tea`
-- `cup of tea`
-- `1 tea`
-- `100g sourdough with thin butter` when `sourdough with thin butter` exists as a per-gram shortcut/default
-- `2 slices sourdough` when `sourdough` exists as a per-slice shortcut/default
+Label OCR is the current packaged-food path:
 
-Supported date prefixes:
+- Use local on-device ML Kit Latin text recognition.
+- Let the user take a photo or choose an image.
+- Parse conservatively and require user confirmation before logging.
+- Prefer clear partial-success behavior over guessing.
+- OCR failures should show a clear message and create no food row.
+- Label-derived products use `source = SAVED_LABEL`.
+- Optional captured nutrients may include protein, fibre, carbohydrate, fat, sugars, and salt.
 
-- `today tea`
-- `yesterday tea`
-- `YYYY-MM-DD tea`
+Near-term polish:
 
-Supported time prefixes/suffixes:
+- Improve wizard copy and validation for partial labels, especially when calories are present but serving amount/unit is ambiguous.
+- Make repeat use of saved label/manual products more visible and less fiddly.
+- Add focused tests around OCR reader handoff where Android/ML Kit boundaries allow it.
 
-- `1pm tea`
-- `13:00 tea`
-- `tea at 1pm`
-- `tea 13:00`
+## Lodestone Export
 
-Supported quantity behavior:
-
-- Plain numeric prefixes such as `2 teas` multiply the saved shortcut/default amount and calories.
-- Gram prefixes such as `100g sourdough` and `100 g sourdough` map to `amount = 100`, `unit = g`, and multiply per-gram shortcut/default calories.
-- Unit quantity prefixes such as `2 slices sourdough` map to `amount = 2`, `unit = slice`, and multiply per-unit shortcut/default calories.
-
-Supported compound shortcut behavior:
-
-- Split obvious meal entries on commas, plus signs, ampersands, slashes, semicolons, and the word `and`, for example `banana, satsuma and tea` or `150g sourdough + tea`.
-- Resolve each part through the same shortcut/default mechanism.
-- If every part resolves, save one raw entry and create one `FoodItemEntity` per part.
-- If any part is unsupported, keep the whole raw entry pending and create no food rows.
-- Date prefixes apply to every resolved part in the compound entry.
-
-Date behavior:
-
-- Date prefixes set `RawEntryEntity.logDate` and `FoodItemEntity.logDate`.
-- If a date prefix is present but the remaining phrase is unsupported, save a pending raw entry using the parsed `logDate`.
-- `createdAt` is always the actual timestamp when the entry is saved.
-- Explicit time prefixes/suffixes set `RawEntryEntity.consumedTime` and `FoodItemEntity.consumedTime`.
-- `consumedTime` defaults to the current local time when no explicit time is present.
-- Pending review pre-fills any deterministic parser hints it can extract, including item text, amount/unit, and consumed time.
-- Pending review lets the user edit the consumed time before resolving the row.
-- `logDate` defaults to the current local date when no supported date prefix is present.
-- The Today screen blocks free-text entries whose parsed date does not match the selected date; users should navigate to the intended date before adding prior-session entries.
-
-Examples:
-
-| Input | Result |
-| --- | --- |
-| `tea` | parsed raw entry and one Tea food item for today |
-| `a tea` | parsed raw entry and one Tea food item for today |
-| `cup of tea` | parsed raw entry and one Tea food item for today |
-| `1 tea` | parsed raw entry and one Tea food item for today |
-| `1pm tea` | parsed raw entry and one Tea food item at 13:00 |
-| `tea at 13:00` | parsed raw entry and one Tea food item at 13:00 |
-| `yesterday tea` | parsed raw entry and one Tea food item for yesterday |
-| `2026-04-23 tea` | parsed raw entry and one Tea food item for 2026-04-23 |
-| `yesterday curry` | pending raw entry for yesterday, no food item |
-| `cranberry mix` | pending raw entry for today, no food item |
-
-## Data Model
-
-Define Room entities and DAOs for:
-
-- `RawEntryEntity`
-- `FoodItemEntity`
-- `ProductEntity`
-- `ProductPhotoEntity`
-- `ContainerEntity`
-- `UserDefaultEntity`
-
-Product, photo, and container support started as minimal Phase 1 database scaffolding. Current product storage is barcode-neutral and supports:
-
-- source metadata
-- package size grams
-- optional item count per pack, for products such as a 6-sausage packet
-- serving size grams and serving unit
-- kcal per 100g and kcal per serving where known
-- optional per-100g nutrient fields for protein, carbohydrate, fat, fibre, sugars, and salt
-- last logged grams for repeat label/manual product logging
-
-Do not add barcode/cache fields back during the current Phase 1 work. If barcode lookup is reconsidered in a later phase, it should be planned as a fresh experiment with a new migration rather than assumed as part of the current product model.
-
-`CorrectionEntity` is a later-phase TODO unless it is trivial to include as an inert placeholder. Phase 1 must not implement correction behavior.
-
-Required converters:
-
-- `Instant`
-- `LocalDate`
-- `LocalTime`
-- enums
-
-Android compatibility:
-
-- Require API 26+, or enable Java time desugaring for `java.time` support.
-
-Recommended high-level package structure:
-
-```text
-app/src/main/java/.../foodlogger/
-  data/
-    dao/
-    db/
-    entities/
-    repository/
-  domain/
-    export/
-    parser/
-    totals/
-  ui/
-    today/
-    components/
-  util/
-```
-
-Keep parsing, export generation, and totals outside composables.
-
-## UI Scope
-
-Create a mobile-first Compose Today screen with:
-
-- current selected date
-- chat-style text input
-- submit/log button
-- shortcut picker opened from the input area
-- today's logged food items
-- today's calorie total
-- pending entries section
-- daily-close/export status and action
-- logged item edit/remove controls
-- daily weight control near the close-day/export section
-- local label scan action for packaged foods
-
-The UI should render from Room-backed state. It must not parse visible tables, chat bubbles, or exported CSV back into canonical data. Direct manual add is not exposed in the main UI; known-calorie manual resolution should happen through pending/staged resolution flows.
-
-Date and time input behavior:
-
-- The selected date control opens a calendar picker with Material's calendar/text-entry mode toggle.
-- Time fields remain editable as text and also offer a picker action.
-- Time text fields should use the shared time parser, so typed values such as `13:45`, `1pm`, and `8:05am` behave consistently with free-text log parsing.
-
-Current shortcut behavior:
-
-- Shortcuts are opened from a button near the food input instead of listed inline in the daily scroll.
-- The shortcut picker supports search/filtering.
-- Tapping a shortcut logs it immediately and keeps the picker open for multi-item meals.
-- The picker includes edit, forget, and add-shortcut actions.
-
-Current logged-item behavior:
-
-- Logged food items can be edited from the Today screen.
-- Logged food items can be viewed by time, by calories, or in a clumped view that groups identical rows while preserving access to individual edits.
-- Editing supports item name, amount, unit, calories, consumed time, and notes.
-- If edited calories are present, the edit is treated as a single manual row update.
-- If edited calories are blank, FoodLog re-runs deterministic parsing on the edited item text:
-  - if every parsed part resolves to active shortcuts/defaults, the original row is replaced with one default-derived row per part
-  - if some parts resolve and some do not, the edit dialog stages the recognised parts in memory and asks for only the unresolved parts one at a time
-  - each manually completed staged part can be saved as a shortcut/default for future entries
-  - the original row is not replaced until every part has been completed; cancelling the dialog leaves the original logged row unchanged
-- The edit dialog clears the prefilled calories when the item name changes unless the user has manually edited the calories field.
-- Default-reparse edits reuse the original row's raw entry and date, reuse the edited time for every replacement row, and update the raw entry text.
-- Consumed time is required for edited food rows; users may type supported time text or use the time picker.
-- Logged food items can be removed after confirmation.
-- Removing a logged item hard-deletes the `FoodItemEntity`; the raw entry remains.
-
-Current pending-entry behavior:
-
-- Pending food entries can be manually resolved by the user from the Today screen.
-- Pending rows and review dialogs show parsed time separately from the food text when an explicit time was entered.
-- Compound pending entries use the same itemised staged resolver as logged-item edits when any part already matches a shortcut/default.
-- Recognised staged parts are held in memory; unresolved parts are completed one at a time and can be saved as shortcuts/defaults.
-- Choosing `Keep pending` or dismissing the staged resolver leaves the original pending entry unchanged so Resolve can restart the staged flow later.
-- The pending-entry `Save as shortcut` checkbox is disabled and unchecked while calories are blank.
-- The pending-entry dialog has one `Save` action:
-  - if item name and valid calories are present, it resolves the entry into a food row
-  - if calories are blank, it re-runs deterministic parsing on the edited text
-  - if that parser pass now resolves fully, it creates food rows from shortcuts/defaults
-  - if that parser pass still cannot resolve fully, it saves edited text/notes back to the pending queue
-- Manual resolution requires at least an item name and calories.
-- Manual resolutions create `FoodItemEntity` rows with `source = MANUAL_OVERRIDE` and `confidence = HIGH`.
-- Resolving a pending entry marks the associated raw entry as `PARSED` without deleting the audit record.
-- Leaving an entry pending is the "keep pending" behavior; it remains unresolved and excluded from food exports until handled.
-- Removing a pending entry hard-deletes the unresolved raw entry and creates no food rows.
-- Manual resolutions can optionally be saved as reusable user defaults so future matching inputs can be logged deterministically.
-- Saved defaults represent calories per unit. If the user resolves `2 slices` as `190 kcal`, the stored shortcut is `95 kcal` per `slice`.
-- Active shortcuts can be reviewed from the Today screen, edited in place, or forgotten by soft-deactivating the default.
-- Forgetting a shortcut requires confirmation.
-- Tapping an active shortcut logs one serving for the selected day using the same raw-entry and food-row path as typing the shortcut trigger.
-
-### OCR Label Capture V1
-
-Label OCR is the current packaged-food path and remains local/user-reviewed:
-
-- Use bundled on-device ML Kit Latin text recognition.
-- `Scan label` on the Today screen lets the user take one photo or choose one existing image.
-- OCR values open the same logging wizard style as other nontrivial entries; the user still confirms before logging.
-- The parser is conservative and currently targets common UK label patterns such as `33 kcal per 100g`, `83 kcal per cup`, `1 cup (255g)`, `servings per sachet - 1`, `6 x 50g`, and package sizes in grams or millilitres.
-- Direct serving calories such as `83 kcal per cup` can be logged with a friendly unit while grams remain stored when known.
-- Label-derived product rows use `source = SAVED_LABEL`.
-- Optional nutrient fields captured for future use include protein, fibre, carbs, fat, sugars, and salt.
-- The last label input mode is persisted so the app can remember item-count versus measured-amount entry.
-- OCR failures should leave the user in control with a clear message and no food row.
-
-Near-term label polish:
-
-- Add focused tests around `LabelOcrReader` failure/success handoff where practical.
-- Tighten the label wizard copy and validation for partial labels where calories are present but the serving unit or amount is missing.
-- Consider persisting reusable label/product records more visibly once the daily workflow is stable.
-
-## CSV Export
-
-Implement two CSV exporters from Room rows only.
-
-Daily export is the primary workflow for Phase 1 and the near-term Lodestone handoff. The user should be encouraged to export the day's report regularly rather than treating the export as an unbounded canonical log.
-
-Exported CSV files are output artifacts, not source data. If food rows change after export, FoodLog should generate a fresh export from Room rather than editing an existing external CSV file.
-
-FoodLog writes the Lodestone CSV to the historical Health Monitor import folder:
+The Lodestone CSV is the daily handoff contract. FoodLog still writes to the historical import folder until Lodestone changes:
 
 ```text
 Downloads/FoodLogData
 ```
 
-Lodestone should import the standard daily file from that subfolder. Keep `Downloads/FoodLogData` stable until the Lodestone importer is updated.
-
-Daily export status is tracked locally with a date-keyed status row:
-
-- `legacyExportedAt` is updated when the standard Lodestone CSV is exported.
-- `legacyExportFileName` records the generated Lodestone CSV filename.
-- `auditExportedAt` is updated when the audit CSV is exported.
-- `auditExportFileName` records the generated audit CSV filename.
-- `lastFoodChangedAt` is updated when confirmed food rows are added, edited, manually resolved, or removed.
-- The Today screen shows whether each export has happened for the selected date.
-- The Today screen shows when food rows changed after the last export.
-- The Today screen labels the primary handoff as `Lodestone` while preserving the legacy Health Monitor CSV contract and folder name.
-- The Today screen highlights pending entry count before export.
-- The Today screen shows a daily close readiness summary:
-  - `No food logged` when the selected day has no confirmed food rows, no daily weight, and no pending entries.
-  - `Resolve pending entries` when unresolved raw entries remain for the selected day.
-  - `Ready to export` when the selected day has confirmed food rows or a daily weight and the Lodestone export is missing or stale.
-  - `Already exported` when the selected day has confirmed food rows or a daily weight and the Lodestone export is current.
-- Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
-- FoodLog has a persisted day-boundary setting foundation:
-  - `null` day boundary means normal calendar-day logging.
-  - A configured boundary such as `03:00` means unprefixed entries before that time are assigned to the previous food day.
-  - Explicit date prefixes such as `today`, `yesterday`, and `YYYY-MM-DD` override the default food-day fallback.
-  - The Today screen starts on the current food day when the app opens.
-- The Today screen exposes the day-boundary setting with:
-  - a compact boundary status row
-  - an early-morning boundary toggle
-  - a boundary time field with text entry and picker support, defaulting to `03:00` when enabled
-- The Today screen shows a daily close prompt:
-  - no export needed when the selected day is empty
-  - resolve pending entries before Lodestone export when pending entries remain
-  - export the Lodestone CSV when confirmed rows or a daily weight exist and the Lodestone export is missing or stale
-  - confirm the Lodestone export is current after export
-  - auto-advance to the next day after a successful export without treating the exported day as locked or closed
-- Daily close is the only main-screen Lodestone export action; avoid showing a second standalone export button.
-- The audit exporter is retained for developer/data tracing, but is not shown on the main Today screen.
-
-### Daily Weight
-
-Daily weight is optional daily metadata for the Lodestone handoff:
-
-- Store one `DailyWeightEntity` per `logDate`.
-- Store the canonical value as kilograms (`weightKg`).
-- The initial UI accepts stone and pounds because that is the preferred input format for now.
-- The user can add or edit the selected day's weight from the Today screen.
-- `measuredTime` is always stored; blank UI time falls back to the current local time.
-- Daily weight is not a `FoodItemEntity` and never contributes to calorie totals.
-- Saving or editing weight marks the day as changed for export readiness.
-- The Lodestone export emits weight as a timestamped row with:
-  - `item = weight`
-  - `quantity = {weightKg} kg`
-  - blank `calories_kcal`
-  - `notes = Recorded weight`
-- Future polish can add a setting to hide weight logging for users who do not want it.
-
-### `LegacyHealthCsvExporter`
-
-This exporter matches the retained sample CSV and is the Phase 1 Lodestone handoff format. The class name remains legacy because the CSV schema and folder contract were inherited from Health Monitor.
-
-Header:
-
-```csv
-date,time_local,item,quantity,calories_kcal,notes
-```
-
-Mapping:
-
-- `date` = `FoodItemEntity.logDate`
-- `time_local` = `FoodItemEntity.consumedTime`, blank when null
-- `item` = `FoodItemEntity.name`
-- `quantity` = amount plus unit when available, otherwise unit or blank
-- `calories_kcal` = calories formatted deterministically
-- `notes` = notes or blank
-- Optional daily weight rows use `date = DailyWeightEntity.logDate`, `time_local = measuredTime`, `item = weight`, `quantity = {weightKg} kg`, blank calories, and `notes = Recorded weight`.
-
-Generated filename:
+Keep the standard daily filename:
 
 ```text
 food_log_YYYY-MM-DD.csv
 ```
 
-### `AuditCsvExporter`
-
-This richer export preserves provenance for debugging and future import paths.
-
-Header:
+`LegacyHealthCsvExporter` keeps the inherited Health Monitor schema:
 
 ```csv
-log_date,consumed_time,item,amount,unit,grams,calories,source,confidence,product,notes,raw_entry_id,created_at
+date,time_local,item,quantity,calories_kcal,notes
 ```
 
-Rules for both exporters:
+Export rules:
 
-- Export food data from Room `FoodItemEntity` rows only.
-- Export optional daily weight from Room `DailyWeightEntity` only.
-- Export currently active rows only.
-- Sort by `logDate`, then `consumedTime`, then `createdAt`.
+- Export food from active `FoodItemEntity` rows only.
+- Export optional daily weight from `DailyWeightEntity` only.
+- Sort by date, consumed time, then creation time.
 - Escape commas, quotes, and newlines correctly.
 - Preserve blank times as blank CSV fields.
 - Do not call AI during export.
-- Do not use rendered UI text as export input.
+- Do not parse UI text or old CSV files as export input.
 
-Later export behavior should consider:
+Daily close/readiness should remain simple:
 
-- a setting or toggle for appending exports to a long-term log file for users who want an ongoing personal ledger
-- a daily export/reset reminder or status indicator
-- a configurable day-boundary grace period so midnight or early-morning snacks can still be assigned to the previous daily report when appropriate
-- clear handling of whether an exported day is considered closed, especially before any older-day editing is allowed
+- Empty day: no export needed.
+- Pending entries: resolve pending entries before handoff.
+- Confirmed food or weight with missing/stale export: ready to export.
+- Confirmed food or weight with current export: already exported/current.
+- Daily close is the main-screen Lodestone export action; avoid a duplicate standalone export button.
 
-## Tests
+The richer audit CSV exporter is retained for developer/data tracing, but it should not become the main user workflow.
 
-Add focused tests for Phase 1 behavior:
+## Verification
 
-- Default tea shortcut is seeded.
-- `tea`, `a tea`, `cup of tea`, and `1 tea` create parsed raw entries and one food item.
-- Tea food item has `25 kcal`, `source = USER_DEFAULT`, and `confidence = HIGH`.
-- `today tea`, `yesterday tea`, and `YYYY-MM-DD tea` set the expected `logDate`.
-- `1pm tea`, `13:00 tea`, `tea at 1pm`, and `tea 13:00` set the expected `consumedTime`.
-- `1 tea` remains a quantity shortcut and does not parse as 01:00.
-- UI submissions with an explicit date outside the selected date are blocked with a switch-date prompt message.
-- `yesterday curry` creates a pending raw entry with yesterday's `logDate` and no food item.
-- Unsupported input creates a pending raw entry and no food item.
-- Compound shortcut input creates one raw entry and multiple food rows when all parts are known.
-- Compound input with any unknown part stays pending and creates no food rows.
-- Plus-separated compound pending input stages recognised parts separately, for example `150g sourdough with thin butter + tea`.
-- Per-gram shortcuts scale calories correctly for different gram amounts.
-- Per-unit shortcuts scale calories correctly for different parsed unit amounts, for example `2 slices sourdough`.
-- Single pending review for `13:45 10g fruit and nut mix` pre-fills `fruit and nut mix`, `10 g`, and `13:45`.
-- Manual pending resolution can override the parsed consumed time.
-- Pending entries can be removed with a hard delete while unresolved.
-- Daily total reflects active food rows.
-- Logged item manual edits update totals and exports.
-- Logged item blank-calorie edits can reparse known shortcuts/defaults into replacement food rows.
-- Logged item removal deletes the food row and updates totals/exports.
-- Daily weight can be saved, edited, exported as a `weight` row, and does not affect calorie totals.
-- OCR label parser extracts the tomato soup label as `33 kcal per 100g`, `83 kcal per cup`, prepared/cup serving, and obvious per-100g nutrients.
-- OCR/label logging can calculate grams and calories from package size, serving size, item count, and measured grams/millilitres.
-- Label-scanned products log into daily totals and the Lodestone CSV like other food rows.
-- `LegacyHealthCsvExporter` header matches the sample CSV exactly.
-- `AuditCsvExporter` header matches the rich schema exactly.
-- CSV export includes active rows, handles blank times, and escapes commas/quotes/newlines.
-- Repository submit flow keeps raw and food rows consistent.
+Use the checked-in Gradle wrapper:
 
-## Recommended Next Work
+```sh
+JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home ./gradlew testDebugUnitTest
+```
 
-Agent-facing docs have been refreshed now that local OCR and the logging wizard have landed:
+For connected/instrumented tests on an attached Android device:
 
-- `AGENTS.md` records current product reality and agent guardrails.
-- `README.md` points humans and agents at the same high-level state.
-- Barcode lookup is explicitly parked.
+```sh
+JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home ./gradlew connectedDebugAndroidTest
+```
 
-Verification pass completed after the docs refresh:
+For an Android smoke pass:
 
-- Unit tests pass.
-- Android smoke launch/render pass succeeds.
-- Full connected instrumented tests pass on the attached device.
-- The smoke script now preserves app-private data if a signature mismatch forces a reinstall, and it uses the normal Android debug keystore by default to avoid creating mismatches with connected tests.
+```sh
+scripts/android-smoke.sh /tmp/foodlog-smoke.png
+```
 
-Next, choose between:
+Do not fix install/signature problems with a plain `adb uninstall com.betterlucky.foodlog`; that wipes local FoodLog data. Use the smoke script's guarded reinstall path or take an app-private data backup first.
 
-- Label/manual product polish, if awkward labels still feel clunky after real use.
-- Shortcut/product polish, if the goal is making daily manual use faster and less error-prone.
-- Daily close/export polish, if the next priority is making the Lodestone handoff feel dependable.
+Good next smoke scenario: log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current.
 
-Prefer local unit tests for parser, export, and totals logic. Use instrumented tests only where Room or Android framework behavior makes that necessary.
+Prefer local unit tests for parser, export, totals, daily close, day-boundary, label parsing, and portion resolution logic. Use instrumented tests when Room, Android framework behavior, or Compose interaction is the thing being verified.
 
-## Later Phase TODOs
+## Working Backlog
 
-Later phases may add:
+Active:
 
-- richer shortcut/default management screens
-- structured OpenAI text parser behind an interface
-- richer nutrition-label photo extraction and AI image extraction for labels ML Kit cannot parse cleanly
-- richer prepared-versus-dry product handling, including human serving units such as sachet, slice, or sausage while preserving grams internally
-- optional protein/fibre and broader nutrient logging once the food-row/export contracts are ready
-- product review and confirmation screens
-- product matching with stale-cache protection
-- reconsidering barcode lookup only if a better data source or UX hypothesis emerges
-- active leftover/container handling
-- correction handling with audit trail
-- conversational day summaries from database-derived context
-- direct health-monitor integration beyond CSV export
-- optional long-term append-log export mode
-- daily close/export reminders with a midnight or early-morning grace period
+- Polish label/manual product wizard validation and copy.
+- Improve repeat logging for saved products and recently logged label-derived items.
+- Smooth shortcut management for common daily foods.
+- Keep daily close/export status easy to trust after edits, removals, pending resolution, and weight changes.
+- Expand focused tests only where the behavior is active and risky.
 
-Future AI features must query structured database state first. They must not infer the day's food from chat history.
+Soon:
 
-### Later AI Service Architecture
+- Backend/OpenAI features.
+- Leftovers/container behavior.
+- Long-term append-log export mode. The export is for our sister app, users wanting this as a standalone will prefer a longer form version of the export containing all the data for analysis
 
-Backend-backed AI remains out of scope until the local-first app works well for daily personal use. If FoodLog later adds hosted AI features for release:
+Parked:
 
-- Keep food logs local by default; do not store personal food logs on the backend.
-- Use a thin backend proxy so API keys never ship in the Android app.
-- Sign app requests and verify signatures before doing paid work.
-- Consider Play Integrity attestation as a later hardening layer for release builds.
-- Rate-limit by anonymous install ID, IP, and request class before calling paid providers.
-- Cache normalized requests and structured results before calling an AI provider.
-- Prefer deterministic routes first: shortcut/defaults, local history, saved products, nutrition databases, and on-device OCR.
-- Use AI only as a fallback for ambiguous text, label parsing failures, or richer review/summarization.
-- Require strict JSON responses; never parse markdown tables or prose as the app contract.
-- Version the request and response schema so cache entries can be invalidated safely.
-- Treat AI calories as estimates with confidence and provenance, requiring review when confidence is not high.
+- Correction audit flows.
+- Fuzzy matching.
+- Direct Lodestone/Health Monitor integration intended to replace the CSV handoff.
+- Export reminders and richer closed-day semantics.
 
-Initial hosting preference for a thin proxy/cache is Cloudflare Workers plus a small hosted key-value/cache store. Reconsider Railway, Fly.io, or a VPS only if the backend grows beyond simple request verification, caching, routing, and provider calls.
+Explicitly dropped:
 
-## Assumptions
+- Barcode lookup and Open Food Facts integration.
+- Unsolicited conversational summaries or commentary on the user's day.
 
-- `25 kcal` is the Phase 1 seeded tea default.
-- Historical sample rows with `18 kcal` tea entries are legacy data and do not override the new seed default.
-- Shortcut/default editing can wait until after Phase 1.
-- The sample CSV is context for the legacy export contract, not the new internal schema.
-- The app should remain convenient, but never silently wrong: use deterministic shortcuts when known, otherwise save pending entries for review.
+If a parked item becomes important, reopen it deliberately with a small plan, migration notes where needed, and a clear user workflow. Do not treat parked work as missing required scope.
+
+## AI Guardrails
+
+Backend-backed AI is the next horizon after local daily use is dependable:
+
+- Keep personal food logs local by default.
+- Use a thin backend proxy; do not ship provider API keys in the Android app.
+- Query structured database state first.
+- Prefer deterministic routes before AI.
+- Require strict versioned JSON contracts.
+- Treat AI calories as estimates with confidence and provenance.
+- Require user review when confidence is not high.
+
+AI must never infer the day's food from chat history or rendered UI text.

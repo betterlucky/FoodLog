@@ -35,12 +35,16 @@ fun DailyCloseReadiness.closePromptText(): String =
 
 fun DailyStatusEntity?.legacyExportStatusText(): String {
     val exportedAt = this?.legacyExportedAt ?: return "not exported"
-    val suffix = legacyExportFileName.exportFileSuffix()
     return if (lastFoodChangedAt != null && lastFoodChangedAt > exportedAt) {
-        "needs update since ${exportedAt.displayTime()}$suffix"
+        "needs update since ${exportedAt.displayTime()}"
     } else {
-        "exported ${exportedAt.displayTime()}$suffix"
+        "exported ${exportedAt.displayTime()}"
     }
+}
+
+fun DailyStatusEntity?.legacyExportAuditText(): String? {
+    val exportedAt = this?.legacyExportedAt ?: return null
+    return "Last exported: ${exportedAt.displayTime()}${legacyExportFileName.exportFileSuffix()}"
 }
 
 private fun DailyStatusEntity?.isLegacyExportCurrent(): Boolean {

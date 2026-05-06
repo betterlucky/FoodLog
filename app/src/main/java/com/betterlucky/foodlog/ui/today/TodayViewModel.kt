@@ -567,6 +567,9 @@ class TodayViewModel(
         repository.currentLocalTime().truncatedTo(ChronoUnit.MINUTES)
 
     private fun setSelectedDate(date: LocalDate) {
+        if (selectedDate.value != date) {
+            message.value = null
+        }
         selectedDate.value = date
         pruneDayStateCache(centerDate = date)
     }

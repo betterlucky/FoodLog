@@ -48,8 +48,10 @@ JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home 
 For connected/instrumented tests on an attached Android device:
 
 ```sh
-JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home ./gradlew connectedDebugAndroidTest
+scripts/android-connected-test.sh
 ```
+
+The connected-test wrapper wakes the device, asks Android to dismiss the keyguard, keeps power on while tests run, and pauses with a clear prompt if the phone still appears locked. Compose tests can fail with "No compose hierarchies found" if the lock screen or notification shade steals focus from the test activity.
 
 For an Android smoke pass:
 

@@ -53,6 +53,7 @@ import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.domain.dailyclose.DailyCloseReadiness
 import com.betterlucky.foodlog.domain.dailyclose.closePromptText
 import com.betterlucky.foodlog.domain.dailyclose.dailyCloseReadiness
+import com.betterlucky.foodlog.domain.dailyclose.legacyExportAuditText
 import com.betterlucky.foodlog.domain.dailyclose.legacyExportStatusText
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
@@ -623,7 +624,7 @@ private fun DailyWeightRow(
 }
 
 @Composable
-private fun DailyClosePrompt(
+internal fun DailyClosePrompt(
     dailyStatus: DailyStatusEntity?,
     pendingCount: Int,
     foodItemCount: Int,
@@ -673,6 +674,7 @@ private fun DailyClosePrompt(
                     style = MaterialTheme.typography.bodySmall,
                 )
                 if (readiness != DailyCloseReadiness.NoFoodLogged) {
+                    val auditText = dailyStatus.legacyExportAuditText()
                     Text(
                         text = "Lodestone: ${dailyStatus.legacyExportStatusText()}",
                         color = when (readiness) {
@@ -683,6 +685,13 @@ private fun DailyClosePrompt(
                         },
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    if (auditText != null) {
+                        Text(
+                            text = auditText,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
             if (readiness == DailyCloseReadiness.ReadyToExport) {

@@ -125,18 +125,35 @@ class DailyCloseReadinessTest {
     fun exportStatusTextShowsMissingStaleAndCurrentStates() {
         assertEquals("not exported", null.legacyExportStatusText())
         assertEquals(
-            "needs update since 21:00 - food_log_2026-05-06.csv",
+            "needs update since 21:00",
             exportedStatus(
                 exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
                 changedAt = Instant.parse("2026-05-06T20:01:00Z"),
             ).legacyExportStatusText(),
         )
         assertEquals(
-            "exported 21:00 - food_log_2026-05-06.csv",
+            "exported 21:00",
             exportedStatus(
                 exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
                 changedAt = Instant.parse("2026-05-06T19:59:00Z"),
             ).legacyExportStatusText(),
+        )
+    }
+
+    @Test
+    fun exportAuditTextShowsLastExportFileWhenPresent() {
+        assertEquals(null, null.legacyExportAuditText())
+        assertEquals(
+            "Last exported: 21:00 - food_log_2026-05-06.csv",
+            exportedStatus(
+                exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
+            ).legacyExportAuditText(),
+        )
+        assertEquals(
+            "Last exported: 21:00",
+            exportedStatus(
+                exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
+            ).copy(legacyExportFileName = null).legacyExportAuditText(),
         )
     }
 
