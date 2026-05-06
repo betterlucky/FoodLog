@@ -83,9 +83,10 @@ class MainActivity : ComponentActivity() {
     private fun shareCsv(
         csv: String,
         fileName: String,
-    ) {
+    ): String {
         val path = csvShareHelper.saveCsv(csv, fileName)
         Toast.makeText(this, "Saved $path", Toast.LENGTH_LONG).show()
+        return path
     }
 }
 

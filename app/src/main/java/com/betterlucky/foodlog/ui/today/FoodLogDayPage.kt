@@ -50,12 +50,14 @@ import com.betterlucky.foodlog.data.entities.DailyStatusEntity
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
+import com.betterlucky.foodlog.domain.dailyclose.DailyCloseReadiness
+import com.betterlucky.foodlog.domain.dailyclose.closePromptText
+import com.betterlucky.foodlog.domain.dailyclose.dailyCloseReadiness
+import com.betterlucky.foodlog.domain.dailyclose.legacyExportStatusText
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 private val FoodLogCardShape = RoundedCornerShape(8.dp)
@@ -81,7 +83,7 @@ internal fun FoodLogDayPage(
     onEditFoodItem: (FoodItemEntity) -> Unit,
     onShowShortcuts: () -> Unit,
     onChooseLabelImage: () -> Unit,
-    onShareCsv: (String, String) -> Unit,
+    onExportLegacy: (LocalDate) -> Unit,
 ) {
     val dayState by viewModel.dayState(date).collectAsState()
     val focusManager = LocalFocusManager.current
@@ -89,7 +91,7 @@ internal fun FoodLogDayPage(
     val listState = rememberLazyListState()
     var expandedLoggedClumps by remember(date) { mutableStateOf(emptySet<String>()) }
 
-    val readiness = dailyReadiness(
+    val readiness = dailyCloseReadiness(
         dailyStatus = dayState.dailyStatus,
         pendingCount = dayState.pendingEntries.size,
         foodItemCount = dayState.items.size,
@@ -308,7 +310,7 @@ internal fun FoodLogDayPage(
                     pendingCount = dayState.pendingEntries.size,
                     foodItemCount = dayState.items.size,
                     hasDailyWeight = dayState.dailyWeight != null,
-                    onExportLegacy = { viewModel.exportLegacyCsv(date, onShareCsv) },
+                    onExportLegacy = { onExportLegacy(date) },
                 )
             }
         }
@@ -320,7 +322,7 @@ internal fun FoodLogDayPage(
 @Composable
 private fun FoodLogDateNavigator(
     selectedDate: LocalDate,
-    readiness: DailyReadiness,
+    readiness: DailyCloseReadiness,
     pendingCount: Int,
     itemCount: Int,
     hasDailyWeight: Boolean,
@@ -330,10 +332,10 @@ private fun FoodLogDateNavigator(
     onNextDay: () -> Unit,
 ) {
     val borderColor = when (readiness) {
-        DailyReadiness.AlreadyExported -> Color(0xFF2E7D60).copy(alpha = 0.55f)
-        DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
-        DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.error.copy(alpha = 0.42f)
-        DailyReadiness.NoFoodLogged -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
+        DailyCloseReadiness.AlreadyExported -> Color(0xFF2E7D60).copy(alpha = 0.55f)
+        DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
+        DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.error.copy(alpha = 0.42f)
+        DailyCloseReadiness.NoFoodLogged -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)
     }
     val status = listOf(
         when (itemCount) {
@@ -440,13 +442,13 @@ private fun TodayStatusSummary(
     totalCalories: Double,
     pendingCount: Int,
     dailyStatus: DailyStatusEntity?,
-    readiness: DailyReadiness,
+    readiness: DailyCloseReadiness,
 ) {
     val color = when (readiness) {
-        DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.error
-        DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary
-        DailyReadiness.NoFoodLogged,
-        DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
+        DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.error
+        DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.primary
+        DailyCloseReadiness.NoFoodLogged,
+        DailyCloseReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Card(
@@ -489,14 +491,14 @@ private fun TodayStatusSummary(
                     Text(
                         text = readiness.label,
                         color = color,
-                        fontWeight = if (readiness == DailyReadiness.ReadyToExport) FontWeight.SemiBold else FontWeight.Normal,
+                        fontWeight = if (readiness == DailyCloseReadiness.ReadyToExport) FontWeight.SemiBold else FontWeight.Normal,
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }
-            if (readiness != DailyReadiness.NoFoodLogged) {
+            if (readiness != DailyCloseReadiness.NoFoodLogged) {
                 Text(
-                    text = "Health Monitor: ${dailyStatus.exportText()}",
+                    text = "Lodestone: ${dailyStatus.legacyExportStatusText()}",
                     color = color,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -628,7 +630,7 @@ private fun DailyClosePrompt(
     hasDailyWeight: Boolean,
     onExportLegacy: () -> Unit,
 ) {
-    val readiness = dailyReadiness(
+    val readiness = dailyCloseReadiness(
         dailyStatus = dailyStatus,
         pendingCount = pendingCount,
         foodItemCount = foodItemCount,
@@ -640,10 +642,10 @@ private fun DailyClosePrompt(
         shape = FoodLogCardShape,
         colors = CardDefaults.cardColors(
             containerColor = when (readiness) {
-                DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.errorContainer
-                DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.primaryContainer
-                DailyReadiness.NoFoodLogged,
-                DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.surfaceVariant
+                DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.errorContainer
+                DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.primaryContainer
+                DailyCloseReadiness.NoFoodLogged,
+                DailyCloseReadiness.AlreadyExported -> MaterialTheme.colorScheme.surfaceVariant
             },
         ),
     ) {
@@ -663,15 +665,27 @@ private fun DailyClosePrompt(
                 Text(
                     text = readiness.closePromptText(),
                     color = when (readiness) {
-                        DailyReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
-                        DailyReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
-                        DailyReadiness.NoFoodLogged,
-                        DailyReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
+                        DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
+                        DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
+                        DailyCloseReadiness.NoFoodLogged,
+                        DailyCloseReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
+                if (readiness != DailyCloseReadiness.NoFoodLogged) {
+                    Text(
+                        text = "Lodestone: ${dailyStatus.legacyExportStatusText()}",
+                        color = when (readiness) {
+                            DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
+                            DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
+                            DailyCloseReadiness.AlreadyExported,
+                            DailyCloseReadiness.NoFoodLogged -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
-            if (readiness == DailyReadiness.ReadyToExport) {
+            if (readiness == DailyCloseReadiness.ReadyToExport) {
                 Button(onClick = onExportLegacy) {
                     Text("Export")
                 }
@@ -827,56 +841,6 @@ private fun PendingEntryRow(
 }
 
 // --- Helper functions ---
-
-internal enum class DailyReadiness(val label: String) {
-    NoFoodLogged("No food logged"),
-    ResolvePending("Resolve pending entries"),
-    ReadyToExport("Ready to export"),
-    AlreadyExported("Already exported"),
-}
-
-internal fun DailyReadiness.closePromptText(): String =
-    when (this) {
-        DailyReadiness.NoFoodLogged -> "No export needed yet."
-        DailyReadiness.ResolvePending -> "Resolve pending entries before Health Monitor export."
-        DailyReadiness.ReadyToExport -> "Export the Health Monitor CSV before closing this day."
-        DailyReadiness.AlreadyExported -> "Health Monitor export is current."
-    }
-
-internal fun dailyReadiness(
-    dailyStatus: DailyStatusEntity?,
-    pendingCount: Int,
-    foodItemCount: Int,
-    hasDailyWeight: Boolean,
-): DailyReadiness =
-    when {
-        pendingCount > 0 -> DailyReadiness.ResolvePending
-        foodItemCount == 0 && !hasDailyWeight -> DailyReadiness.NoFoodLogged
-        dailyStatus.isLegacyExportCurrent() -> DailyReadiness.AlreadyExported
-        else -> DailyReadiness.ReadyToExport
-    }
-
-private fun DailyStatusEntity?.isLegacyExportCurrent(): Boolean {
-    val exportedAt = this?.legacyExportedAt ?: return false
-    val changedAt = lastFoodChangedAt ?: return true
-    return changedAt <= exportedAt
-}
-
-private fun DailyStatusEntity?.exportText(): String {
-    val exportedAt = this?.legacyExportedAt ?: return "not exported"
-    val suffix = legacyExportFileName.exportFileSuffix()
-    return if (lastFoodChangedAt != null && lastFoodChangedAt > exportedAt) {
-        "changed since ${exportedAt.displayTime()}$suffix"
-    } else {
-        "exported ${exportedAt.displayTime()}$suffix"
-    }
-}
-
-private fun String?.exportFileSuffix(): String =
-    if (isNullOrBlank()) "" else " - $this"
-
-private fun Instant.displayTime(): String =
-    atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("HH:mm"))
 
 private fun pendingCountText(count: Int): String =
     when (count) {

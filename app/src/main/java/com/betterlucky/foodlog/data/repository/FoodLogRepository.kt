@@ -1048,13 +1048,26 @@ class FoodLogRepository(
     }
 
     suspend fun exportLegacyHealthCsv(date: LocalDate): ExportedCsv {
+        val exported = buildLegacyHealthCsv(date)
+        markLegacyHealthCsvExported(date, exported.fileName)
+        return exported
+    }
+
+    suspend fun buildLegacyHealthCsv(date: LocalDate): ExportedCsv {
         val items = foodItemDao.getActiveFoodItemsBetween(date, date)
         val weight = dailyWeightDao.getByDate(date)
         val fileName = healthMonitorFileName(date)
         return ExportedCsv(
             csv = legacyHealthCsvExporter.export(items, weight),
             fileName = fileName,
-        ).also { markLegacyExported(date, fileName) }
+        )
+    }
+
+    suspend fun markLegacyHealthCsvExported(
+        date: LocalDate,
+        fileName: String,
+    ) {
+        markLegacyExported(date, fileName)
     }
 
     suspend fun exportAuditCsv(date: LocalDate): ExportedCsv {

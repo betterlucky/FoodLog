@@ -1,0 +1,153 @@
+package com.betterlucky.foodlog.domain.dailyclose
+
+import com.betterlucky.foodlog.data.entities.DailyStatusEntity
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Test
+import java.time.Instant
+import java.time.LocalDate
+import java.util.TimeZone
+
+class DailyCloseReadinessTest {
+    private val date = LocalDate.parse("2026-05-06")
+    private val defaultTimeZone = TimeZone.getDefault()
+
+    @Before
+    fun setTimeZone() {
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/London"))
+    }
+
+    @After
+    fun restoreTimeZone() {
+        TimeZone.setDefault(defaultTimeZone)
+    }
+
+    @Test
+    fun emptyDayNeedsNoExport() {
+        assertEquals(
+            DailyCloseReadiness.NoFoodLogged,
+            dailyCloseReadiness(
+                dailyStatus = null,
+                pendingCount = 0,
+                foodItemCount = 0,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun pendingEntriesBlockExportEvenWhenFoodExists() {
+        assertEquals(
+            DailyCloseReadiness.ResolvePending,
+            dailyCloseReadiness(
+                dailyStatus = exportedStatus(),
+                pendingCount = 1,
+                foodItemCount = 1,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun foodRowsWithoutCurrentExportAreReadyToExport() {
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = null,
+                pendingCount = 0,
+                foodItemCount = 1,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun weightOnlyDayWithoutCurrentExportIsReadyToExport() {
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = null,
+                pendingCount = 0,
+                foodItemCount = 0,
+                hasDailyWeight = true,
+            ),
+        )
+    }
+
+    @Test
+    fun exportedDayIsCurrentWhenNothingChangedAfterExport() {
+        assertEquals(
+            DailyCloseReadiness.AlreadyExported,
+            dailyCloseReadiness(
+                dailyStatus = exportedStatus(
+                    exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
+                    changedAt = Instant.parse("2026-05-06T19:59:00Z"),
+                ),
+                pendingCount = 0,
+                foodItemCount = 1,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun changedFoodAfterExportRequiresFreshExport() {
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = exportedStatus(
+                    exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
+                    changedAt = Instant.parse("2026-05-06T20:01:00Z"),
+                ),
+                pendingCount = 0,
+                foodItemCount = 1,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun promptTextMatchesEachCloseState() {
+        assertEquals("No export needed yet.", DailyCloseReadiness.NoFoodLogged.closePromptText())
+        assertEquals(
+            "Resolve pending entries before Lodestone export.",
+            DailyCloseReadiness.ResolvePending.closePromptText(),
+        )
+        assertEquals(
+            "Export the Lodestone CSV before closing this day.",
+            DailyCloseReadiness.ReadyToExport.closePromptText(),
+        )
+        assertEquals("Lodestone export is current.", DailyCloseReadiness.AlreadyExported.closePromptText())
+    }
+
+    @Test
+    fun exportStatusTextShowsMissingStaleAndCurrentStates() {
+        assertEquals("not exported", null.legacyExportStatusText())
+        assertEquals(
+            "needs update since 21:00 - food_log_2026-05-06.csv",
+            exportedStatus(
+                exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
+                changedAt = Instant.parse("2026-05-06T20:01:00Z"),
+            ).legacyExportStatusText(),
+        )
+        assertEquals(
+            "exported 21:00 - food_log_2026-05-06.csv",
+            exportedStatus(
+                exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
+                changedAt = Instant.parse("2026-05-06T19:59:00Z"),
+            ).legacyExportStatusText(),
+        )
+    }
+
+    private fun exportedStatus(
+        exportedAt: Instant = Instant.parse("2026-05-06T20:00:00Z"),
+        changedAt: Instant? = Instant.parse("2026-05-06T19:59:00Z"),
+    ): DailyStatusEntity =
+        DailyStatusEntity(
+            logDate = date,
+            legacyExportedAt = exportedAt,
+            lastFoodChangedAt = changedAt,
+            legacyExportFileName = "food_log_2026-05-06.csv",
+        )
+}

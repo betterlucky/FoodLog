@@ -599,14 +599,29 @@ class TodayViewModel(
         setSelectedDate(selectedDate.value.plusDays(1))
     }
 
-    fun exportLegacyCsv(date: LocalDate, onExported: (String, String) -> Unit) {
+    fun exportLegacyCsv(
+        date: LocalDate,
+        onExported: (String, String) -> String,
+        onAdvanceToDate: (LocalDate) -> Unit,
+    ) {
         viewModelScope.launch {
-            val exported = repository.exportLegacyHealthCsv(date)
-            onExported(exported.csv, exported.fileName)
+            runCatching {
+                val exported = repository.buildLegacyHealthCsv(date)
+                onExported(exported.csv, exported.fileName)
+                repository.markLegacyHealthCsvExported(date, exported.fileName)
+                exported.fileName
+            }.onSuccess { fileName ->
+                val nextDate = date.plusDays(1)
+                setSelectedDate(nextDate)
+                message.value = "Saved $fileName. Moved to $nextDate."
+                onAdvanceToDate(nextDate)
+            }.onFailure {
+                message.value = "Could not save Lodestone export."
+            }
         }
     }
 
-    fun exportAuditCsv(date: LocalDate, onExported: (String, String) -> Unit) {
+    fun exportAuditCsv(date: LocalDate, onExported: (String, String) -> String) {
         viewModelScope.launch {
             val exported = repository.exportAuditCsv(date)
             onExported(exported.csv, exported.fileName)

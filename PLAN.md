@@ -296,34 +296,34 @@ Near-term label polish:
 
 Implement two CSV exporters from Room rows only.
 
-Daily export is the primary workflow for Phase 1 and the near-term Health Monitor handoff. The user should be encouraged to export the day's report regularly rather than treating the export as an unbounded canonical log.
+Daily export is the primary workflow for Phase 1 and the near-term Lodestone handoff. The user should be encouraged to export the day's report regularly rather than treating the export as an unbounded canonical log.
 
 Exported CSV files are output artifacts, not source data. If food rows change after export, FoodLog should generate a fresh export from Room rather than editing an existing external CSV file.
 
-FoodLog writes the Health Monitor CSV to:
+FoodLog writes the Lodestone CSV to the historical Health Monitor import folder:
 
 ```text
 Downloads/FoodLogData
 ```
 
-Health Monitor should import the standard daily file from that subfolder.
+Lodestone should import the standard daily file from that subfolder. Keep `Downloads/FoodLogData` stable until the Lodestone importer is updated.
 
 Daily export status is tracked locally with a date-keyed status row:
 
-- `legacyExportedAt` is updated when the standard Health Monitor CSV is exported.
-- `legacyExportFileName` records the generated Health Monitor CSV filename.
+- `legacyExportedAt` is updated when the standard Lodestone CSV is exported.
+- `legacyExportFileName` records the generated Lodestone CSV filename.
 - `auditExportedAt` is updated when the audit CSV is exported.
 - `auditExportFileName` records the generated audit CSV filename.
 - `lastFoodChangedAt` is updated when confirmed food rows are added, edited, manually resolved, or removed.
 - The Today screen shows whether each export has happened for the selected date.
 - The Today screen shows when food rows changed after the last export.
-- The Today screen labels the primary handoff as `Health Monitor` while preserving the standard Health Monitor CSV contract.
+- The Today screen labels the primary handoff as `Lodestone` while preserving the legacy Health Monitor CSV contract and folder name.
 - The Today screen highlights pending entry count before export.
 - The Today screen shows a daily close readiness summary:
   - `No food logged` when the selected day has no confirmed food rows, no daily weight, and no pending entries.
   - `Resolve pending entries` when unresolved raw entries remain for the selected day.
-  - `Ready to export` when the selected day has confirmed food rows or a daily weight and the Health Monitor export is missing or stale.
-  - `Already exported` when the selected day has confirmed food rows or a daily weight and the Health Monitor export is current.
+  - `Ready to export` when the selected day has confirmed food rows or a daily weight and the Lodestone export is missing or stale.
+  - `Already exported` when the selected day has confirmed food rows or a daily weight and the Lodestone export is current.
 - Future ongoing-log append mode should use a separate append ledger so already-appended food rows are not duplicated.
 - FoodLog has a persisted day-boundary setting foundation:
   - `null` day boundary means normal calendar-day logging.
@@ -336,15 +336,16 @@ Daily export status is tracked locally with a date-keyed status row:
   - a boundary time field with text entry and picker support, defaulting to `03:00` when enabled
 - The Today screen shows a daily close prompt:
   - no export needed when the selected day is empty
-  - resolve pending entries before Health Monitor export when pending entries remain
-  - export the Health Monitor CSV when confirmed rows or a daily weight exist and the Health Monitor export is missing or stale
-  - confirm the Health Monitor export is current after export
-- Daily close is the only main-screen Health Monitor export action; avoid showing a second standalone export button.
+  - resolve pending entries before Lodestone export when pending entries remain
+  - export the Lodestone CSV when confirmed rows or a daily weight exist and the Lodestone export is missing or stale
+  - confirm the Lodestone export is current after export
+  - auto-advance to the next day after a successful export without treating the exported day as locked or closed
+- Daily close is the only main-screen Lodestone export action; avoid showing a second standalone export button.
 - The audit exporter is retained for developer/data tracing, but is not shown on the main Today screen.
 
 ### Daily Weight
 
-Daily weight is optional daily metadata for Health Monitor handoff:
+Daily weight is optional daily metadata for the Lodestone handoff:
 
 - Store one `DailyWeightEntity` per `logDate`.
 - Store the canonical value as kilograms (`weightKg`).
@@ -353,7 +354,7 @@ Daily weight is optional daily metadata for Health Monitor handoff:
 - `measuredTime` is always stored; blank UI time falls back to the current local time.
 - Daily weight is not a `FoodItemEntity` and never contributes to calorie totals.
 - Saving or editing weight marks the day as changed for export readiness.
-- The Health Monitor export emits weight as a timestamped row with:
+- The Lodestone export emits weight as a timestamped row with:
   - `item = weight`
   - `quantity = {weightKg} kg`
   - blank `calories_kcal`
@@ -362,7 +363,7 @@ Daily weight is optional daily metadata for Health Monitor handoff:
 
 ### `LegacyHealthCsvExporter`
 
-This exporter matches the retained sample CSV and is the Phase 1 health-monitor handoff format.
+This exporter matches the retained sample CSV and is the Phase 1 Lodestone handoff format. The class name remains legacy because the CSV schema and folder contract were inherited from Health Monitor.
 
 Header:
 
@@ -442,7 +443,7 @@ Add focused tests for Phase 1 behavior:
 - Daily weight can be saved, edited, exported as a `weight` row, and does not affect calorie totals.
 - OCR label parser extracts the tomato soup label as `33 kcal per 100g`, `83 kcal per cup`, prepared/cup serving, and obvious per-100g nutrients.
 - OCR/label logging can calculate grams and calories from package size, serving size, item count, and measured grams/millilitres.
-- Label-scanned products log into daily totals and the Health Monitor CSV like other food rows.
+- Label-scanned products log into daily totals and the Lodestone CSV like other food rows.
 - `LegacyHealthCsvExporter` header matches the sample CSV exactly.
 - `AuditCsvExporter` header matches the rich schema exactly.
 - CSV export includes active rows, handles blank times, and escapes commas/quotes/newlines.
@@ -467,7 +468,7 @@ Next, choose between:
 
 - Label/manual product polish, if awkward labels still feel clunky after real use.
 - Shortcut/product polish, if the goal is making daily manual use faster and less error-prone.
-- Daily close/export polish, if the next priority is making the Health Monitor handoff feel dependable.
+- Daily close/export polish, if the next priority is making the Lodestone handoff feel dependable.
 
 Prefer local unit tests for parser, export, and totals logic. Use instrumented tests only where Room or Android framework behavior makes that necessary.
 

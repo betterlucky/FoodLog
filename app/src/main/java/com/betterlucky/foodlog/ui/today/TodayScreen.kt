@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun TodayScreen(
     viewModel: TodayViewModel,
-    onShareCsv: (String, String) -> Unit,
+    onShareCsv: (String, String) -> String,
     onTakeLabelPhoto: () -> Unit,
     onChooseLabelImage: () -> Unit,
 ) {
@@ -88,6 +88,14 @@ fun TodayScreen(
         pagerScope.launch {
             pagerState.scrollToPage(pageForDate(date))
         }
+    }
+
+    fun exportLegacyAndAdvance(date: LocalDate) {
+        viewModel.exportLegacyCsv(
+            date = date,
+            onExported = onShareCsv,
+            onAdvanceToDate = ::jumpToDate,
+        )
     }
 
     DayStatePreloader(viewModel = viewModel, selectedDate = uiState.selectedDate)
@@ -158,7 +166,7 @@ fun TodayScreen(
                         },
                         onShowShortcuts = { showingShortcuts = true },
                         onChooseLabelImage = { choosingLabelImage = true },
-                        onShareCsv = onShareCsv,
+                        onExportLegacy = ::exportLegacyAndAdvance,
                     )
                     if (!isSettledPage) {
                         Box(

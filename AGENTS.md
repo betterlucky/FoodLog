@@ -5,7 +5,7 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 ## Current Product State
 
 - Phase 1 is local-only Kotlin/Compose/Room.
-- Deterministic parsing, shortcuts/defaults, pending resolution, logged-item editing/removal, daily weight, daily close status, and Health Monitor CSV export are implemented.
+- Deterministic parsing, shortcuts/defaults, pending resolution, logged-item editing/removal, daily weight, daily close status, and Lodestone CSV export are implemented.
 - Local on-device OCR label scanning and the logging wizard are implemented.
 - Barcode logging was tried and is dropped for now. Do not add barcode/cache fields or Open Food Facts work unless the plan is explicitly reopened.
 - OpenAI/backend features, leftovers, corrections, fuzzy matching, and conversational summaries are out of scope for the current local core.
@@ -15,7 +15,7 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 - Near-term work should make the existing daily workflow more dependable before adding new capture modes.
 - Prefer label/manual product polish, shortcut/product polish, and daily close/export polish.
 - Treat barcode lookup as a parked experiment, not a missing required feature.
-- Keep Health Monitor CSV export as the daily handoff contract.
+- Keep the Lodestone CSV export as the daily handoff contract. Lodestone still imports from the historical `Downloads/FoodLogData` folder for now.
 
 ## Working Rules
 
@@ -35,7 +35,7 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 - `app/src/main/java/com/betterlucky/foodlog/domain/label/LabelPortionResolver.kt` resolves label amounts into calories/grams.
 - `app/src/main/java/com/betterlucky/foodlog/ui/today/TodayViewModel.kt` owns Today screen state and wizard behavior.
 - `app/src/main/java/com/betterlucky/foodlog/ui/today/TodayScreen.kt` is the current main UI surface.
-- `app/src/main/java/com/betterlucky/foodlog/domain/export/LegacyHealthCsvExporter.kt` defines the Health Monitor export contract.
+- `app/src/main/java/com/betterlucky/foodlog/domain/export/LegacyHealthCsvExporter.kt` defines the legacy Health Monitor CSV contract now consumed by Lodestone.
 
 ## Verification
 
@@ -61,4 +61,4 @@ The smoke script should preserve app data across ordinary reinstalls. It uses th
 
 Do not fix install/signature problems with a plain `adb uninstall com.betterlucky.foodlog`; that wipes local FoodLog data. Use the smoke script's guarded reinstall path or take an app-private data backup first.
 
-Good next smoke scenario: log one OCR/label-derived food row, add one daily weight, export Health Monitor CSV, and confirm the day reports as exported/current.
+Good next smoke scenario: log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current.

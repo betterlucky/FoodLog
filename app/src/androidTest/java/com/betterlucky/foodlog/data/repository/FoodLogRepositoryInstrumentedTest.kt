@@ -13,6 +13,8 @@ import com.betterlucky.foodlog.data.entities.ProductSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
+import com.betterlucky.foodlog.domain.dailyclose.DailyCloseReadiness
+import com.betterlucky.foodlog.domain.dailyclose.dailyCloseReadiness
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.util.DateTimeProvider
@@ -1288,12 +1290,42 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun generatedLegacyExportCanBeMarkedOnlyAfterFileSaveSucceeds() = runTest {
+        repository.seedDefaults()
+        repository.submitText("tea")
+
+        val generatedExport = repository.buildLegacyHealthCsv(today)
+        var status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals("food_log_2026-04-24.csv", generatedExport.fileName)
+        assertEquals(null, status?.legacyExportedAt)
+        assertEquals(null, status?.legacyExportFileName)
+
+        repository.markLegacyHealthCsvExported(today, generatedExport.fileName)
+        status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(now, status?.legacyExportedAt)
+        assertEquals("food_log_2026-04-24.csv", status?.legacyExportFileName)
+    }
+
+    @Test
     fun foodChangesAfterExportMarkDayAsChangedSinceExport() = runTest {
         repository.seedDefaults()
         val parsedResult = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
 
         dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
         repository.exportLegacyHealthCsv(today).csv
+        var status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(
+            DailyCloseReadiness.AlreadyExported,
+            dailyCloseReadiness(
+                dailyStatus = status,
+                pendingCount = 0,
+                foodItemCount = 1,
+                hasDailyWeight = false,
+            ),
+        )
 
         dateTimeProvider.now = Instant.parse("2026-04-24T12:30:00Z")
         repository.updateFoodItem(
@@ -1305,10 +1337,19 @@ class FoodLogRepositoryInstrumentedTest {
             consumedTime = localTime,
             notes = null,
         )
-        var status = database.dailyStatusDao().observeByDate(today).first()
+        status = database.dailyStatusDao().observeByDate(today).first()
 
         assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
         assertEquals(Instant.parse("2026-04-24T12:30:00Z"), status?.lastFoodChangedAt)
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = status,
+                pendingCount = 0,
+                foodItemCount = 1,
+                hasDailyWeight = false,
+            ),
+        )
 
         dateTimeProvider.now = Instant.parse("2026-04-24T13:00:00Z")
         repository.exportLegacyHealthCsv(today).csv
@@ -1316,6 +1357,62 @@ class FoodLogRepositoryInstrumentedTest {
 
         assertEquals(Instant.parse("2026-04-24T13:00:00Z"), status?.legacyExportedAt)
         assertEquals(Instant.parse("2026-04-24T12:30:00Z"), status?.lastFoodChangedAt)
+    }
+
+    @Test
+    fun removingFoodAfterExportMarksDayAsChangedSinceExport() = runTest {
+        repository.seedDefaults()
+        val parsedResult = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
+        repository.exportLegacyHealthCsv(today)
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:15:00Z")
+        val removeResult = repository.removeFoodItem(parsedResult.foodItemId)
+        val status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(FoodLogRepository.FoodItemRemoveResult.Removed, removeResult)
+        assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
+        assertEquals(Instant.parse("2026-04-24T12:15:00Z"), status?.lastFoodChangedAt)
+        assertEquals(
+            DailyCloseReadiness.NoFoodLogged,
+            dailyCloseReadiness(
+                dailyStatus = status,
+                pendingCount = 0,
+                foodItemCount = 0,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
+    fun dailyWeightChangeAfterExportMarksDayAsChangedSinceExport() = runTest {
+        repository.seedDefaults()
+        repository.submitText("tea")
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
+        repository.exportLegacyHealthCsv(today)
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:20:00Z")
+        val weightResult = repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.6,
+            measuredTime = LocalTime.parse("07:15"),
+        )
+        val status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(FoodLogRepository.DailyWeightResult.Saved, weightResult)
+        assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
+        assertEquals(Instant.parse("2026-04-24T12:20:00Z"), status?.lastFoodChangedAt)
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = status,
+                pendingCount = 0,
+                foodItemCount = 1,
+                hasDailyWeight = true,
+            ),
+        )
     }
 
     private fun foodItem(
