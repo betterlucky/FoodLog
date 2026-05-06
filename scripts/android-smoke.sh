@@ -30,8 +30,18 @@ fi
 
 env "${GRADLE_ENV[@]}" ./gradlew assembleDebug
 
-if ! "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk; then
-    echo "Install failed; attempting data-preserving reinstall for $PACKAGE." >&2
+INSTALL_OUTPUT=""
+if ! INSTALL_OUTPUT="$("$ADB" install -r app/build/outputs/apk/debug/app-debug.apk 2>&1)"; then
+    echo "$INSTALL_OUTPUT" >&2
+    if [[ "$INSTALL_OUTPUT" != *"INSTALL_FAILED_UPDATE_INCOMPATIBLE"* &&
+        "$INSTALL_OUTPUT" != *"INSTALL_FAILED_INCONSISTENT_CERTIFICATES"* &&
+        "$INSTALL_OUTPUT" != *"INSTALL_FAILED_VERSION_DOWNGRADE"* ]]; then
+        echo "Install failed for a reason that is not safe to fix with uninstall/reinstall." >&2
+        echo "Refusing to uninstall $PACKAGE." >&2
+        exit 1
+    fi
+
+    echo "Install failed with an update/signature incompatibility; attempting data-preserving reinstall for $PACKAGE." >&2
     DATA_BACKUP="$(mktemp "${TMPDIR:-/tmp}/foodlog-data-backup.XXXXXX.tar")"
     if "$ADB" exec-out run-as "$PACKAGE" sh -c \
         "cd /data/data/$PACKAGE || exit 1; paths=''; for d in databases shared_prefs files no_backup; do [ -e \"\$d\" ] && paths=\"\$paths \$d\"; done; if [ -n \"\$paths\" ]; then tar -cf - \$paths; fi" \
@@ -55,6 +65,10 @@ if ! "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk; then
 
     "$ADB" uninstall "$PACKAGE" >/dev/null || true
     "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk
+    if ! "$ADB" shell pm list packages "$PACKAGE" | grep -qx "package:$PACKAGE"; then
+        echo "Reinstall command completed, but $PACKAGE is not installed." >&2
+        exit 1
+    fi
 
     if [[ -s "$DATA_BACKUP" ]]; then
         "$ADB" exec-in run-as "$PACKAGE" sh -c "cd /data/data/$PACKAGE && tar -xf -" < "$DATA_BACKUP"
