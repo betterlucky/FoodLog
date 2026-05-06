@@ -20,6 +20,7 @@ data class LabelPortionResolution(
     val amount: Double?,
     val unit: String?,
     val grams: Double?,
+    val milliliters: Double? = null,
     val calories: Double?,
     val isValidAmount: Boolean,
 )
@@ -36,6 +37,7 @@ object LabelPortionResolver {
                 amount = null,
                 unit = null,
                 grams = null,
+                milliliters = null,
                 calories = null,
                 isValidAmount = false,
             )
@@ -70,14 +72,16 @@ object LabelPortionResolver {
         amountText: String,
     ): LabelPortionResolution {
         val amount = amountText.toItemAmount()
-            ?: return LabelPortionResolution(null, null, null, null, isValidAmount = false)
+            ?: return LabelPortionResolution(null, null, null, null, null, isValidAmount = false)
         val unit = itemUnit(facts)
         val grams = gramsForItemAmount(facts, amount)
-        val calories = caloriesForItemAmount(facts, amount, grams)
+        val milliliters = millilitersForItemAmount(facts, amount)
+        val calories = caloriesForItemAmount(facts, amount, grams, milliliters)
         return LabelPortionResolution(
             amount = amount,
             unit = unit,
             grams = grams,
+            milliliters = milliliters,
             calories = calories,
             isValidAmount = true,
         )
@@ -89,11 +93,12 @@ object LabelPortionResolver {
     ): LabelPortionResolution {
         val match = Regex("""^(\d+(?:[.,]\d+)?)\s*(g|ml)$""", RegexOption.IGNORE_CASE)
             .matchEntire(amountText.replace(" ", ""))
-            ?: return LabelPortionResolution(null, null, null, null, isValidAmount = false)
+            ?: return LabelPortionResolution(null, null, null, null, null, isValidAmount = false)
         val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }
-            ?: return LabelPortionResolution(null, null, null, null, isValidAmount = false)
+            ?: return LabelPortionResolution(null, null, null, null, null, isValidAmount = false)
         val unit = match.groupValues[2].lowercase(Locale.US)
         val grams = if (unit == "g") amount else null
+        val milliliters = if (unit == "ml") amount else null
         val calories = when (unit) {
             "g" -> facts.kcalPer100g?.let { it * amount / 100.0 }
             "ml" -> facts.kcalPer100ml?.let { it * amount / 100.0 }
@@ -103,6 +108,7 @@ object LabelPortionResolver {
             amount = amount,
             unit = unit,
             grams = grams,
+            milliliters = milliliters,
             calories = calories,
             isValidAmount = true,
         )
@@ -131,6 +137,7 @@ object LabelPortionResolver {
         facts: LabelNutritionFacts,
         amount: Double,
         grams: Double?,
+        milliliters: Double?,
     ): Double? {
         val servingAmount = facts.servingAmount?.takeIf { it > 0.0 }
         if (servingAmount != null && facts.kcalPerServing != null && facts.servingItemUnit != null) {
@@ -141,8 +148,25 @@ object LabelPortionResolver {
             return facts.kcalPer100g * grams / 100.0
         }
 
+        if (milliliters != null && facts.kcalPer100ml != null) {
+            return facts.kcalPer100ml * milliliters / 100.0
+        }
+
         if (nearly(amount, 1.0) && facts.kcalPerServing != null) {
             return facts.kcalPerServing
+        }
+
+        return null
+    }
+
+    private fun millilitersForItemAmount(
+        facts: LabelNutritionFacts,
+        amount: Double,
+    ): Double? {
+        val packageMilliliters = facts.packageSizeMilliliters
+        val packageCount = facts.packageItemCount?.takeIf { it > 0.0 }
+        if (packageMilliliters != null && packageCount != null) {
+            return amount * packageMilliliters / packageCount
         }
 
         return null

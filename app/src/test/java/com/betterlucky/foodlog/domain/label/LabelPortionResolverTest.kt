@@ -74,6 +74,25 @@ class LabelPortionResolverTest {
     }
 
     @Test
+    fun oneBottleMultipackResolvesMillilitersFromPackageVolumeAndPer100ml() {
+        val facts = LabelNutritionFacts(
+            rawText = "",
+            kcalPer100ml = 45.0,
+            packageSizeMilliliters = 1000.0,
+            packageItemCount = 4.0,
+            packageItemUnit = "bottle",
+        )
+
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.ITEMS, "1")
+
+        assertTrue(resolved.isValidAmount)
+        assertEquals(1.0, resolved.amount ?: 0.0, 0.001)
+        assertEquals("bottle", resolved.unit)
+        assertEquals(250.0, resolved.milliliters ?: 0.0, 0.001)
+        assertEquals(112.5, resolved.calories ?: 0.0, 0.001)
+    }
+
+    @Test
     fun measureRejectsBareNumbers() {
         val facts = LabelNutritionFacts(rawText = "", kcalPer100g = 402.0)
 

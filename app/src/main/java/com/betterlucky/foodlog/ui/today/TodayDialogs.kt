@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,7 +33,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimeInput
@@ -55,10 +55,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
+import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
@@ -169,28 +171,67 @@ private fun ShortcutRow(
                 .fillMaxWidth()
                 .padding(12.dp),
         ) {
+            Text(text = userDefault.trigger, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = shortcutSummaryText(userDefault),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = userDefault.trigger, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        text = "${userDefault.name} - ${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                TextButton(onClick = onEdit) {
+                    Text("Edit")
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = onEdit) {
-                        Text("Edit")
-                    }
-                    TextButton(onClick = onForget) {
-                        Text("Forget")
-                    }
+                TextButton(onClick = onForget) {
+                    Text("Forget")
                 }
             }
+        }
+    }
+}
+
+private fun shortcutSummaryText(userDefault: UserDefaultEntity): String {
+    val base = "${userDefault.name} - ${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}"
+    val usual = userDefault.defaultAmount?.let { amount ->
+        val calories = userDefault.calories * amount
+        "usual ${amount.formatAmount()} ${pluralizedShortcutUnit(userDefault.unit, amount)} (${calories.formatAmount()} kcal)"
+    }
+    val stale = userDefault.nutritionBasisName
+        ?.takeIf { it != userDefault.name }
+        ?.let { "label info from $it" }
+    return listOf(base, usual, stale).filterNotNull().joinToString(" · ")
+}
+
+private fun pluralizedShortcutUnit(
+    unit: String,
+    amount: Double,
+): String =
+    if (amount == 1.0 || unit.endsWith("s")) unit else "${unit}s"
+
+@Composable
+private fun ShortcutModeButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = ButtonDefaults.TextButtonContentPadding,
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+        }
+    } else {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            contentPadding = ButtonDefaults.TextButtonContentPadding,
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
@@ -199,12 +240,31 @@ private fun ShortcutRow(
 internal fun EditShortcutDialog(
     userDefault: UserDefaultEntity,
     onDismiss: () -> Unit,
-    onSave: (name: String, calories: String, unit: String, notes: String) -> Unit,
+    onSave: (
+        name: String,
+        calories: String,
+        unit: String,
+        notes: String,
+        defaultAmount: String,
+        portionMode: ShortcutPortionMode,
+        itemUnit: String,
+        itemSizeAmount: String,
+        itemSizeUnit: String,
+        kcalPer100g: String,
+        kcalPer100ml: String,
+    ) -> Unit,
 ) {
     var name by remember(userDefault.trigger) { mutableStateOf(userDefault.name) }
     var calories by remember(userDefault.trigger) { mutableStateOf(userDefault.calories.formatAmount()) }
     var unit by remember(userDefault.trigger) { mutableStateOf(userDefault.unit) }
     var notes by remember(userDefault.trigger) { mutableStateOf(userDefault.notes.orEmpty()) }
+    var defaultAmount by remember(userDefault.trigger) { mutableStateOf(userDefault.defaultAmount?.formatAmount().orEmpty()) }
+    var portionMode by remember(userDefault.trigger) { mutableStateOf(userDefault.portionMode) }
+    var itemUnit by remember(userDefault.trigger) { mutableStateOf(userDefault.itemUnit.orEmpty()) }
+    var itemSizeAmount by remember(userDefault.trigger) { mutableStateOf(userDefault.itemSizeAmount?.formatAmount().orEmpty()) }
+    var itemSizeUnit by remember(userDefault.trigger) { mutableStateOf(userDefault.itemSizeUnit.orEmpty()) }
+    var kcalPer100g by remember(userDefault.trigger) { mutableStateOf(userDefault.kcalPer100g?.formatAmount().orEmpty()) }
+    var kcalPer100ml by remember(userDefault.trigger) { mutableStateOf(userDefault.kcalPer100ml?.formatAmount().orEmpty()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -240,6 +300,80 @@ internal fun EditShortcutDialog(
                         label = { Text("Unit") },
                     )
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = defaultAmount,
+                        onValueChange = { defaultAmount = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Usual amount") },
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ShortcutModeButton(
+                        label = "Plain",
+                        selected = portionMode == ShortcutPortionMode.PLAIN,
+                        onClick = { portionMode = ShortcutPortionMode.PLAIN },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ShortcutModeButton(
+                        label = "Item",
+                        selected = portionMode == ShortcutPortionMode.ITEM,
+                        onClick = { portionMode = ShortcutPortionMode.ITEM },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ShortcutModeButton(
+                        label = "g/ml",
+                        selected = portionMode == ShortcutPortionMode.MEASURE,
+                        onClick = { portionMode = ShortcutPortionMode.MEASURE },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (portionMode != ShortcutPortionMode.PLAIN) {
+                    OutlinedTextField(
+                        value = itemUnit,
+                        onValueChange = { itemUnit = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Item unit") },
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = itemSizeAmount,
+                            onValueChange = { itemSizeAmount = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            label = { Text("Item size") },
+                        )
+                        OutlinedTextField(
+                            value = itemSizeUnit,
+                            onValueChange = { itemSizeUnit = it.lowercase() },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("g/ml") },
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = kcalPer100g,
+                            onValueChange = { kcalPer100g = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            label = { Text("kcal/100g") },
+                        )
+                        OutlinedTextField(
+                            value = kcalPer100ml,
+                            onValueChange = { kcalPer100ml = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            label = { Text("kcal/100ml") },
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
@@ -253,7 +387,23 @@ internal fun EditShortcutDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name, calories, unit, notes) }) {
+            Button(
+                onClick = {
+                    onSave(
+                        name,
+                        calories,
+                        unit,
+                        notes,
+                        defaultAmount,
+                        portionMode,
+                        itemUnit,
+                        itemSizeAmount,
+                        itemSizeUnit,
+                        kcalPer100g,
+                        kcalPer100ml,
+                    )
+                },
+            ) {
                 Text("Save")
             }
         },
@@ -943,6 +1093,7 @@ internal fun LoggingWizardDialog(
     onTimeChanged: (String) -> Unit,
     onTimeConfirmed: () -> Unit,
     onInputModeChanged: (LabelInputMode) -> Unit,
+    onPortionModeChanged: (Int, LabelInputMode, LoggingWizardPartDraft) -> Unit,
     onRemove: (() -> Unit)?,
     onSave: () -> Unit,
 ) {
@@ -970,7 +1121,10 @@ internal fun LoggingWizardDialog(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(title)
-                if (step == LoggingWizardStep.Portion && session.source == LoggingWizardSource.Label) {
+                if (
+                    step == LoggingWizardStep.Portion &&
+                    (session.source == LoggingWizardSource.Label || session.shortcutPortionMode != ShortcutPortionMode.PLAIN)
+                ) {
                     IconButton(onClick = { showingAmountHelp = true }) {
                         Icon(
                             imageVector = Icons.Outlined.Info,
@@ -992,6 +1146,7 @@ internal fun LoggingWizardDialog(
                 onPartChanged = onPartChanged,
                 onTimeChanged = onTimeChanged,
                 onInputModeChanged = onInputModeChanged,
+                onPortionModeChanged = onPortionModeChanged,
             )
         },
         confirmButton = {
@@ -1025,7 +1180,7 @@ internal fun LoggingWizardDialog(
             onDismissRequest = { showingAmountHelp = false },
             title = { Text("Amount entry") },
             text = {
-                Text("The amount and calories boxes are editable. Amount accepts decimals, fractions, and text such as 0.75, 1/3, one third, or two thirds of a can.")
+                Text(portionHelpText(session))
             },
             confirmButton = {
                 TextButton(onClick = { showingAmountHelp = false }) {
@@ -1035,6 +1190,14 @@ internal fun LoggingWizardDialog(
         )
     }
 }
+
+private fun portionHelpText(session: LoggingWizardSession): String =
+    when (session.labelInputMode) {
+        LabelInputMode.ITEMS ->
+            "Use items for things you count, such as a pot, can, bar, bottle, or bag. The slider starts at one item and can be adjusted; this is your portion, not a suggested serving."
+        LabelInputMode.MEASURE ->
+            "Use g/ml when you want to log by weight or volume. If the label gives a package, item, or serving size, the slider uses that as an upper bound only; it is not a recommendation."
+    }
 
 @Composable
 private fun LoggingWizardBody(
@@ -1047,6 +1210,7 @@ private fun LoggingWizardBody(
     onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
     onTimeChanged: (String) -> Unit,
     onInputModeChanged: (LabelInputMode) -> Unit,
+    onPortionModeChanged: (Int, LabelInputMode, LoggingWizardPartDraft) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         WizardContextText(session = session, completedCount = completedCount, pendingCount = pendingCount)
@@ -1069,6 +1233,7 @@ private fun LoggingWizardBody(
             onPartChanged = onPartChanged,
             onTimeChanged = onTimeChanged,
             onInputModeChanged = onInputModeChanged,
+            onPortionModeChanged = onPortionModeChanged,
         )
     }
 }
@@ -1082,12 +1247,20 @@ private fun WizardStepContent(
     onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
     onTimeChanged: (String) -> Unit,
     onInputModeChanged: (LabelInputMode) -> Unit,
+    onPortionModeChanged: (Int, LabelInputMode, LoggingWizardPartDraft) -> Unit,
 ) {
     when (step) {
         LoggingWizardStep.Product -> WizardProductStep(currentIndex, currentPart, onPartChanged)
         LoggingWizardStep.Portion -> {
             if (currentPart != null) {
-                WizardPortionStep(session, currentIndex, currentPart, onPartChanged, onInputModeChanged)
+                WizardPortionStep(
+                    session = session,
+                    currentIndex = currentIndex,
+                    currentPart = currentPart,
+                    onPartChanged = onPartChanged,
+                    onInputModeChanged = onInputModeChanged,
+                    onPortionModeChanged = onPortionModeChanged,
+                )
             }
         }
         LoggingWizardStep.Calories -> WizardCaloriesStep(currentIndex, currentPart, onPartChanged)
@@ -1124,18 +1297,24 @@ private fun WizardPortionStep(
     currentPart: LoggingWizardPartDraft,
     onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
     onInputModeChanged: (LabelInputMode) -> Unit,
+    onPortionModeChanged: (Int, LabelInputMode, LoggingWizardPartDraft) -> Unit,
 ) {
-    if (session.source == LoggingWizardSource.Label && session.labelFacts != null) {
+    if (
+        session.labelFacts != null &&
+        (session.source == LoggingWizardSource.Label || session.shortcutPortionMode != ShortcutPortionMode.PLAIN)
+    ) {
         LabelWizardPortionStep(
             facts = session.labelFacts,
             inputMode = session.labelInputMode,
             part = currentPart,
             onInputModeChanged = { mode ->
-                onInputModeChanged(mode)
-                val resolved = LabelPortionResolver.resolve(session.labelFacts, mode, currentPart.amount)
-                onPartChanged(
+                val amountText = defaultAmountForMode(session.labelFacts, mode)
+                val resolved = LabelPortionResolver.resolve(session.labelFacts, mode, amountText)
+                onPortionModeChanged(
                     currentIndex,
+                    mode,
                     currentPart.copy(
+                        amount = amountText,
                         unit = resolved.unit ?: currentPart.unit,
                         calories = resolved.calories?.formatLabelNumber() ?: currentPart.calories,
                         deferred = false,
@@ -1145,10 +1324,34 @@ private fun WizardPortionStep(
             onPartChanged = { onPartChanged(currentIndex, it) },
         )
     } else {
+        val caloriesPerUnit = if (session.source == LoggingWizardSource.Shortcut) {
+            val amount = currentPart.amount.toDoubleOrNull()?.takeIf { it > 0.0 }
+            val calories = currentPart.calories.toDoubleOrNull()?.takeIf { it > 0.0 }
+            if (amount != null && calories != null) calories / amount else null
+        } else {
+            null
+        }
         AmountUnitFields(
             amount = currentPart.amount,
             unit = currentPart.unit,
-            onAmountChange = { onPartChanged(currentIndex, currentPart.copy(amount = it, deferred = false)) },
+            onAmountChange = { value ->
+                val updatedCalories = caloriesPerUnit
+                    ?.let { perUnit ->
+                        value.toDoubleOrNull()
+                            ?.takeIf { amount -> amount > 0.0 }
+                            ?.let { amount -> perUnit * amount }
+                    }
+                    ?.formatLabelNumber()
+                    ?: currentPart.calories
+                onPartChanged(
+                    currentIndex,
+                    currentPart.copy(
+                        amount = value,
+                        calories = updatedCalories,
+                        deferred = false,
+                    ),
+                )
+            },
             onUnitChange = { onPartChanged(currentIndex, currentPart.copy(unit = it, deferred = false)) },
         )
     }
@@ -1214,6 +1417,17 @@ private fun WizardTimeNotesStep(
             label = "Save as shortcut",
             onCheckedChange = { onPartChanged(currentIndex, currentPart.copy(saveAsShortcut = it)) },
         )
+        if (
+            session.source == LoggingWizardSource.Label &&
+            currentPart.saveAsShortcut &&
+            session.labelInputMode == LabelInputMode.ITEMS &&
+            currentPart.shortcutItemSizeAmount.isBlank()
+        ) {
+            LabelShortcutItemSizeFields(
+                part = currentPart,
+                onPartChanged = { onPartChanged(currentIndex, it) },
+            )
+        }
     }
 }
 
@@ -1368,13 +1582,13 @@ internal fun QuantityPickerDialog(
                         "⅓" to (1.0 / 3.0),
                         "⅔" to (2.0 / 3.0),
                     ).forEach { (label, value) ->
-                        OutlinedButton(
+                        val selected = parsedAmount?.let { (it - value).absoluteValue < 0.001 } == true
+                        ShortcutModeButton(
+                            label = label,
+                            selected = selected,
                             onClick = { amountText = value.formatAmount() },
                             modifier = Modifier.weight(1f),
-                            contentPadding = ButtonDefaults.TextButtonContentPadding,
-                        ) {
-                            Text(label, style = MaterialTheme.typography.bodyMedium)
-                        }
+                        )
                     }
                 }
             }
@@ -1466,36 +1680,34 @@ private fun LabelWizardPortionStep(
 ) {
     val itemUnit = LabelPortionResolver.itemUnit(facts)
     val resolvedPortion = LabelPortionResolver.resolve(facts, inputMode, part.amount)
-    val sliderAmount = part.amount.toFloatOrNull()?.coerceIn(0.1f, 1f) ?: 0.1f
+    val measureSliderRange = measureSliderRange(facts)
+    val sliderAmount = part.amount.toFloatOrNull()?.coerceIn(0.1f, 1f) ?: 1f
     val sliderPortionLabel = resolvedPortion.amount
         ?.let { LabelPortionResolver.displayAmount(it, itemUnit).replaceFirstChar { char -> char.titlecase() } }
         ?: "Choose amount"
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "Items",
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
+            textAlign = TextAlign.End,
             fontWeight = if (inputMode == LabelInputMode.ITEMS) FontWeight.SemiBold else null,
         )
-        Switch(
-            checked = inputMode == LabelInputMode.MEASURE,
-            onCheckedChange = { checked ->
-                onInputModeChanged(if (checked) LabelInputMode.MEASURE else LabelInputMode.ITEMS)
-            },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                uncheckedThumbColor = MaterialTheme.colorScheme.primary,
-                uncheckedTrackColor = MaterialTheme.colorScheme.surface,
-                uncheckedBorderColor = MaterialTheme.colorScheme.primary,
-            ),
+        PortionModeToggle(
+            inputMode = inputMode,
+            onInputModeChanged = onInputModeChanged,
         )
         Text(
             text = "g/ml",
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 8.dp),
+            textAlign = TextAlign.Start,
             fontWeight = if (inputMode == LabelInputMode.MEASURE) FontWeight.SemiBold else null,
         )
     }
@@ -1507,6 +1719,8 @@ private fun LabelWizardPortionStep(
         )
         PortionAmountSlider(
             value = sliderAmount,
+            minValue = 0.1f,
+            maxValue = 1f,
             onValueChange = { rawValue ->
                 val snapped = rawValue.snapToTenth()
                 val resolved = LabelPortionResolver.resolve(facts, inputMode, snapped.toDouble().formatLabelNumber())
@@ -1538,13 +1752,44 @@ private fun LabelWizardPortionStep(
             onUnitChange = {},
         )
     } else {
+        measureSliderRange?.let { range ->
+            val value = part.amount.measureAmountValue()
+                ?.toFloat()
+                ?.coerceIn(1f, range.maxAmount.toFloat())
+                ?: range.maxAmount.toFloat()
+            Text(
+                text = "Up to ${range.maxAmount.formatLabelNumber()}${range.unit} from label",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            PortionAmountSlider(
+                value = value,
+                onValueChange = { rawValue ->
+                    val snapped = rawValue.roundMeasureAmount()
+                    val amountText = "${snapped.formatLabelNumber()}${range.unit}"
+                    val resolved = LabelPortionResolver.resolve(facts, inputMode, amountText)
+                    onPartChanged(
+                        part.copy(
+                            amount = amountText,
+                            unit = resolved.unit ?: range.unit,
+                            calories = resolved.calories?.formatLabelNumber() ?: part.calories,
+                            deferred = false,
+                        ),
+                    )
+                },
+                minValue = 1f,
+                maxValue = range.maxAmount.toFloat(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         OutlinedTextField(
-            value = part.amount,
+            value = part.amount.measureAmountInputText(),
             onValueChange = { value ->
-                val resolved = LabelPortionResolver.resolve(facts, inputMode, value)
+                val amountText = measureAmountText(value, measureSliderRange?.unit ?: part.unit)
+                val resolved = LabelPortionResolver.resolve(facts, inputMode, amountText)
                 onPartChanged(
                     part.copy(
-                        amount = value,
+                        amount = amountText,
                         unit = resolved.unit ?: part.unit,
                         calories = resolved.calories?.formatLabelNumber() ?: part.calories,
                         deferred = false,
@@ -1557,15 +1802,20 @@ private fun LabelWizardPortionStep(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         )
     }
-    val portionQuantity = resolvedPortion.amount?.let { amount ->
-        if (inputMode == LabelInputMode.ITEMS) {
-            LabelPortionResolver.displayAmount(amount, resolvedPortion.unit.orEmpty())
-        } else {
-            "${amount.formatLabelNumber()} ${resolvedPortion.unit.orEmpty()}"
-        }
-    }.orEmpty()
+    val portionQuantity = when (inputMode) {
+        LabelInputMode.ITEMS -> resolvedPortion.amount
+            ?.let { LabelPortionResolver.displayAmount(it, resolvedPortion.unit.orEmpty()) }
+            .orEmpty()
+        LabelInputMode.MEASURE -> equivalentItemText(facts, resolvedPortion.amount, resolvedPortion.unit)
+            .orEmpty()
+    }
     val portionWeight = resolvedPortion.grams?.let { "${it.formatLabelNumber()}g" }.orEmpty()
-    val summary = listOf(portionQuantity.takeIf { it.isNotBlank() }, portionWeight.takeIf { it.isNotBlank() })
+    val portionVolume = resolvedPortion.milliliters?.let { "${it.formatLabelNumber()}ml" }.orEmpty()
+    val summary = listOf(
+        portionQuantity.takeIf { it.isNotBlank() },
+        portionWeight.takeIf { inputMode == LabelInputMode.ITEMS && it.isNotBlank() },
+        portionVolume.takeIf { inputMode == LabelInputMode.ITEMS && it.isNotBlank() },
+    )
         .filterNotNull()
         .joinToString(" · ")
     if (summary.isNotBlank()) {
@@ -1573,6 +1823,180 @@ private fun LabelWizardPortionStep(
             text = summary,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun PortionModeToggle(
+    inputMode: LabelInputMode,
+    onInputModeChanged: (LabelInputMode) -> Unit,
+) {
+    val selectedRight = inputMode == LabelInputMode.MEASURE
+    val borderColor = MaterialTheme.colorScheme.primary
+    val thumbColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.surface
+
+    Canvas(
+        modifier = Modifier
+            .width(68.dp)
+            .height(44.dp)
+            .clickable {
+                onInputModeChanged(
+                    if (selectedRight) LabelInputMode.ITEMS else LabelInputMode.MEASURE,
+                )
+            },
+    ) {
+        val strokeWidth = 3.dp.toPx()
+        val trackHeight = 34.dp.toPx()
+        val trackWidth = size.width
+        val trackTop = (size.height - trackHeight) / 2f
+        val radius = trackHeight / 2f
+        val thumbRadius = 13.dp.toPx()
+        val thumbX = if (selectedRight) {
+            trackWidth - radius
+        } else {
+            radius
+        }
+
+        drawRoundRect(
+            color = trackColor,
+            topLeft = Offset(0f, trackTop),
+            size = Size(trackWidth, trackHeight),
+            cornerRadius = CornerRadius(radius, radius),
+        )
+        drawRoundRect(
+            color = borderColor,
+            topLeft = Offset(strokeWidth / 2f, trackTop + strokeWidth / 2f),
+            size = Size(trackWidth - strokeWidth, trackHeight - strokeWidth),
+            cornerRadius = CornerRadius(radius, radius),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = strokeWidth),
+        )
+        drawCircle(
+            color = thumbColor,
+            radius = thumbRadius,
+            center = Offset(thumbX, size.height / 2f),
+        )
+    }
+}
+
+private data class MeasureSliderRange(
+    val maxAmount: Double,
+    val unit: String,
+)
+
+private fun measureSliderRange(
+    facts: com.betterlucky.foodlog.domain.label.LabelNutritionFacts,
+): MeasureSliderRange? {
+    val servingAmount = facts.servingAmount?.takeIf { it > 0.0 }
+    if (servingAmount != null) {
+        facts.servingSizeGrams?.takeIf { it > 1.0 }?.let {
+            return MeasureSliderRange(it / servingAmount, "g")
+        }
+    }
+    facts.packageSizeGrams?.takeIf { it > 1.0 }?.let { return MeasureSliderRange(it, "g") }
+    facts.packageSizeMilliliters?.takeIf { it > 1.0 }?.let { return MeasureSliderRange(it, "ml") }
+    val itemCount = facts.packageItemCount?.takeIf { it > 0.0 }
+    if (itemCount != null) {
+        facts.packageSizeGrams?.takeIf { it > 1.0 }?.let { return MeasureSliderRange(it / itemCount, "g") }
+        facts.packageSizeMilliliters?.takeIf { it > 1.0 }?.let { return MeasureSliderRange(it / itemCount, "ml") }
+    }
+    facts.servingSizeGrams?.takeIf { it > 1.0 }?.let { return MeasureSliderRange(it, "g") }
+    return null
+}
+
+private fun equivalentItemText(
+    facts: com.betterlucky.foodlog.domain.label.LabelNutritionFacts,
+    amount: Double?,
+    unit: String?,
+): String? {
+    val measuredAmount = amount?.takeIf { it > 0.0 } ?: return null
+    val measuredUnit = unit?.takeIf { it == "g" || it == "ml" } ?: return null
+    val itemUnit = facts.servingItemUnit ?: facts.packageItemUnit ?: return null
+    val fullItemSize = when {
+        measuredUnit == "g" && facts.servingAmount?.takeIf { it > 0.0 } != null && facts.servingSizeGrams != null ->
+            facts.servingSizeGrams / facts.servingAmount
+        measuredUnit == "g" && facts.packageSizeGrams != null && facts.packageItemCount?.takeIf { it > 0.0 } != null ->
+            facts.packageSizeGrams / facts.packageItemCount
+        measuredUnit == "ml" && facts.packageSizeMilliliters != null && facts.packageItemCount?.takeIf { it > 0.0 } != null ->
+            facts.packageSizeMilliliters / facts.packageItemCount
+        else -> null
+    }?.takeIf { it > 0.0 } ?: return null
+    return LabelPortionResolver.displayAmount(measuredAmount / fullItemSize, itemUnit)
+}
+
+private fun defaultAmountForMode(
+    facts: com.betterlucky.foodlog.domain.label.LabelNutritionFacts,
+    inputMode: LabelInputMode,
+): String =
+    when (inputMode) {
+        LabelInputMode.ITEMS -> "1"
+        LabelInputMode.MEASURE -> {
+            val range = measureSliderRange(facts)
+            if (range != null) {
+                "${range.maxAmount.formatLabelNumber()}${range.unit}"
+            } else if (facts.kcalPer100ml != null && facts.kcalPer100g == null) {
+                "1ml"
+            } else {
+                "1g"
+            }
+        }
+    }
+
+private fun String.measureAmountValue(): Double? =
+    Regex("""^\s*(\d+(?:[.,]\d+)?)\s*(?:g|ml)?\s*$""", RegexOption.IGNORE_CASE)
+        .matchEntire(this)
+        ?.groupValues
+        ?.get(1)
+        ?.replace(',', '.')
+        ?.toDoubleOrNull()
+
+private fun String.measureAmountInputText(): String =
+    measureAmountValue()?.formatLabelNumber() ?: this
+
+private fun measureAmountText(
+    value: String,
+    unit: String,
+): String {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return trimmed
+    if (Regex("""(?:g|ml)\s*$""", RegexOption.IGNORE_CASE).containsMatchIn(trimmed)) return trimmed
+    val normalizedUnit = unit.takeIf { it == "g" || it == "ml" } ?: "g"
+    return "$trimmed$normalizedUnit"
+}
+
+private fun Float.roundMeasureAmount(): Double =
+    if (this < 10f) {
+        (this * 10f).toInt() / 10.0
+    } else {
+        toInt().toDouble()
+    }.coerceAtLeast(1.0)
+
+@Composable
+private fun LabelShortcutItemSizeFields(
+    part: LoggingWizardPartDraft,
+    onPartChanged: (LoggingWizardPartDraft) -> Unit,
+) {
+    Text(
+        text = "Shortcut item size",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = part.shortcutItemSizeAmount,
+            onValueChange = { onPartChanged(part.copy(shortcutItemSizeAmount = it)) },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            label = { Text("Full item") },
+        )
+        OutlinedTextField(
+            value = part.shortcutItemSizeUnit,
+            onValueChange = { onPartChanged(part.copy(shortcutItemSizeUnit = it.lowercase())) },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            label = { Text("g/ml") },
         )
     }
 }
@@ -1679,13 +2103,22 @@ private fun TimeChoiceDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { textInput = false }) {
-                        Text("Clock")
-                    }
-                    OutlinedButton(onClick = { textInput = true }) {
-                        Text("Text")
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ShortcutModeButton(
+                        label = "Clock",
+                        selected = !textInput,
+                        onClick = { textInput = false },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ShortcutModeButton(
+                        label = "Text",
+                        selected = textInput,
+                        onClick = { textInput = true },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
                 if (textInput) {
                     TimeInput(state = timePickerState)
@@ -1717,6 +2150,8 @@ private fun TimeChoiceDialog(
 @Composable
 private fun PortionAmountSlider(
     value: Float,
+    minValue: Float,
+    maxValue: Float,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1727,18 +2162,18 @@ private fun PortionAmountSlider(
         val start = thumbRadius
         val end = width - thumbRadius
         val fraction = ((offsetX - start) / (end - start)).coerceIn(0f, 1f)
-        return (0.1f + (fraction * 0.9f)).snapToTenth()
+        return (minValue + (fraction * (maxValue - minValue))).coerceIn(minValue, maxValue)
     }
 
     Canvas(
         modifier = modifier
             .height(48.dp)
-            .pointerInput(Unit) {
+            .pointerInput(minValue, maxValue) {
                 detectTapGestures { offset ->
                     onValueChange(amountAtOffset(offset.x, size.width.toFloat(), 11.dp.toPx()))
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(minValue, maxValue) {
                 detectDragGestures { change, _ ->
                     change.consume()
                     onValueChange(amountAtOffset(change.position.x, size.width.toFloat(), 11.dp.toPx()))
@@ -1751,7 +2186,7 @@ private fun PortionAmountSlider(
         val trackEnd = size.width - thumbRadius
         val trackWidth = trackEnd - trackStart
         val trackTop = (size.height - trackHeight) / 2f
-        val fraction = ((value.snapToTenth() - 0.1f) / 0.9f).coerceIn(0f, 1f)
+        val fraction = ((value.coerceIn(minValue, maxValue) - minValue) / (maxValue - minValue)).coerceIn(0f, 1f)
         val thumbCenter = Offset(trackStart + (trackWidth * fraction), size.height / 2f)
         val corner = CornerRadius(trackHeight / 2f, trackHeight / 2f)
 
@@ -1792,7 +2227,9 @@ private fun firstWizardStep(
     when {
         part == null -> LoggingWizardStep.Review
         part.name.isBlank() -> LoggingWizardStep.Product
-        session.source == LoggingWizardSource.Label && session.labelFacts != null &&
+        session.source == LoggingWizardSource.Shortcut -> LoggingWizardStep.Portion
+        session.labelFacts != null &&
+            (session.source == LoggingWizardSource.Label || session.shortcutPortionMode != ShortcutPortionMode.PLAIN) &&
             !LabelPortionResolver.resolve(session.labelFacts, session.labelInputMode, part.amount).isValidAmount -> LoggingWizardStep.Portion
         !part.hasPositiveCalories -> LoggingWizardStep.Calories
         !session.timeConfirmed -> LoggingWizardStep.TimeNotes
@@ -1807,7 +2244,11 @@ private fun canAdvanceWizardStep(
     when (step) {
         LoggingWizardStep.Product -> part?.name?.isNotBlank() == true
         LoggingWizardStep.Portion -> {
-            if (session.source == LoggingWizardSource.Label && session.labelFacts != null && part != null) {
+            if (
+                session.labelFacts != null &&
+                (session.source == LoggingWizardSource.Label || session.shortcutPortionMode != ShortcutPortionMode.PLAIN) &&
+                part != null
+            ) {
                 LabelPortionResolver.resolve(session.labelFacts, session.labelInputMode, part.amount).isValidAmount
             } else {
                 true

@@ -189,7 +189,9 @@ class LabelNutritionParser {
 
         val countWithUnit = Regex("""\b(\d+(?:[.,]\d+)?)\s*(bags?|packs?|bars?|bottles?|pots?|cans?)\b""")
             .find(lower)
-        val nutrientLinePattern = Regex("""^\s*(salt|sugars?|fat|protein|fibre|fiber|carbohydrate|carbs|energy)\b""")
+        val nutrientLinePattern = Regex(
+            """^\s*(?:of\s+which\s+)?(saturates?|salt|sugars?|fat|protein|fibre|fiber|carbohydrate|carbs|energy)\b""",
+        )
         return PackageQuantity(
             grams = lower.lineSequence()
                 .firstNotNullOfOrNull { line ->

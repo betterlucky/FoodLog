@@ -29,13 +29,21 @@ Near-term work should make daily use faster, clearer, and harder to get subtly w
 
 Current priorities:
 
-1. Label/manual product polish: make scanned and manually entered packaged foods reliable, understandable, and quick to repeat.
-2. Shortcut/product polish: make common foods easy to save, find, edit, forget, and log without creating duplicate or confusing defaults.
+1. Label/manual shortcut polish: make scanned and manually entered foods reliable, understandable, and quick to repeat through shortcuts.
+2. Shortcut polish: make common foods easy to save, find, edit, forget, and log without creating duplicate or confusing defaults.
 3. Daily close/export polish: make the Lodestone handoff obvious, current, and trustworthy.
 
 ## Next Horizon
 
 After daily workflow polish, begin optional AI integration. AI should help where deterministic local flows are weak, while staying grounded in Room data and user review.
+
+Future compound meals and recipes:
+
+- Allow a logged item to represent a multi-part meal that can be shown as one friendly row in daily views and reports, while optionally expanding into ingredient-level detail for nutrition analysis.
+- Introduce reusable recipe-style compound shortcuts that total ingredient calories and nutrients, then let the user log a portion of the batch such as a quarter, one serving, or a gram/ml amount.
+- Resolve recipe ingredients from existing shortcuts/products first. For unknown ingredients, prompt the user to manually enter nutrition, scan a label, or eventually request a reviewed AI estimate.
+- Offer save-as-shortcut/product options during ingredient resolution so common ingredients become faster over time without requiring a large external food database.
+- Keep compound meal totals and ingredient breakdowns database-backed, with exports generated from Room rows rather than rendered UI text.
 
 AI capture assistance:
 
@@ -131,8 +139,8 @@ Label OCR is the current packaged-food path:
 
 Near-term polish:
 
-- Improve wizard copy and validation for partial labels, especially when calories are present but serving amount/unit is ambiguous.
-- Make repeat use of saved label/manual products more visible and less fiddly.
+- Improve wizard validation for partial labels, especially when calories are present but item size or g/ml basis is ambiguous.
+- Make repeat use of label/manual entries flow through shortcuts, not a separate saved-products surface.
 - Add focused tests around OCR reader handoff where Android/ML Kit boundaries allow it.
 
 ## Lodestone Export
@@ -205,8 +213,8 @@ Prefer local unit tests for parser, export, totals, daily close, day-boundary, l
 
 Active:
 
-- Polish label/manual product wizard validation and copy.
-- Improve repeat logging for saved products and recently logged label-derived items.
+- Polish label/manual shortcut wizard validation and copy.
+- Improve repeat logging for OCR/manual foods through shortcuts with user-confirmed portion memory.
 - Smooth shortcut management for common daily foods.
 - Keep daily close/export status easy to trust after edits, removals, pending resolution, and weight changes.
 - Expand focused tests only where the behavior is active and risky.
@@ -215,6 +223,7 @@ Soon:
 
 - Backend/OpenAI features.
 - Leftovers/container behavior.
+- Compound meals and recipe-style shortcuts that can log a single meal row while retaining ingredient-level breakdowns for later nutrition analysis.
 - Long-term append-log export mode. The export is for our sister app, users wanting this as a standalone will prefer a longer form version of the export containing all the data for analysis
 
 Parked:

@@ -13,6 +13,7 @@ import com.betterlucky.foodlog.data.entities.ProductEntity
 import com.betterlucky.foodlog.data.entities.ProductSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
+import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.export.AuditCsvExporter
 import com.betterlucky.foodlog.domain.export.LegacyHealthCsvExporter
@@ -264,6 +265,13 @@ class FoodLogRepository(
         calories: Double,
         unit: String,
         notes: String?,
+        defaultAmount: Double? = null,
+        portionMode: ShortcutPortionMode? = null,
+        itemUnit: String? = null,
+        itemSizeAmount: Double? = null,
+        itemSizeUnit: String? = null,
+        kcalPer100g: Double? = null,
+        kcalPer100ml: Double? = null,
     ): DefaultUpdateResult {
         val trimmedTrigger = trigger.trim()
         val trimmedName = name.trim()
@@ -276,6 +284,13 @@ class FoodLogRepository(
 
         val existing = userDefaultDao.getActiveDefault(trimmedTrigger)
             ?: return DefaultUpdateResult.NotFound
+        val normalizedItemUnit = itemUnit?.trim().orEmpty().ifBlank { null }
+        val normalizedItemSizeUnit = itemSizeUnit?.trim().orEmpty().lowercase().ifBlank { null }
+        val metadataChanged = normalizedItemUnit != existing.itemUnit ||
+            itemSizeAmount != existing.itemSizeAmount ||
+            normalizedItemSizeUnit != existing.itemSizeUnit ||
+            kcalPer100g != existing.kcalPer100g ||
+            kcalPer100ml != existing.kcalPer100ml
 
         userDefaultDao.upsert(
             existing.copy(
@@ -283,6 +298,18 @@ class FoodLogRepository(
                 calories = calories,
                 unit = trimmedUnit,
                 notes = normalizedNotes,
+                defaultAmount = defaultAmount,
+                portionMode = portionMode ?: existing.portionMode,
+                itemUnit = normalizedItemUnit,
+                itemSizeAmount = itemSizeAmount?.takeIf { it > 0.0 },
+                itemSizeUnit = normalizedItemSizeUnit,
+                kcalPer100g = kcalPer100g?.takeIf { it > 0.0 },
+                kcalPer100ml = kcalPer100ml?.takeIf { it > 0.0 },
+                nutritionBasisName = when {
+                    metadataChanged -> trimmedName
+                    trimmedName == existing.name -> existing.nutritionBasisName
+                    else -> existing.nutritionBasisName ?: existing.name
+                },
             ),
         )
         return DefaultUpdateResult.Updated
@@ -295,6 +322,7 @@ class FoodLogRepository(
         unit: String,
         notes: String?,
         defaultAmount: Double? = null,
+        portionMode: ShortcutPortionMode = ShortcutPortionMode.PLAIN,
     ): DefaultUpdateResult {
         val normalizedTrigger = trigger.shortcutTrigger()
         val trimmedName = name.trim()
@@ -313,6 +341,40 @@ class FoodLogRepository(
                 unit = trimmedUnit,
                 notes = normalizedNotes,
                 defaultAmount = defaultAmount,
+                portionMode = portionMode,
+            ),
+        )
+        return DefaultUpdateResult.Updated
+    }
+
+    suspend fun addOcrShortcut(
+        input: OcrShortcutInput,
+    ): DefaultUpdateResult {
+        val normalizedTrigger = input.trigger.shortcutTrigger()
+        val trimmedName = input.name.trim()
+        val normalizedNotes = input.notes?.trim().orEmpty().ifBlank { null }
+        val unit = input.unit.trim().ifBlank { "serving" }
+        if (normalizedTrigger.isBlank() || trimmedName.isBlank() || input.caloriesPerUnit <= 0.0) {
+            return DefaultUpdateResult.InvalidInput
+        }
+
+        userDefaultDao.upsert(
+            UserDefaultEntity(
+                trigger = normalizedTrigger,
+                name = trimmedName,
+                calories = input.caloriesPerUnit,
+                unit = unit,
+                notes = normalizedNotes,
+                source = FoodItemSource.SAVED_LABEL,
+                confidence = ConfidenceLevel.HIGH,
+                defaultAmount = input.defaultAmount,
+                portionMode = input.portionMode,
+                itemUnit = input.itemUnit?.trim().orEmpty().ifBlank { null },
+                itemSizeAmount = input.itemSizeAmount?.takeIf { it > 0.0 },
+                itemSizeUnit = input.itemSizeUnit?.trim().orEmpty().ifBlank { null },
+                kcalPer100g = input.kcalPer100g,
+                kcalPer100ml = input.kcalPer100ml,
+                nutritionBasisName = trimmedName,
             ),
         )
         return DefaultUpdateResult.Updated
@@ -1380,6 +1442,21 @@ class FoodLogRepository(
         val logDate: LocalDate,
         val consumedTime: LocalTime?,
         val notes: String?,
+    )
+
+    data class OcrShortcutInput(
+        val trigger: String,
+        val name: String,
+        val caloriesPerUnit: Double,
+        val unit: String,
+        val notes: String?,
+        val defaultAmount: Double?,
+        val portionMode: ShortcutPortionMode,
+        val itemUnit: String?,
+        val itemSizeAmount: Double?,
+        val itemSizeUnit: String?,
+        val kcalPer100g: Double?,
+        val kcalPer100ml: Double?,
     )
 
     sealed interface LabelLogResult {

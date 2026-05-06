@@ -303,13 +303,32 @@ private fun TodayScreenDialogs(
         EditShortcutDialog(
             userDefault = userDefault,
             onDismiss = { onEditingDefaultChanged(null) },
-            onSave = { name, calories, unit, notes ->
+            onSave = {
+                    name,
+                    calories,
+                    unit,
+                    notes,
+                    defaultAmount,
+                    portionMode,
+                    itemUnit,
+                    itemSizeAmount,
+                    itemSizeUnit,
+                    kcalPer100g,
+                    kcalPer100ml,
+                ->
                 viewModel.updateShortcut(
                     trigger = userDefault.trigger,
                     name = name,
                     calories = calories,
                     unit = unit,
                     notes = notes,
+                    defaultAmount = defaultAmount,
+                    portionMode = portionMode,
+                    itemUnit = itemUnit,
+                    itemSizeAmount = itemSizeAmount,
+                    itemSizeUnit = itemSizeUnit,
+                    kcalPer100g = kcalPer100g,
+                    kcalPer100ml = kcalPer100ml,
                     onUpdated = { onEditingDefaultChanged(null) },
                 )
             },
@@ -481,6 +500,7 @@ private fun TodayScreenDialogs(
             onTimeChanged = viewModel::updateLoggingWizardTime,
             onTimeConfirmed = viewModel::confirmLoggingWizardTime,
             onInputModeChanged = viewModel::setLastLabelInputMode,
+            onPortionModeChanged = viewModel::updateLoggingWizardPortionMode,
             onRemove = session.sourceRawEntryId?.takeIf { session.source == LoggingWizardSource.Pending }?.let { rawEntryId ->
                 {
                     viewModel.removePendingEntry(

@@ -70,6 +70,7 @@ class LabelNutritionParserTest {
         assertEquals(0.5, facts.servingAmount ?: 0.0, 0.001)
         assertEquals("can", facts.servingItemUnit)
         assertEquals(196.0, facts.servingSizeGrams ?: 0.0, 0.001)
+        assertEquals(null, facts.packageSizeGrams)
         assertEquals(6.7, facts.fatPer100g ?: 0.0, 0.001)
         assertEquals(3.2, facts.carbsPer100g ?: 0.0, 0.001)
         assertEquals(15.4, facts.proteinPer100g ?: 0.0, 0.001)

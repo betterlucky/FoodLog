@@ -15,4 +15,11 @@ data class UserDefaultEntity(
     val confidence: ConfidenceLevel = ConfidenceLevel.HIGH,
     val active: Boolean = true,
     val defaultAmount: Double? = null,
+    val portionMode: ShortcutPortionMode = ShortcutPortionMode.PLAIN,
+    val itemUnit: String? = null,
+    val itemSizeAmount: Double? = null,
+    val itemSizeUnit: String? = null,
+    val kcalPer100g: Double? = null,
+    val kcalPer100ml: Double? = null,
+    val nutritionBasisName: String? = null,
 )

@@ -38,7 +38,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         AppSettingsEntity::class,
         DailyWeightEntity::class,
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -237,6 +237,23 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing(
+                    tableName = "user_defaults",
+                    columnName = "portionMode",
+                    declaration = "TEXT NOT NULL DEFAULT 'PLAIN'",
+                )
+                db.addColumnIfMissing("user_defaults", "itemUnit", "TEXT")
+                db.addColumnIfMissing("user_defaults", "itemSizeAmount", "REAL")
+                db.addColumnIfMissing("user_defaults", "itemSizeUnit", "TEXT")
+                db.addColumnIfMissing("user_defaults", "kcalPer100g", "REAL")
+                db.addColumnIfMissing("user_defaults", "kcalPer100ml", "REAL")
+                db.addColumnIfMissing("user_defaults", "nutritionBasisName", "TEXT")
+                db.execSQL("UPDATE user_defaults SET portionMode = 'PLAIN' WHERE portionMode IS NULL OR portionMode = ''")
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -255,6 +272,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_10_11)
                 .addMigrations(MIGRATION_11_12)
                 .addMigrations(MIGRATION_12_13)
+                .addMigrations(MIGRATION_13_14)
                 .build()
     }
 }
