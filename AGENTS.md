@@ -13,7 +13,8 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 ## Product Direction
 
 - Near-term work should make the existing daily workflow more dependable before adding new capture modes.
-- Prefer label/manual product polish, shortcut/product polish, and daily close/export polish.
+- Prefer shortcut/product polish, label/manual product polish, daily close/export polish, then append-log export before AI integration.
+- Shortcuts should be portion-first for users. Save a repeatable user-facing portion with the shortcut where possible; use gram/ml math internally only when needed, and offer a non-intrusive "update shortcut" toggle when a logged edit should become the new default.
 - Treat barcode lookup as a parked experiment, not a missing required feature.
 - Keep the Lodestone CSV export as the daily handoff contract. Lodestone still imports from the historical `Downloads/FoodLogData` folder for now.
 

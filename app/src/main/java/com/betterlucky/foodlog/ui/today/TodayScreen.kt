@@ -37,6 +37,7 @@ fun TodayScreen(
     val labelReview by viewModel.labelReview.collectAsState()
     val pendingQuantityPicker by viewModel.pendingQuantityPicker.collectAsState()
     val loggingWizard by viewModel.loggingWizard.collectAsState()
+    val shortcutUpdateCandidates by viewModel.shortcutUpdateCandidates.collectAsState()
     val pagerScope = rememberCoroutineScope()
     val originPage = remember { Int.MAX_VALUE / 2 }
     val originDate = remember { uiState.selectedDate }
@@ -81,6 +82,10 @@ fun TodayScreen(
         pagerScope.launch {
             pagerState.animateScrollToPage(pageForDate(date))
         }
+    }
+
+    LaunchedEffect(editingFoodItem?.id) {
+        editingFoodItem?.id?.let(viewModel::loadShortcutUpdateCandidate)
     }
 
     fun jumpToDate(date: LocalDate) {
@@ -186,6 +191,7 @@ fun TodayScreen(
         labelReview = labelReview,
         pendingQuantityPicker = pendingQuantityPicker,
         loggingWizard = loggingWizard,
+        shortcutUpdateCandidates = shortcutUpdateCandidates,
         editingDefault = editingDefault,
         onEditingDefaultChanged = { editingDefault = it },
         forgettingDefault = forgettingDefault,
@@ -260,6 +266,7 @@ private fun TodayScreenDialogs(
     labelReview: LabelReviewState?,
     pendingQuantityPicker: com.betterlucky.foodlog.data.entities.UserDefaultEntity?,
     loggingWizard: LoggingWizardSession?,
+    shortcutUpdateCandidates: Map<Long, com.betterlucky.foodlog.data.repository.FoodLogRepository.ShortcutUpdateCandidate?>,
     editingDefault: com.betterlucky.foodlog.data.entities.UserDefaultEntity?,
     onEditingDefaultChanged: (com.betterlucky.foodlog.data.entities.UserDefaultEntity?) -> Unit,
     forgettingDefault: com.betterlucky.foodlog.data.entities.UserDefaultEntity?,
@@ -293,7 +300,7 @@ private fun TodayScreenDialogs(
             userDefaults = uiState.userDefaults,
             onDismiss = { onShowingShortcutsChanged(false) },
             onAdd = { onAddingShortcutChanged(true) },
-            onLog = { userDefault -> viewModel.logShortcut(userDefault.trigger) },
+            onLog = { userDefault -> viewModel.logShortcut(userDefault.lookupKey) },
             onEdit = { userDefault -> onEditingDefaultChanged(userDefault) },
             onForget = { userDefault -> onForgettingDefaultChanged(userDefault) },
         )
@@ -317,7 +324,7 @@ private fun TodayScreenDialogs(
                     kcalPer100ml,
                 ->
                 viewModel.updateShortcut(
-                    trigger = userDefault.trigger,
+                    lookupKey = userDefault.lookupKey,
                     name = name,
                     calories = calories,
                     unit = unit,
@@ -338,9 +345,8 @@ private fun TodayScreenDialogs(
     if (addingShortcut) {
         AddShortcutDialog(
             onDismiss = { onAddingShortcutChanged(false) },
-            onSave = { trigger, name, calories, unit, notes ->
+            onSave = { name, calories, unit, notes ->
                 viewModel.addShortcut(
-                    trigger = trigger,
                     name = name,
                     calories = calories,
                     unit = unit,
@@ -356,7 +362,7 @@ private fun TodayScreenDialogs(
             userDefault = userDefault,
             onDismiss = { onForgettingDefaultChanged(null) },
             onConfirm = {
-                viewModel.forgetShortcut(userDefault.trigger)
+                viewModel.forgetShortcut(userDefault.lookupKey)
                 onForgettingDefaultChanged(null)
             },
         )
@@ -367,13 +373,14 @@ private fun TodayScreenDialogs(
         if (resolution == null) {
             EditFoodItemDialog(
                 item = item,
+                shortcutUpdateCandidate = shortcutUpdateCandidates[item.id],
                 errorMessage = editFoodError,
                 onDismiss = { onEditingFoodItemChanged(null) },
                 onRemove = {
                     viewModel.removeFoodItem(item.id)
                     onEditingFoodItemChanged(null)
                 },
-                onSave = { name, amount, unit, calories, time, notes ->
+                onSave = { name, amount, unit, calories, time, notes, updateShortcut ->
                     onEditFoodErrorChanged(null)
                     viewModel.updateFoodItem(
                         id = item.id,
@@ -383,6 +390,8 @@ private fun TodayScreenDialogs(
                         calories = calories,
                         time = time,
                         notes = notes,
+                        updateShortcut = updateShortcut,
+                        updateShortcutLookupKey = shortcutUpdateCandidates[item.id]?.lookupKey,
                         onUpdated = { onEditingFoodItemChanged(null) },
                         onError = onEditFoodErrorChanged,
                         onNeedsDefaultResolution = {
@@ -486,7 +495,7 @@ private fun TodayScreenDialogs(
             shortcut = shortcut,
             onDismiss = viewModel::dismissQuantityPicker,
             onConfirm = { amount ->
-                viewModel.logShortcutWithAmount(shortcut.trigger, amount)
+                viewModel.logShortcutWithAmount(shortcut.lookupKey, amount)
             },
         )
     }
