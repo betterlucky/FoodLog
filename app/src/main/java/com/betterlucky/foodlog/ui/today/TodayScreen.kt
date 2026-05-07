@@ -35,7 +35,6 @@ fun TodayScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val labelReview by viewModel.labelReview.collectAsState()
-    val pendingQuantityPicker by viewModel.pendingQuantityPicker.collectAsState()
     val loggingWizard by viewModel.loggingWizard.collectAsState()
     val shortcutUpdateCandidates by viewModel.shortcutUpdateCandidates.collectAsState()
     val pagerScope = rememberCoroutineScope()
@@ -60,6 +59,8 @@ fun TodayScreen(
     var pickingDate by remember { mutableStateOf(false) }
     var choosingLabelImage by remember { mutableStateOf(false) }
     var loggedItemsViewMode by remember { mutableStateOf(LoggedItemsViewMode.Time) }
+    var shortcutDialogError by remember { mutableStateOf<String?>(null) }
+    var weightDialogError by remember { mutableStateOf<String?>(null) }
     var editFoodError by remember { mutableStateOf<String?>(null) }
     var editResolution by remember { mutableStateOf<LoggedFoodEditResolution?>(null) }
     var editResolutionTime by remember { mutableStateOf("") }
@@ -120,7 +121,6 @@ fun TodayScreen(
 
     val daySwipeEnabled =
         labelReview == null &&
-            pendingQuantityPicker == null &&
             loggingWizard == null &&
             editingDefault == null &&
             forgettingDefault == null &&
@@ -162,7 +162,10 @@ fun TodayScreen(
                         onToday = { viewModel.selectCurrentFoodDate(::jumpToDate) },
                         onNextDay = { animateToDate(date.plusDays(1)) },
                         onEditBoundary = { editingBoundary = true },
-                        onEditWeight = { editingWeightDate = date },
+                        onEditWeight = {
+                            weightDialogError = null
+                            editingWeightDate = date
+                        },
                         onEditFoodItem = { item ->
                             editFoodError = null
                             editResolution = null
@@ -189,7 +192,6 @@ fun TodayScreen(
         uiState = uiState,
         viewModel = viewModel,
         labelReview = labelReview,
-        pendingQuantityPicker = pendingQuantityPicker,
         loggingWizard = loggingWizard,
         shortcutUpdateCandidates = shortcutUpdateCandidates,
         editingDefault = editingDefault,
@@ -210,6 +212,10 @@ fun TodayScreen(
         onPickingDateChanged = { pickingDate = it },
         choosingLabelImage = choosingLabelImage,
         onChoosingLabelImageChanged = { choosingLabelImage = it },
+        shortcutDialogError = shortcutDialogError,
+        onShortcutDialogErrorChanged = { shortcutDialogError = it },
+        weightDialogError = weightDialogError,
+        onWeightDialogErrorChanged = { weightDialogError = it },
         editFoodError = editFoodError,
         onEditFoodErrorChanged = { editFoodError = it },
         editResolution = editResolution,
@@ -264,7 +270,6 @@ private fun TodayScreenDialogs(
     uiState: TodayUiState,
     viewModel: TodayViewModel,
     labelReview: LabelReviewState?,
-    pendingQuantityPicker: com.betterlucky.foodlog.data.entities.UserDefaultEntity?,
     loggingWizard: LoggingWizardSession?,
     shortcutUpdateCandidates: Map<Long, com.betterlucky.foodlog.data.repository.FoodLogRepository.ShortcutUpdateCandidate?>,
     editingDefault: com.betterlucky.foodlog.data.entities.UserDefaultEntity?,
@@ -285,6 +290,10 @@ private fun TodayScreenDialogs(
     onPickingDateChanged: (Boolean) -> Unit,
     choosingLabelImage: Boolean,
     onChoosingLabelImageChanged: (Boolean) -> Unit,
+    shortcutDialogError: String?,
+    onShortcutDialogErrorChanged: (String?) -> Unit,
+    weightDialogError: String?,
+    onWeightDialogErrorChanged: (String?) -> Unit,
     editFoodError: String?,
     onEditFoodErrorChanged: (String?) -> Unit,
     editResolution: LoggedFoodEditResolution?,
@@ -299,9 +308,15 @@ private fun TodayScreenDialogs(
         ShortcutPickerDialog(
             userDefaults = uiState.userDefaults,
             onDismiss = { onShowingShortcutsChanged(false) },
-            onAdd = { onAddingShortcutChanged(true) },
+            onAdd = {
+                onShortcutDialogErrorChanged(null)
+                onAddingShortcutChanged(true)
+            },
             onLog = { userDefault -> viewModel.logShortcut(userDefault.lookupKey) },
-            onEdit = { userDefault -> onEditingDefaultChanged(userDefault) },
+            onEdit = { userDefault ->
+                onShortcutDialogErrorChanged(null)
+                onEditingDefaultChanged(userDefault)
+            },
             onForget = { userDefault -> onForgettingDefaultChanged(userDefault) },
         )
     }
@@ -309,6 +324,7 @@ private fun TodayScreenDialogs(
     editingDefault?.let { userDefault ->
         EditShortcutDialog(
             userDefault = userDefault,
+            errorMessage = shortcutDialogError,
             onDismiss = { onEditingDefaultChanged(null) },
             onSave = {
                     name,
@@ -336,7 +352,11 @@ private fun TodayScreenDialogs(
                     itemSizeUnit = itemSizeUnit,
                     kcalPer100g = kcalPer100g,
                     kcalPer100ml = kcalPer100ml,
-                    onUpdated = { onEditingDefaultChanged(null) },
+                    onUpdated = {
+                        onShortcutDialogErrorChanged(null)
+                        onEditingDefaultChanged(null)
+                    },
+                    onError = onShortcutDialogErrorChanged,
                 )
             },
         )
@@ -344,6 +364,7 @@ private fun TodayScreenDialogs(
 
     if (addingShortcut) {
         AddShortcutDialog(
+            errorMessage = shortcutDialogError,
             onDismiss = { onAddingShortcutChanged(false) },
             onSave = { name, calories, unit, notes ->
                 viewModel.addShortcut(
@@ -351,7 +372,11 @@ private fun TodayScreenDialogs(
                     calories = calories,
                     unit = unit,
                     notes = notes,
-                    onAdded = { onAddingShortcutChanged(false) },
+                    onAdded = {
+                        onShortcutDialogErrorChanged(null)
+                        onAddingShortcutChanged(false)
+                    },
+                    onError = onShortcutDialogErrorChanged,
                 )
             },
         )
@@ -362,8 +387,9 @@ private fun TodayScreenDialogs(
             userDefault = userDefault,
             onDismiss = { onForgettingDefaultChanged(null) },
             onConfirm = {
-                viewModel.forgetShortcut(userDefault.lookupKey)
-                onForgettingDefaultChanged(null)
+                viewModel.forgetShortcut(userDefault.lookupKey) {
+                    onForgettingDefaultChanged(null)
+                }
             },
         )
     }
@@ -436,6 +462,7 @@ private fun TodayScreenDialogs(
         val dayState by viewModel.dayState(date).collectAsState()
         DailyWeightDialog(
             dailyWeight = dayState.dailyWeight,
+            errorMessage = weightDialogError,
             onDismiss = { onEditingWeightDateChanged(null) },
             onSave = { stone, pounds, time ->
                 viewModel.saveDailyWeight(
@@ -443,7 +470,11 @@ private fun TodayScreenDialogs(
                     stone = stone,
                     pounds = pounds,
                     time = time,
-                    onSaved = { onEditingWeightDateChanged(null) },
+                    onSaved = {
+                        onWeightDialogErrorChanged(null)
+                        onEditingWeightDateChanged(null)
+                    },
+                    onError = onWeightDialogErrorChanged,
                 )
             },
         )
@@ -488,16 +519,6 @@ private fun TodayScreenDialogs(
                 },
             )
         }
-    }
-
-    pendingQuantityPicker?.let { shortcut ->
-        QuantityPickerDialog(
-            shortcut = shortcut,
-            onDismiss = viewModel::dismissQuantityPicker,
-            onConfirm = { amount ->
-                viewModel.logShortcutWithAmount(shortcut.lookupKey, amount)
-            },
-        )
     }
 
     loggingWizard?.let { session ->

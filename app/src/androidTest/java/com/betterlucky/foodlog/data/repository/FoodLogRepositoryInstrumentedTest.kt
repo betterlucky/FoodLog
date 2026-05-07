@@ -1010,6 +1010,39 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pickerShortcutLogUsesCurrentTimeAndActiveShortcutOnly() = runTest {
+        repository.seedDefaults()
+        dateTimeProvider.localTime = LocalTime.parse("14:45")
+
+        val result = repository.logActiveShortcut("tea", today)
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertTrue(result is FoodLogRepository.ShortcutLogResult.Logged)
+        assertEquals("Tea", foodItem.name)
+        assertEquals(LocalTime.parse("14:45"), foodItem.consumedTime)
+        assertEquals(
+            RawEntryStatus.PARSED,
+            database.rawEntryDao()
+                .getById((result as FoodLogRepository.ShortcutLogResult.Logged).rawEntryId)
+                ?.status,
+        )
+    }
+
+    @Test
+    fun pickerShortcutLogRejectsInactiveShortcutWithoutCreatingPendingEntry() = runTest {
+        repository.seedDefaults()
+        repository.deactivateDefault("tea")
+
+        val result = repository.logActiveShortcut("tea", today)
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+        val pendingEntries = repository.observePendingEntriesForDate(today).first()
+
+        assertEquals(FoodLogRepository.ShortcutLogResult.NotFound, result)
+        assertTrue(foodItems.isEmpty())
+        assertTrue(pendingEntries.isEmpty())
+    }
+
+    @Test
     fun unitQuantityPendingPreviewKeepsParsedUnit() = runTest {
         repository.seedDefaults()
 
@@ -1187,10 +1220,11 @@ class FoodLogRepositoryInstrumentedTest {
             saveAsDefault = true,
         )
 
-        repository.deactivateDefault("toast")
+        val deactivateResult = repository.deactivateDefault("toast")
         val nextResult = repository.submitText("toast")
         val activeDefaults = repository.observeActiveDefaults().first()
 
+        assertEquals(FoodLogRepository.DefaultUpdateResult.Updated, deactivateResult)
         assertEquals(null, database.userDefaultDao().getActiveDefault("toast"))
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Pending)
         assertEquals(listOf("tea"), activeDefaults.map { it.lookupKey })

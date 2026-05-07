@@ -149,6 +149,62 @@ class FoodLogRepository(
             }
         }
 
+    suspend fun logActiveShortcut(
+        lookupKey: String,
+        targetLogDate: LocalDate,
+    ): ShortcutLogResult =
+        database.withTransaction {
+            val normalizedLookupKey = lookupKey.shortcutTrigger()
+            if (normalizedLookupKey.isBlank()) {
+                return@withTransaction ShortcutLogResult.InvalidInput
+            }
+            val userDefault = userDefaultDao.getActiveDefault(normalizedLookupKey)
+                ?: return@withTransaction ShortcutLogResult.NotFound
+            val calendarToday = dateTimeProvider.today()
+            val localTime = dateTimeProvider.localTime()
+            val parsed = parser.parse(
+                input = normalizedLookupKey,
+                today = calendarToday,
+                defaultLogDate = targetLogDate,
+            )
+            val part = parsed.parts.singleOrNull()
+                ?: return@withTransaction ShortcutLogResult.InvalidInput
+            val createdAt = dateTimeProvider.nowInstant()
+            val rawEntryId = rawEntryDao.insert(
+                RawEntryEntity(
+                    createdAt = createdAt,
+                    logDate = targetLogDate,
+                    consumedTime = localTime,
+                    rawText = normalizedLookupKey,
+                    entryKind = EntryKind.TEXT,
+                    status = RawEntryStatus.PARSED,
+                ),
+            )
+            val resolvedFood = userDefault.resolveShortcutFood(part)
+            val foodItemId = foodItemDao.insert(
+                FoodItemEntity(
+                    rawEntryId = rawEntryId,
+                    logDate = targetLogDate,
+                    consumedTime = localTime,
+                    name = resolvedFood.name,
+                    amount = resolvedFood.amount,
+                    unit = resolvedFood.unit,
+                    grams = resolvedFood.grams,
+                    calories = resolvedFood.calories,
+                    source = userDefault.source,
+                    confidence = userDefault.confidence,
+                    notes = userDefault.notes,
+                    createdAt = createdAt,
+                ),
+            )
+            markFoodChanged(targetLogDate)
+            ShortcutLogResult.Logged(
+                rawEntryId = rawEntryId,
+                foodItemId = foodItemId,
+                logDate = targetLogDate,
+            )
+        }
+
     suspend fun previewSubmission(
         input: String,
         targetLogDate: LocalDate,
@@ -251,8 +307,15 @@ class FoodLogRepository(
         }
     }
 
-    suspend fun deactivateDefault(lookupKey: String) {
-        userDefaultDao.deactivate(lookupKey)
+    suspend fun deactivateDefault(lookupKey: String): DefaultUpdateResult {
+        val normalizedLookupKey = lookupKey.shortcutTrigger()
+        if (normalizedLookupKey.isBlank()) {
+            return DefaultUpdateResult.InvalidInput
+        }
+        userDefaultDao.getActiveDefault(normalizedLookupKey)
+            ?: return DefaultUpdateResult.NotFound
+        userDefaultDao.deactivate(normalizedLookupKey)
+        return DefaultUpdateResult.Updated
     }
 
     suspend fun updateShortcutDefaultAmount(lookupKey: String, amount: Double?): Boolean {
@@ -260,9 +323,6 @@ class FoodLogRepository(
         userDefaultDao.upsert(existing.copy(defaultAmount = amount))
         return true
     }
-
-    suspend fun getActiveShortcut(lookupKey: String): UserDefaultEntity? =
-        userDefaultDao.getActiveDefault(lookupKey)
 
     suspend fun updateDefault(
         lookupKey: String,
@@ -1351,6 +1411,17 @@ class FoodLogRepository(
             override val rawEntryId: Long = 0
             override val logDate: LocalDate = requestedLogDate
         }
+    }
+
+    sealed interface ShortcutLogResult {
+        data class Logged(
+            val rawEntryId: Long,
+            val foodItemId: Long,
+            val logDate: LocalDate,
+        ) : ShortcutLogResult
+
+        data object InvalidInput : ShortcutLogResult
+        data object NotFound : ShortcutLogResult
     }
 
     sealed interface SubmissionPreviewResult {
