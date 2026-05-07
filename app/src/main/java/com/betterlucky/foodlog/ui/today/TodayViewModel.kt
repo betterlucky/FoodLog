@@ -40,7 +40,7 @@ data class LoggedFoodEditResolution(
 
 data class LoggedFoodEditResolutionPart(
     val inputText: String,
-    val trigger: String?,
+    val lookupKey: String?,
     val resolvedByDefault: Boolean,
     val name: String,
     val amount: Double?,
@@ -51,7 +51,7 @@ data class LoggedFoodEditResolutionPart(
 
 data class LoggedFoodEditResolvedPartInput(
     val inputText: String,
-    val trigger: String?,
+    val lookupKey: String?,
     val resolvedByDefault: Boolean,
     val name: String,
     val amount: String,
@@ -99,7 +99,7 @@ data class LoggingWizardSession(
 
 data class LoggingWizardPartDraft(
     val inputText: String,
-    val trigger: String?,
+    val lookupKey: String?,
     val resolvedByDefault: Boolean,
     val name: String,
     val amount: String,
@@ -145,6 +145,11 @@ class TodayViewModel(
 
     private val _pendingQuantityPicker = MutableStateFlow<UserDefaultEntity?>(null)
     val pendingQuantityPicker: StateFlow<UserDefaultEntity?> = _pendingQuantityPicker.asStateFlow()
+
+    private val _shortcutUpdateCandidates =
+        MutableStateFlow<Map<Long, FoodLogRepository.ShortcutUpdateCandidate?>>(emptyMap())
+    val shortcutUpdateCandidates: StateFlow<Map<Long, FoodLogRepository.ShortcutUpdateCandidate?>> =
+        _shortcutUpdateCandidates.asStateFlow()
 
     private val _loggingWizard = MutableStateFlow<LoggingWizardSession?>(null)
     val loggingWizard: StateFlow<LoggingWizardSession?> = _loggingWizard.asStateFlow()
@@ -220,21 +225,14 @@ class TodayViewModel(
         previewOrSubmitText(text, date)
     }
 
-    fun logShortcut(trigger: String) {
-        viewModelScope.launch {
-            val default = repository.getActiveShortcut(trigger)
-            when {
-                default == null -> previewOrSubmitText(trigger, selectedDate.value)
-                default.defaultAmount != null -> openShortcutWizard(default, default.defaultAmount, saveDefaultAmount = false)
-                else -> _pendingQuantityPicker.value = default
-            }
-        }
+    fun logShortcut(lookupKey: String) {
+        submitText(lookupKey, selectedDate.value, clearInput = false)
     }
 
-    fun logShortcutWithAmount(trigger: String, amount: Double, saveAsDefault: Boolean = true) {
+    fun logShortcutWithAmount(lookupKey: String, amount: Double, saveAsDefault: Boolean = true) {
         viewModelScope.launch {
             _pendingQuantityPicker.value = null
-            val default = repository.getActiveShortcut(trigger)
+            val default = repository.getActiveShortcut(lookupKey)
             if (default == null) {
                 message.value = "Could not log shortcut."
                 return@launch
@@ -359,6 +357,13 @@ class TodayViewModel(
         _loggingWizard.value = null
     }
 
+    fun loadShortcutUpdateCandidate(foodItemId: Long) {
+        viewModelScope.launch {
+            val candidate = repository.shortcutUpdateCandidateForFoodItem(foodItemId)
+            _shortcutUpdateCandidates.update { it + (foodItemId to candidate) }
+        }
+    }
+
     fun updateLoggingWizardPart(index: Int, part: LoggingWizardPartDraft) {
         _loggingWizard.update { session ->
             session?.copy(
@@ -423,8 +428,8 @@ class TodayViewModel(
                 source = if (part.resolvedByDefault) FoodItemSource.USER_DEFAULT else FoodItemSource.MANUAL_OVERRIDE,
                 confidence = ConfidenceLevel.HIGH,
                 notes = part.notes,
-                saveDefaultTrigger = if (part.saveAsShortcut && !part.resolvedByDefault) {
-                    part.trigger?.takeIf { it.isNotBlank() } ?: part.name
+                saveDefaultLookupKey = if (part.saveAsShortcut && !part.resolvedByDefault) {
+                    part.lookupKey?.takeIf { it.isNotBlank() } ?: part.name
                 } else {
                     null
                 },
@@ -464,9 +469,9 @@ class TodayViewModel(
                                         ).takeIf { it.isValidAmount }?.amount
                                     }
                                     ?: part.amount.trim().toDoubleOrNull()
-                                val trigger = part.trigger
-                                if (trigger != null && amount != null && amount > 0.0) {
-                                    repository.updateShortcutDefaultAmount(trigger, amount)
+                                val lookupKey = part.lookupKey
+                                if (lookupKey != null && amount != null && amount > 0.0) {
+                                    repository.updateShortcutDefaultAmount(lookupKey, amount)
                                 }
                             }
                     }
@@ -537,7 +542,7 @@ class TodayViewModel(
                         )
                         repository.addOcrShortcut(
                             FoodLogRepository.OcrShortcutInput(
-                                trigger = part.name.trim().lowercase(),
+                                lookupKey = part.name.trim().lowercase(),
                                 name = part.name,
                                 caloriesPerUnit = shortcutCalories,
                                 unit = shortcutUnit(
@@ -598,12 +603,7 @@ class TodayViewModel(
         viewModelScope.launch {
             when (val preview = repository.previewSubmission(text, targetDate)) {
                 is FoodLogRepository.SubmissionPreviewResult.Ready -> {
-                    if (preview.consumedTime == null) {
-                        _loggingWizard.value = preview.toLoggingWizardSession(defaultTime = currentWizardTime())
-                        message.value = null
-                    } else {
-                        submitText(text, targetDate, clearInput = true)
-                    }
+                    submitText(text, targetDate, clearInput = true)
                 }
                 is FoodLogRepository.SubmissionPreviewResult.NeedsResolution -> {
                     _loggingWizard.value = preview.toLoggingWizardSession(defaultTime = currentWizardTime())
@@ -768,6 +768,8 @@ class TodayViewModel(
         calories: String,
         time: String,
         notes: String,
+        updateShortcut: Boolean,
+        updateShortcutLookupKey: String?,
         onUpdated: () -> Unit,
         onError: (String) -> Unit,
         onNeedsDefaultResolution: (LoggedFoodEditResolution) -> Unit,
@@ -829,6 +831,7 @@ class TodayViewModel(
                 calories = parsedCalories,
                 consumedTime = parsedTime,
                 notes = notes,
+                updateShortcutLookupKey = updateShortcutLookupKey.takeIf { updateShortcut },
             )
             val resultMessage = when (result) {
                 FoodLogRepository.FoodItemUpdateResult.Updated -> {
@@ -841,7 +844,7 @@ class TodayViewModel(
                 }
                 FoodLogRepository.FoodItemUpdateResult.InvalidInput -> "Add an item name to update the logged item."
                 is FoodLogRepository.FoodItemUpdateResult.UnresolvedDefaults -> {
-                    val missing = result.missingTriggers.joinToString(", ")
+                    val missing = result.missingLookupKeys.joinToString(", ")
                     if (missing.isBlank()) {
                         "Add calories or save shortcuts for the missing items."
                     } else {
@@ -1036,10 +1039,10 @@ class TodayViewModel(
             ) {
                 is FoodLogRepository.ManualAddResult.Added -> {
                     onAdded()
-                    if (result.savedDefaultTrigger == null) {
+                    if (result.savedDefaultLookupKey == null) {
                         "Logged item for ${result.logDate}"
                     } else {
-                        "Logged item and saved shortcut '${result.savedDefaultTrigger}'"
+                        "Logged item and saved shortcut '${result.savedDefaultLookupKey}'"
                     }
                 }
                 FoodLogRepository.ManualAddResult.InvalidInput -> "Add an item name and calories to log the item."
@@ -1125,10 +1128,10 @@ class TodayViewModel(
             message.value = when (result) {
                 is FoodLogRepository.ManualResolveResult.Resolved -> {
                     onResolved()
-                    if (result.savedDefaultTrigger == null) {
+                    if (result.savedDefaultLookupKey == null) {
                         "Resolved pending entry for ${result.logDate}"
                     } else {
-                        "Resolved and saved shortcut '${result.savedDefaultTrigger}'"
+                        "Resolved and saved shortcut '${result.savedDefaultLookupKey}'"
                     }
                 }
                 FoodLogRepository.ManualResolveResult.InvalidInput -> "Add an item name and calories to resolve the pending entry."
@@ -1138,15 +1141,15 @@ class TodayViewModel(
         }
     }
 
-    fun forgetShortcut(trigger: String) {
+    fun forgetShortcut(lookupKey: String) {
         viewModelScope.launch {
-            repository.deactivateDefault(trigger)
-            message.value = "Forgot shortcut '$trigger'"
+            repository.deactivateDefault(lookupKey)
+            message.value = "Forgot shortcut '$lookupKey'"
         }
     }
 
     fun updateShortcut(
-        trigger: String,
+        lookupKey: String,
         name: String,
         calories: String,
         unit: String,
@@ -1165,8 +1168,8 @@ class TodayViewModel(
         val parsedItemSizeAmount = itemSizeAmount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedKcalPer100g = kcalPer100g.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedKcalPer100ml = kcalPer100ml.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
-        if (name.isBlank() || unit.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
-            message.value = "Add a name, unit, and calories to update the shortcut."
+        if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
+            message.value = "Add a name and calories to update the shortcut."
             return
         }
         if (defaultAmount.isNotBlank() && parsedDefaultAmount == null) {
@@ -1189,7 +1192,7 @@ class TodayViewModel(
         viewModelScope.launch {
             message.value = when (
                 repository.updateDefault(
-                    trigger = trigger,
+                    lookupKey = lookupKey,
                     name = name,
                     calories = parsedCalories,
                     unit = unit,
@@ -1205,16 +1208,15 @@ class TodayViewModel(
             ) {
                 FoodLogRepository.DefaultUpdateResult.Updated -> {
                     onUpdated()
-                    "Updated shortcut '$trigger'"
+                    "Updated shortcut '$lookupKey'"
                 }
-                FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a name, unit, and calories to update the shortcut."
+                FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a name and calories to update the shortcut."
                 FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
             }
         }
     }
 
     fun addShortcut(
-        trigger: String,
         name: String,
         calories: String,
         unit: String,
@@ -1222,18 +1224,18 @@ class TodayViewModel(
         onAdded: () -> Unit,
     ) {
         val parsedCalories = calories.trim().toDoubleOrNull()
-        if (trigger.isBlank() || name.isBlank() || unit.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
-            message.value = "Add a trigger, name, unit, and calories to create a shortcut."
+        if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
+            message.value = "Add a name and calories to create a shortcut."
             return
         }
 
         viewModelScope.launch {
-            message.value = when (repository.addDefault(trigger, name, parsedCalories, unit, notes)) {
+            message.value = when (repository.addDefault(name, name, parsedCalories, unit, notes)) {
                 FoodLogRepository.DefaultUpdateResult.Updated -> {
                     onAdded()
-                    "Saved shortcut '${trigger.trim().lowercase()}'"
+                    "Saved shortcut '${name.trim().lowercase()}'"
                 }
-                FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a trigger, name, unit, and calories to create a shortcut."
+                FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a name and calories to create a shortcut."
                 FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
             }
         }
@@ -1284,7 +1286,7 @@ private fun replacementPartsOrNull(
             source = if (part.resolvedByDefault) FoodItemSource.USER_DEFAULT else FoodItemSource.MANUAL_OVERRIDE,
             confidence = ConfidenceLevel.HIGH,
             notes = part.notes,
-            saveDefaultTrigger = part.trigger.takeIf { part.saveAsDefault && !part.resolvedByDefault },
+            saveDefaultLookupKey = part.lookupKey.takeIf { part.saveAsDefault && !part.resolvedByDefault },
         )
     }
     return replacementParts
@@ -1307,7 +1309,7 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready.toLoggedFoo
             val default = part.default
             LoggedFoodEditResolutionPart(
                 inputText = part.inputText,
-                trigger = part.trigger,
+                lookupKey = part.lookupKey,
                 resolvedByDefault = default != null,
                 name = default?.name ?: part.inputText,
                 amount = part.quantity,
@@ -1378,7 +1380,7 @@ private fun UserDefaultEntity.toShortcutLoggingWizardSession(
     val resolved = facts?.let { LabelPortionResolver.resolve(it, inputMode, amountText) }
     return LoggingWizardSession(
         source = LoggingWizardSource.Shortcut,
-        originalRawText = trigger,
+        originalRawText = lookupKey,
         logDate = logDate,
         consumedTime = null,
         timeText = defaultTime.toString(),
@@ -1390,8 +1392,8 @@ private fun UserDefaultEntity.toShortcutLoggingWizardSession(
         saveShortcutDefaultAmount = saveDefaultAmount,
         parts = listOf(
             LoggingWizardPartDraft(
-                inputText = trigger,
-                trigger = trigger,
+                inputText = lookupKey,
+                lookupKey = lookupKey,
                 resolvedByDefault = true,
                 name = name,
                 amount = amountText,
@@ -1409,9 +1411,9 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toLoggingWizardPart
     val default = default
     return LoggingWizardPartDraft(
         inputText = inputText,
-        trigger = trigger,
+        lookupKey = lookupKey,
         resolvedByDefault = default != null,
-        name = default?.name ?: trigger?.replaceFirstChar { it.titlecase() } ?: inputText,
+        name = default?.name ?: lookupKey?.replaceFirstChar { it.titlecase() } ?: inputText,
         amount = quantity
             .takeIf { quantityUnit != null || it != 1.0 }
             ?.formatDraftAmount()
@@ -1445,7 +1447,7 @@ private fun LabelNutritionFacts.toLabelLoggingWizardSession(
         parts = listOf(
             LoggingWizardPartDraft(
                 inputText = "Label scan",
-                trigger = null,
+                lookupKey = null,
                 resolvedByDefault = false,
                 name = "",
                 amount = amountText,
@@ -1573,7 +1575,11 @@ private fun shortcutCaloriesPerUnit(
         }
         ShortcutPortionMode.MEASURE,
         ShortcutPortionMode.PLAIN ->
+            if (mode == ShortcutPortionMode.PLAIN) {
+                parsedCalories
+            } else {
             resolvedPortion.amount?.takeIf { it > 0.0 }?.let { parsedCalories / it } ?: parsedCalories
+            }
     }
 
 private fun shortcutUnit(
@@ -1652,7 +1658,7 @@ private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLogged
             val default = part.default
             LoggedFoodEditResolutionPart(
                 inputText = part.inputText,
-                trigger = part.trigger,
+                lookupKey = part.lookupKey,
                 resolvedByDefault = default != null,
                 name = default?.name ?: part.inputText,
                 amount = part.quantity,
@@ -1665,7 +1671,7 @@ private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLogged
 
 private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toPendingEntryDraft(consumedTime: LocalTime?): PendingEntryDraft =
     PendingEntryDraft(
-        name = trigger?.takeIf { it.isNotBlank() } ?: inputText,
+        name = lookupKey?.takeIf { it.isNotBlank() } ?: inputText,
         amount = quantity
             .takeIf { quantityUnit != null || it != 1.0 }
             ?.formatDraftAmount()

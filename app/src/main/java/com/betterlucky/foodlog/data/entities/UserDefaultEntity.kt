@@ -7,7 +7,7 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "user_defaults")
 data class UserDefaultEntity(
     @PrimaryKey
-    val trigger: String,
+    val lookupKey: String,
     val name: String,
     val calories: Double,
     val unit: String,

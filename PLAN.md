@@ -29,13 +29,14 @@ Near-term work should make daily use faster, clearer, and harder to get subtly w
 
 Current priorities:
 
-1. Label/manual shortcut polish: make scanned and manually entered foods reliable, understandable, and quick to repeat through shortcuts.
-2. Shortcut polish: make common foods easy to save, find, edit, forget, and log without creating duplicate or confusing defaults.
+1. Shortcut polish: make common foods easy to save, find, edit, forget, and log without creating duplicate or confusing defaults.
+2. Label/manual shortcut polish: make scanned and manually entered foods reliable, understandable, and quick to repeat through shortcuts.
 3. Daily close/export polish: make the Lodestone handoff obvious, current, and trustworthy.
+4. Append-log export: add a longer-form Room-backed export for standalone review and analysis after the Lodestone handoff is trustworthy.
 
 ## Next Horizon
 
-After daily workflow polish, begin optional AI integration. AI should help where deterministic local flows are weak, while staying grounded in Room data and user review.
+After shortcut polish, daily close trust, and append-log export are dependable, begin optional AI integration. AI should help where deterministic local flows are weak, while staying grounded in Room data and user review. Compound meals and recipe-style shortcuts should come after that AI foundation rather than interrupting the basic logger polish.
 
 Future compound meals and recipes:
 
@@ -88,17 +89,19 @@ Primary entities:
 - `DailyStatusEntity`: export and change status per food day.
 - `AppSettingsEntity`: local app settings such as food-day boundary.
 
-Product storage should remain barcode-neutral for now. It may store source metadata, package size, item count, serving size/unit, calories per 100g, calories per serving, optional nutrients, and last-logged grams. Do not add barcode/cache fields unless barcode lookup is deliberately reopened as a fresh experiment.
+Product storage should remain barcode-neutral for now. It may store source metadata, package size, item count, serving size/unit, calories per 100g, calories per serving, optional nutrients, and last-logged portion details. Do not add barcode/cache fields unless barcode lookup is deliberately reopened as a fresh experiment.
 
 The seeded tea default remains the first shortcut/default example:
 
-- `trigger = "tea"`
+- `lookupKey = "tea"`
 - `name = "Tea"`
 - `calories = 25`
 - `unit = "cup"`
 - `notes = "English tea with skimmed milk and half a teaspoon of sugar"`
 - `source = USER_DEFAULT`
 - `confidence = HIGH`
+
+`lookupKey` is an internal, normalized match key derived from the shortcut name. The user-facing shortcut label and the logged item name should stay the same field unless a future feature has a concrete need for separate display text.
 
 ## Daily Workflow
 
@@ -123,7 +126,9 @@ Important behavior:
 - Logged-item removal deletes the selected `FoodItemEntity`; it does not delete the associated raw audit record.
 - Pending-entry removal can hard-delete unresolved raw entries when the user intentionally discards them.
 - Manual resolutions require at least item name and calories.
-- Optional "save as shortcut" should create reusable deterministic defaults without storing confusing per-total values; parsed quantities should normalize to per-unit or per-gram defaults.
+- Optional "save as shortcut" should create reusable deterministic defaults around a user-understandable portion, not an unintuitive per-gram default where it can be avoided.
+- Shortcuts should save the portion the user actually means to repeat, such as "one pot", "one wrap", "one bowl", or another clear serving label, with calories for that portion.
+- If the user logs the same shortcut with an edited portion or calorie value, offer a non-intrusive "update shortcut" toggle so they can choose whether the shortcut should learn the new normal.
 
 ## Label And Product Logging
 
@@ -141,6 +146,7 @@ Near-term polish:
 
 - Improve wizard validation for partial labels, especially when calories are present but item size or g/ml basis is ambiguous.
 - Make repeat use of label/manual entries flow through shortcuts, not a separate saved-products surface.
+- Prefer portion-backed shortcuts for label/manual foods. Use gram/ml details internally when needed for label math, but present and save the repeatable shortcut as the user's chosen portion wherever practical.
 - Add focused tests around OCR reader handoff where Android/ML Kit boundaries allow it.
 
 ## Lodestone Export
@@ -183,6 +189,19 @@ Daily close/readiness should remain simple:
 
 The richer audit CSV exporter is retained for developer/data tracing, but it should not become the main user workflow.
 
+## Append-Log Export
+
+After the Lodestone daily close path is trustworthy, add a longer-form append-log export for standalone review and analysis. This is separate from the Lodestone handoff and should not destabilize the daily CSV contract.
+
+Append-log rules:
+
+- Generate from Room rows only.
+- Preserve raw-entry audit context where useful without treating raw text as confirmed food.
+- Include enough structured detail for external analysis, not just the legacy Lodestone columns.
+- Choose stable fields that could also support future in-app charts, such as dates, times, source/provenance, shortcut/product ids, active/removed state, calories, weight, and status timestamps where appropriate.
+- Append or produce long-form history in a deterministic way that can be re-run safely.
+- Do not call AI during export.
+
 ## Verification
 
 Use the checked-in Gradle wrapper:
@@ -213,23 +232,24 @@ Prefer local unit tests for parser, export, totals, daily close, day-boundary, l
 
 Active:
 
-- Polish label/manual shortcut wizard validation and copy.
-- Improve repeat logging for OCR/manual foods through shortcuts with user-confirmed portion memory.
 - Smooth shortcut management for common daily foods.
+- Polish label/manual shortcut wizard validation and copy.
+- Improve repeat logging for OCR/manual foods through shortcuts with user-confirmed portion memory and optional "update shortcut" behavior.
 - Keep daily close/export status easy to trust after edits, removals, pending resolution, and weight changes.
+- Add the standalone append-log export after the Lodestone close path is solid.
 - Expand focused tests only where the behavior is active and risky.
 
 Soon:
 
 - Backend/OpenAI features.
-- Leftovers/container behavior.
 - Compound meals and recipe-style shortcuts that can log a single meal row while retaining ingredient-level breakdowns for later nutrition analysis.
-- Long-term append-log export mode. The export is for our sister app, users wanting this as a standalone will prefer a longer form version of the export containing all the data for analysis
+- Leftovers/container behavior.
 
 Parked:
 
 - Correction audit flows.
 - Fuzzy matching.
+- In-app insights and data visualisation from Room-backed history. Consider this after the logger, exports, and AI foundation are dependable; do not let charting requirements complicate the append-log export track beyond choosing sensible stable fields.
 - Direct Lodestone/Health Monitor integration intended to replace the CSV handoff.
 - Export reminders and richer closed-day semantics.
 

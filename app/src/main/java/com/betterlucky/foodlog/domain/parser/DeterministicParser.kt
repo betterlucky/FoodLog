@@ -192,6 +192,10 @@ class DeterministicParser {
             "bananas" -> "banana"
             "satsumas" -> "satsuma"
             "apples" -> "apple"
+            "roast dinners" -> "roast dinner"
+            "yoghurts" -> "yoghurt"
+            "yogurt pots" -> "yogurt pot"
+            "yoghurt pots" -> "yoghurt pot"
             else -> trigger
         }
 

@@ -38,7 +38,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         AppSettingsEntity::class,
         DailyWeightEntity::class,
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -254,6 +254,52 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `user_defaults_new` (
+                        `lookupKey` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `calories` REAL NOT NULL,
+                        `unit` TEXT NOT NULL,
+                        `notes` TEXT,
+                        `source` TEXT NOT NULL,
+                        `confidence` TEXT NOT NULL,
+                        `active` INTEGER NOT NULL,
+                        `defaultAmount` REAL,
+                        `portionMode` TEXT NOT NULL DEFAULT 'PLAIN',
+                        `itemUnit` TEXT,
+                        `itemSizeAmount` REAL,
+                        `itemSizeUnit` TEXT,
+                        `kcalPer100g` REAL,
+                        `kcalPer100ml` REAL,
+                        `nutritionBasisName` TEXT,
+                        PRIMARY KEY(`lookupKey`)
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `user_defaults_new` (
+                        `lookupKey`, `name`, `calories`, `unit`, `notes`, `source`,
+                        `confidence`, `active`, `defaultAmount`, `portionMode`, `itemUnit`,
+                        `itemSizeAmount`, `itemSizeUnit`, `kcalPer100g`, `kcalPer100ml`,
+                        `nutritionBasisName`
+                    )
+                    SELECT
+                        `trigger`, `name`, `calories`, `unit`, `notes`, `source`,
+                        `confidence`, `active`, `defaultAmount`, `portionMode`, `itemUnit`,
+                        `itemSizeAmount`, `itemSizeUnit`, `kcalPer100g`, `kcalPer100ml`,
+                        `nutritionBasisName`
+                    FROM `user_defaults`
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE `user_defaults`")
+                db.execSQL("ALTER TABLE `user_defaults_new` RENAME TO `user_defaults`")
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -273,6 +319,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_11_12)
                 .addMigrations(MIGRATION_12_13)
                 .addMigrations(MIGRATION_13_14)
+                .addMigrations(MIGRATION_14_15)
                 .build()
     }
 }

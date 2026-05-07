@@ -163,6 +163,84 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun migration14To15RenamesShortcutTriggerToLookupKey() {
+        val databaseName = "migration-14-15-${System.nanoTime()}"
+        migrationHelper.createDatabase(databaseName, 14).apply {
+            execSQL(
+                """
+                INSERT INTO user_defaults (
+                    `trigger`,
+                    name,
+                    calories,
+                    unit,
+                    notes,
+                    source,
+                    confidence,
+                    active,
+                    defaultAmount,
+                    portionMode,
+                    itemUnit,
+                    itemSizeAmount,
+                    itemSizeUnit,
+                    kcalPer100g,
+                    kcalPer100ml,
+                    nutritionBasisName
+                ) VALUES (
+                    'tea',
+                    'Tea',
+                    25.0,
+                    'cup',
+                    'milk',
+                    'USER_DEFAULT',
+                    'HIGH',
+                    1,
+                    2.0,
+                    'ITEM',
+                    'cup',
+                    250.0,
+                    'ml',
+                    NULL,
+                    10.0,
+                    'Tea'
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            15,
+            true,
+            FoodLogDatabase.MIGRATION_14_15,
+        ).apply {
+            query(
+                """
+                SELECT lookupKey, name, calories, unit, notes, defaultAmount, portionMode,
+                    itemUnit, itemSizeAmount, itemSizeUnit, kcalPer100ml, nutritionBasisName
+                FROM user_defaults
+                WHERE lookupKey = 'tea'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("tea", cursor.getString(0))
+                assertEquals("Tea", cursor.getString(1))
+                assertEquals(25.0, cursor.getDouble(2), 0.001)
+                assertEquals("cup", cursor.getString(3))
+                assertEquals("milk", cursor.getString(4))
+                assertEquals(2.0, cursor.getDouble(5), 0.001)
+                assertEquals("ITEM", cursor.getString(6))
+                assertEquals("cup", cursor.getString(7))
+                assertEquals(250.0, cursor.getDouble(8), 0.001)
+                assertEquals("ml", cursor.getString(9))
+                assertEquals(10.0, cursor.getDouble(10), 0.001)
+                assertEquals("Tea", cursor.getString(11))
+            }
+            close()
+        }
+    }
+
+    @Test
     fun teaSubmissionCreatesParsedRawEntryAndFoodItem() = runTest {
         repository.seedDefaults()
 
@@ -392,7 +470,7 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
-    fun wizardSaveCanCreatePerItemShortcut() = runTest {
+    fun wizardSaveCanCreatePortionShortcut() = runTest {
         repository.seedDefaults()
 
         repository.saveWizardSubmission(
@@ -411,7 +489,7 @@ class FoodLogRepositoryInstrumentedTest {
                     source = FoodItemSource.MANUAL_OVERRIDE,
                     confidence = ConfidenceLevel.HIGH,
                     notes = null,
-                    saveDefaultTrigger = "toast",
+                    saveDefaultLookupKey = "toast",
                 ),
             ),
         )
@@ -421,7 +499,8 @@ class FoodLogRepositoryInstrumentedTest {
 
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
         assertEquals(2, foodItems.size)
-        assertEquals(90.0, foodItems.last().calories, 0.001)
+        assertEquals(180.0, foodItems.last().calories, 0.001)
+        assertEquals(2.0, foodItems.last().amount ?: 0.0, 0.001)
     }
 
     @Test
@@ -536,12 +615,14 @@ class FoodLogRepositoryInstrumentedTest {
         val foodItems = repository.observeFoodItemsForDate(today).first()
 
         assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
-        assertEquals("toast", (resolveResult as FoodLogRepository.ManualResolveResult.Resolved).savedDefaultTrigger)
+        assertEquals("toast", (resolveResult as FoodLogRepository.ManualResolveResult.Resolved).savedDefaultLookupKey)
         assertEquals("Toast", default?.name)
-        assertEquals(95.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(190.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(2.0, default?.defaultAmount ?: 0.0, 0.001)
         assertEquals("slice", default?.unit)
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
-        assertEquals(listOf(190.0, 95.0), foodItems.map { it.calories })
+        assertEquals(listOf(190.0, 190.0), foodItems.map { it.calories })
+        assertEquals(2.0, foodItems.last().amount ?: 0.0, 0.001)
         assertEquals(emptyList<RawEntryEntity>(), repository.observePendingEntriesForDate(today).first())
     }
 
@@ -638,7 +719,7 @@ class FoodLogRepositoryInstrumentedTest {
         ) as FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart
 
         assertEquals("10g fruit and nut mix", preview.part?.inputText)
-        assertEquals("fruit and nut mix", preview.part?.trigger)
+        assertEquals("fruit and nut mix", preview.part?.lookupKey)
         assertEquals(10.0, preview.part?.quantity ?: 0.0, 0.001)
         assertEquals("g", preview.part?.quantityUnit)
         assertEquals(LocalTime.parse("13:45"), preview.consumedTime)
@@ -705,7 +786,7 @@ class FoodLogRepositoryInstrumentedTest {
                     source = FoodItemSource.MANUAL_OVERRIDE,
                     confidence = ConfidenceLevel.HIGH,
                     notes = null,
-                    saveDefaultTrigger = "banana",
+                    saveDefaultLookupKey = "banana",
                 ),
                 FoodLogRepository.FoodItemEditReplacementPart(
                     name = "Satsuma",
@@ -750,7 +831,7 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(listOf(null, "Tea"), preview.parts.map { it.default?.name })
         assertEquals(150.0, preview.parts.first().quantity, 0.001)
         assertEquals("g", preview.parts.first().quantityUnit)
-        assertEquals("sourdough with thin butter", preview.parts.first().trigger)
+        assertEquals("sourdough with thin butter", preview.parts.first().lookupKey)
     }
 
     @Test
@@ -815,12 +896,14 @@ class FoodLogRepositoryInstrumentedTest {
         val foodItems = repository.observeFoodItemsForDate(today).first()
 
         assertTrue(addResult is FoodLogRepository.ManualAddResult.Added)
-        assertEquals("greek yogurt", (addResult as FoodLogRepository.ManualAddResult.Added).savedDefaultTrigger)
+        assertEquals("greek yogurt", (addResult as FoodLogRepository.ManualAddResult.Added).savedDefaultLookupKey)
         assertEquals("Greek yogurt", default?.name)
-        assertEquals(90.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(180.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(2.0, default?.defaultAmount ?: 0.0, 0.001)
         assertEquals("pot", default?.unit)
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Parsed)
-        assertEquals(listOf(180.0, 90.0), foodItems.map { it.calories })
+        assertEquals(listOf(180.0, 180.0), foodItems.map { it.calories })
+        assertEquals(2.0, foodItems.last().amount ?: 0.0, 0.001)
     }
 
     @Test
@@ -828,7 +911,7 @@ class FoodLogRepositoryInstrumentedTest {
         repository.seedDefaults()
 
         val addResult = repository.addDefault(
-            trigger = "  Banana  ",
+            lookupKey = "  Banana  ",
             name = "Banana",
             calories = 105.0,
             unit = "each",
@@ -848,11 +931,34 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun directShortcutWithBlankUnitDefaultsToPortion() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addDefault(
+            lookupKey = "roast dinner",
+            name = "Full roast dinner",
+            calories = 850.0,
+            unit = "",
+            notes = null,
+        )
+        val default = database.userDefaultDao().getActiveDefault("roast dinner")
+        val result = repository.submitText("2 roast dinners")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.Updated, addResult)
+        assertEquals("portion", default?.unit)
+        assertTrue(result is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(2.0, foodItem.amount ?: 0.0, 0.001)
+        assertEquals("portion", foodItem.unit)
+        assertEquals(1700.0, foodItem.calories, 0.001)
+    }
+
+    @Test
     fun gramShortcutScalesCaloriesByParsedWeight() = runTest {
         repository.seedDefaults()
 
         repository.addDefault(
-            trigger = "sourdough with thin butter",
+            lookupKey = "sourdough with thin butter",
             name = "Sourdough with thin butter",
             calories = 2.4,
             unit = "g",
@@ -873,7 +979,7 @@ class FoodLogRepositoryInstrumentedTest {
         repository.seedDefaults()
 
         repository.addDefault(
-            trigger = "sourdough",
+            lookupKey = "sourdough",
             name = "Sourdough",
             calories = 90.0,
             unit = "slice",
@@ -890,6 +996,20 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun shortcutWithoutTypedTimeUsesCurrentTimeButExplicitTimeIsPreserved() = runTest {
+        repository.seedDefaults()
+        dateTimeProvider.localTime = LocalTime.parse("14:45")
+
+        val currentTimeResult = repository.submitText("tea")
+        val explicitTimeResult = repository.submitText("08:30 tea")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertTrue(currentTimeResult is FoodLogRepository.SubmitResult.Parsed)
+        assertTrue(explicitTimeResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(listOf(LocalTime.parse("08:30"), LocalTime.parse("14:45")), foodItems.map { it.consumedTime })
+    }
+
+    @Test
     fun unitQuantityPendingPreviewKeepsParsedUnit() = runTest {
         repository.seedDefaults()
 
@@ -901,7 +1021,7 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(listOf("3 slices sourdough", "tea"), preview.parts.map { it.inputText })
         assertEquals(3.0, preview.parts.first().quantity, 0.001)
         assertEquals("slice", preview.parts.first().quantityUnit)
-        assertEquals("sourdough", preview.parts.first().trigger)
+        assertEquals("sourdough", preview.parts.first().lookupKey)
         assertEquals("Tea", preview.parts.last().default?.name)
     }
 
@@ -963,7 +1083,7 @@ class FoodLogRepositoryInstrumentedTest {
         )
 
         val updateResult = repository.updateDefault(
-            trigger = "toast",
+            lookupKey = "toast",
             name = "Buttered toast",
             calories = 130.0,
             unit = "slice",
@@ -979,6 +1099,45 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals("Edited default", default?.notes)
         assertEquals("Buttered toast", latestFoodItem.name)
         assertEquals(130.0, latestFoodItem.calories, 0.001)
+    }
+
+    @Test
+    fun loggedShortcutEditCanUpdateShortcutInSameTransaction() = runTest {
+        repository.seedDefaults()
+        val pendingResult = repository.submitText("toast")
+        repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Toast",
+            amount = 1.0,
+            unit = "slice",
+            calories = 95.0,
+            notes = "Initial",
+            saveAsDefault = true,
+        )
+        val logResult = repository.submitText("toast") as FoodLogRepository.SubmitResult.Parsed
+        val candidate = repository.shortcutUpdateCandidateForFoodItem(logResult.foodItemId)
+
+        val updateResult = repository.updateFoodItem(
+            id = logResult.foodItemId,
+            name = "Toast",
+            amount = 2.0,
+            unit = "slice",
+            calories = 190.0,
+            consumedTime = LocalTime.parse("10:00"),
+            notes = "New usual",
+            updateShortcutLookupKey = candidate?.lookupKey,
+        )
+        val default = database.userDefaultDao().getActiveDefault("toast")
+        repository.submitText("toast")
+        val latestFoodItem = repository.observeFoodItemsForDate(today).first().last()
+
+        assertEquals("toast", candidate?.lookupKey)
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
+        assertEquals(190.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(2.0, default?.defaultAmount ?: 0.0, 0.001)
+        assertEquals("New usual", default?.notes)
+        assertEquals(190.0, latestFoodItem.calories, 0.001)
+        assertEquals(2.0, latestFoodItem.amount ?: 0.0, 0.001)
     }
 
     @Test
@@ -1001,7 +1160,7 @@ class FoodLogRepositoryInstrumentedTest {
 
         assertEquals(null, database.userDefaultDao().getActiveDefault("toast"))
         assertTrue(nextResult is FoodLogRepository.SubmitResult.Pending)
-        assertEquals(listOf("tea"), activeDefaults.map { it.trigger })
+        assertEquals(listOf("tea"), activeDefaults.map { it.lookupKey })
     }
 
     @Test
@@ -1156,17 +1315,17 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
-    fun ocrShortcutStoresPortionMetadataAndLogsLikeShortcut() = runTest {
+    fun ocrShortcutUsesUsualAmountButTypedItemQuantityIsAbsolute() = runTest {
         repository.seedDefaults()
 
         val addResult = repository.addOcrShortcut(
             FoodLogRepository.OcrShortcutInput(
-                trigger = "Yoghurt pot",
+                lookupKey = "Yoghurt pot",
                 name = "Yoghurt pot",
                 caloriesPerUnit = 80.0,
                 unit = "pot",
                 notes = "From label",
-                defaultAmount = 1.0,
+                defaultAmount = 0.5,
                 portionMode = ShortcutPortionMode.ITEM,
                 itemUnit = "pot",
                 itemSizeAmount = 125.0,
@@ -1176,21 +1335,55 @@ class FoodLogRepositoryInstrumentedTest {
             ),
         )
         val default = database.userDefaultDao().getActiveDefault("yoghurt pot")
-        val logResult = repository.submitText("half yoghurt pot")
-        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+        val usualResult = repository.submitText("yoghurt pot")
+        val explicitResult = repository.submitText("two yoghurt pots")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
 
         assertEquals(FoodLogRepository.DefaultUpdateResult.Updated, addResult)
         assertEquals(ShortcutPortionMode.ITEM, default?.portionMode)
-        assertEquals(1.0, default?.defaultAmount ?: 0.0, 0.001)
+        assertEquals(0.5, default?.defaultAmount ?: 0.0, 0.001)
         assertEquals("pot", default?.itemUnit)
         assertEquals(125.0, default?.itemSizeAmount ?: 0.0, 0.001)
         assertEquals("g", default?.itemSizeUnit)
         assertEquals(64.0, default?.kcalPer100g ?: 0.0, 0.001)
         assertEquals("Yoghurt pot", default?.nutritionBasisName)
-        assertTrue(logResult is FoodLogRepository.SubmitResult.Parsed)
-        assertEquals(0.5, foodItem.amount ?: 0.0, 0.001)
-        assertEquals("pot", foodItem.unit)
-        assertEquals(40.0, foodItem.calories, 0.001)
+        assertTrue(usualResult is FoodLogRepository.SubmitResult.Parsed)
+        assertTrue(explicitResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(listOf(0.5, 2.0), foodItems.map { it.amount ?: 0.0 })
+        assertEquals(listOf("pot", "pot"), foodItems.map { it.unit })
+        assertEquals(listOf(40.0, 160.0), foodItems.map { it.calories })
+    }
+
+    @Test
+    fun measureShortcutUsesUsualAmountButTypedMeasureIsAbsolute() = runTest {
+        repository.seedDefaults()
+
+        repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                lookupKey = "cheese",
+                name = "Cheese",
+                caloriesPerUnit = 4.0,
+                unit = "g",
+                notes = null,
+                defaultAmount = 50.0,
+                portionMode = ShortcutPortionMode.MEASURE,
+                itemUnit = null,
+                itemSizeAmount = null,
+                itemSizeUnit = null,
+                kcalPer100g = 400.0,
+                kcalPer100ml = null,
+            ),
+        )
+
+        val usualResult = repository.submitText("cheese")
+        val explicitResult = repository.submitText("100g cheese")
+        val foodItems = repository.observeFoodItemsForDate(today).first()
+
+        assertTrue(usualResult is FoodLogRepository.SubmitResult.Parsed)
+        assertTrue(explicitResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(listOf(50.0, 100.0), foodItems.map { it.amount ?: 0.0 })
+        assertEquals(listOf("g", "g"), foodItems.map { it.unit })
+        assertEquals(listOf(200.0, 400.0), foodItems.map { it.calories })
     }
 
     @Test
@@ -1198,7 +1391,7 @@ class FoodLogRepositoryInstrumentedTest {
         repository.seedDefaults()
         repository.addOcrShortcut(
             FoodLogRepository.OcrShortcutInput(
-                trigger = "yoghurt",
+                lookupKey = "yoghurt",
                 name = "Yoghurt",
                 caloriesPerUnit = 80.0,
                 unit = "pot",
@@ -1214,7 +1407,7 @@ class FoodLogRepositoryInstrumentedTest {
         )
 
         repository.updateDefault(
-            trigger = "yoghurt",
+            lookupKey = "yoghurt",
             name = "Yoghurt",
             calories = 80.0,
             unit = "pot",
@@ -1230,7 +1423,7 @@ class FoodLogRepositoryInstrumentedTest {
         val amountOnly = database.userDefaultDao().getActiveDefault("yoghurt")
 
         repository.updateDefault(
-            trigger = "yoghurt",
+            lookupKey = "yoghurt",
             name = "Greek yoghurt",
             calories = 80.0,
             unit = "pot",
@@ -1289,7 +1482,7 @@ class FoodLogRepositoryInstrumentedTest {
                     source = FoodItemSource.MANUAL_OVERRIDE,
                     confidence = ConfidenceLevel.HIGH,
                     notes = null,
-                    saveDefaultTrigger = "satsuma",
+                    saveDefaultLookupKey = "satsuma",
                 ),
                 FoodLogRepository.FoodItemEditReplacementPart(
                     name = "Banana",
@@ -1625,7 +1818,7 @@ class FoodLogRepositoryInstrumentedTest {
         unit: String,
     ): UserDefaultEntity =
         UserDefaultEntity(
-            trigger = trigger,
+            lookupKey = trigger,
             name = name,
             calories = calories,
             unit = unit,

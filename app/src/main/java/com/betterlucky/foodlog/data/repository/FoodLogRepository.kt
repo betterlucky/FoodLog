@@ -20,6 +20,9 @@ import com.betterlucky.foodlog.domain.export.LegacyHealthCsvExporter
 import com.betterlucky.foodlog.domain.dayboundary.FoodDayPolicy
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.intent.EntryIntent
+import com.betterlucky.foodlog.domain.label.LabelInputMode
+import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
+import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.domain.parser.ParsedFoodPart
 import com.betterlucky.foodlog.util.DateTimeProvider
@@ -49,7 +52,7 @@ class FoodLogRepository(
             appSettingsDao.upsert(AppSettingsEntity())
         }
 
-        if (userDefaultDao.countByTrigger(DEFAULT_TEA.trigger) == 0) {
+        if (userDefaultDao.countByLookupKey(DEFAULT_TEA.lookupKey) == 0) {
             userDefaultDao.upsert(DEFAULT_TEA)
         }
     }
@@ -118,15 +121,17 @@ class FoodLogRepository(
             } else {
                 val foodItemIds = resolvedDefaults.map { (part, default) ->
                     checkNotNull(default)
+                    val resolvedFood = default.resolveShortcutFood(part)
                     foodItemDao.insert(
                         FoodItemEntity(
                             rawEntryId = rawEntryId,
                             logDate = parsed.logDate,
                             consumedTime = consumedTime,
-                            name = default.name,
-                            amount = part.quantity,
-                            unit = default.unit,
-                            calories = default.calories * part.quantity,
+                            name = resolvedFood.name,
+                            amount = resolvedFood.amount,
+                            unit = resolvedFood.unit,
+                            grams = resolvedFood.grams,
+                            calories = resolvedFood.calories,
                             source = default.source,
                             confidence = default.confidence,
                             notes = default.notes,
@@ -246,21 +251,21 @@ class FoodLogRepository(
         }
     }
 
-    suspend fun deactivateDefault(trigger: String) {
-        userDefaultDao.deactivate(trigger)
+    suspend fun deactivateDefault(lookupKey: String) {
+        userDefaultDao.deactivate(lookupKey)
     }
 
-    suspend fun updateShortcutDefaultAmount(trigger: String, amount: Double?): Boolean {
-        val existing = userDefaultDao.getActiveDefault(trigger) ?: return false
+    suspend fun updateShortcutDefaultAmount(lookupKey: String, amount: Double?): Boolean {
+        val existing = userDefaultDao.getActiveDefault(lookupKey) ?: return false
         userDefaultDao.upsert(existing.copy(defaultAmount = amount))
         return true
     }
 
-    suspend fun getActiveShortcut(trigger: String): UserDefaultEntity? =
-        userDefaultDao.getActiveDefault(trigger)
+    suspend fun getActiveShortcut(lookupKey: String): UserDefaultEntity? =
+        userDefaultDao.getActiveDefault(lookupKey)
 
     suspend fun updateDefault(
-        trigger: String,
+        lookupKey: String,
         name: String,
         calories: Double,
         unit: String,
@@ -273,16 +278,16 @@ class FoodLogRepository(
         kcalPer100g: Double? = null,
         kcalPer100ml: Double? = null,
     ): DefaultUpdateResult {
-        val trimmedTrigger = trigger.trim()
+        val normalizedLookupKey = lookupKey.shortcutTrigger()
         val trimmedName = name.trim()
         val trimmedUnit = unit.trim()
         val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
 
-        if (trimmedTrigger.isBlank() || trimmedName.isBlank() || trimmedUnit.isBlank() || calories <= 0.0) {
+        if (normalizedLookupKey.isBlank() || trimmedName.isBlank() || calories <= 0.0) {
             return DefaultUpdateResult.InvalidInput
         }
 
-        val existing = userDefaultDao.getActiveDefault(trimmedTrigger)
+        val existing = userDefaultDao.getActiveDefault(normalizedLookupKey)
             ?: return DefaultUpdateResult.NotFound
         val normalizedItemUnit = itemUnit?.trim().orEmpty().ifBlank { null }
         val normalizedItemSizeUnit = itemSizeUnit?.trim().orEmpty().lowercase().ifBlank { null }
@@ -304,7 +309,7 @@ class FoodLogRepository(
             existing.copy(
                 name = trimmedName,
                 calories = calories,
-                unit = trimmedUnit,
+                unit = trimmedUnit.ifBlank { DEFAULT_PORTION_UNIT },
                 notes = normalizedNotes,
                 defaultAmount = defaultAmount,
                 portionMode = portionMode ?: existing.portionMode,
@@ -324,7 +329,7 @@ class FoodLogRepository(
     }
 
     suspend fun addDefault(
-        trigger: String,
+        lookupKey: String,
         name: String,
         calories: Double,
         unit: String,
@@ -332,21 +337,21 @@ class FoodLogRepository(
         defaultAmount: Double? = null,
         portionMode: ShortcutPortionMode = ShortcutPortionMode.PLAIN,
     ): DefaultUpdateResult {
-        val normalizedTrigger = trigger.shortcutTrigger()
+        val normalizedLookupKey = lookupKey.shortcutTrigger()
         val trimmedName = name.trim()
         val trimmedUnit = unit.trim()
         val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
 
-        if (normalizedTrigger.isBlank() || trimmedName.isBlank() || trimmedUnit.isBlank() || calories <= 0.0) {
+        if (normalizedLookupKey.isBlank() || trimmedName.isBlank() || calories <= 0.0) {
             return DefaultUpdateResult.InvalidInput
         }
 
         userDefaultDao.upsert(
             UserDefaultEntity(
-                trigger = normalizedTrigger,
+                lookupKey = normalizedLookupKey,
                 name = trimmedName,
                 calories = calories,
-                unit = trimmedUnit,
+                unit = trimmedUnit.ifBlank { DEFAULT_PORTION_UNIT },
                 notes = normalizedNotes,
                 defaultAmount = defaultAmount,
                 portionMode = portionMode,
@@ -358,7 +363,7 @@ class FoodLogRepository(
     suspend fun addOcrShortcut(
         input: OcrShortcutInput,
     ): DefaultUpdateResult {
-        val normalizedTrigger = input.trigger.shortcutTrigger()
+        val normalizedTrigger = input.lookupKey.shortcutTrigger()
         val trimmedName = input.name.trim()
         val normalizedNotes = input.notes?.trim().orEmpty().ifBlank { null }
         val unit = input.unit.trim().ifBlank { "serving" }
@@ -368,7 +373,7 @@ class FoodLogRepository(
 
         userDefaultDao.upsert(
             UserDefaultEntity(
-                trigger = normalizedTrigger,
+                lookupKey = normalizedTrigger,
                 name = trimmedName,
                 calories = input.caloriesPerUnit,
                 unit = unit,
@@ -456,18 +461,19 @@ class FoodLogRepository(
         calories: Double?,
         consumedTime: LocalTime,
         notes: String?,
-    ): FoodItemUpdateResult {
+        updateShortcutLookupKey: String? = null,
+    ): FoodItemUpdateResult = database.withTransaction {
         val trimmedName = name.trim()
         val normalizedAmount = amount?.takeIf { it > 0.0 }
         val normalizedUnit = unit?.trim().orEmpty().ifBlank { null }
         val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
 
         if (trimmedName.isBlank() || (calories != null && calories <= 0.0)) {
-            return FoodItemUpdateResult.InvalidInput
+            return@withTransaction FoodItemUpdateResult.InvalidInput
         }
 
         val existing = foodItemDao.getById(id)
-            ?: return FoodItemUpdateResult.NotFound
+            ?: return@withTransaction FoodItemUpdateResult.NotFound
 
         if (calories == null) {
             val parsed = parser.parse(
@@ -478,8 +484,8 @@ class FoodLogRepository(
             val resolvedDefaults = resolveDefaults(parsed.parts)
 
             if (resolvedDefaults.isEmpty() || resolvedDefaults.any { (_, default) -> default == null }) {
-                return FoodItemUpdateResult.UnresolvedDefaults(
-                    missingTriggers = resolvedDefaults
+                return@withTransaction FoodItemUpdateResult.UnresolvedDefaults(
+                    missingLookupKeys = resolvedDefaults
                         .filter { (_, default) -> default == null }
                         .mapNotNull { (part, _) -> part.shortcutTrigger }
                         .distinct(),
@@ -491,15 +497,17 @@ class FoodLogRepository(
             foodItemDao.deleteById(existing.id)
             resolvedDefaults.forEach { (part, default) ->
                 checkNotNull(default)
+                val resolvedFood = default.resolveShortcutFood(part)
                 foodItemDao.insert(
                     FoodItemEntity(
                         rawEntryId = existing.rawEntryId,
                         logDate = existing.logDate,
                         consumedTime = consumedTime,
-                        name = default.name,
-                        amount = part.quantity,
-                        unit = default.unit,
-                        calories = default.calories * part.quantity,
+                        name = resolvedFood.name,
+                        amount = resolvedFood.amount,
+                        unit = resolvedFood.unit,
+                        grams = resolvedFood.grams,
+                        calories = resolvedFood.calories,
                         source = default.source,
                         confidence = default.confidence,
                         notes = overrideNotes ?: default.notes,
@@ -515,7 +523,7 @@ class FoodLogRepository(
                 notes = null,
             )
             markFoodChanged(existing.logDate)
-            return FoodItemUpdateResult.UpdatedFromDefaults
+            return@withTransaction FoodItemUpdateResult.UpdatedFromDefaults
         }
 
         foodItemDao.update(
@@ -528,8 +536,35 @@ class FoodLogRepository(
                 notes = normalizedNotes,
             ),
         )
+        updateShortcutLookupKey
+            ?.shortcutTrigger()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { lookupKey ->
+                val shortcut = shortcutUpdateCandidateForFoodItem(existing)?.default
+                    ?.takeIf { it.lookupKey == lookupKey }
+                    ?: userDefaultDao.getActiveDefault(lookupKey)
+                shortcut?.let {
+                    userDefaultDao.upsert(
+                        it.copy(
+                            name = trimmedName,
+                            calories = it.caloriesForUpdatedShortcut(
+                                amount = normalizedAmount,
+                                calories = calories,
+                            ),
+                            unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
+                            notes = normalizedNotes,
+                            defaultAmount = normalizedAmount,
+                        ),
+                    )
+                }
+            }
         markFoodChanged(existing.logDate)
-        return FoodItemUpdateResult.Updated
+        return@withTransaction FoodItemUpdateResult.Updated
+    }
+
+    suspend fun shortcutUpdateCandidateForFoodItem(id: Long): ShortcutUpdateCandidate? {
+        val existing = foodItemDao.getById(id) ?: return null
+        return shortcutUpdateCandidateForFoodItem(existing)
     }
 
     suspend fun previewFoodItemDefaultEdit(
@@ -594,17 +629,18 @@ class FoodLogRepository(
                         createdAt = createdAt,
                     ),
                 )
-                part.saveDefaultTrigger
+                part.saveDefaultLookupKey
                     ?.trim()
                     ?.takeIf { it.isNotBlank() }
                     ?.also { trigger ->
                         userDefaultDao.upsert(
                             UserDefaultEntity(
-                                trigger = trigger,
+                                lookupKey = trigger.shortcutTrigger(),
                                 name = part.name.trim(),
-                                calories = part.calories / (part.amount?.takeIf { it > 0.0 } ?: 1.0),
-                                unit = part.unit?.trim().orEmpty().ifBlank { "serving" },
+                                calories = part.calories,
+                                unit = part.unit?.trim().orEmpty().ifBlank { DEFAULT_PORTION_UNIT },
                                 notes = part.notes?.trim().orEmpty().ifBlank { null },
+                                defaultAmount = part.amount?.takeIf { it > 0.0 },
                             ),
                         )
                     }
@@ -685,15 +721,17 @@ class FoodLogRepository(
                 val createdAt = dateTimeProvider.nowInstant()
                 val foodItemIds = resolvedDefaults.map { (part, default) ->
                     checkNotNull(default)
+                    val resolvedFood = default.resolveShortcutFood(part)
                     foodItemDao.insert(
                         FoodItemEntity(
                             rawEntryId = rawEntry.id,
                             logDate = parsed.logDate,
                             consumedTime = resolvedTime,
-                            name = default.name,
-                            amount = part.quantity,
-                            unit = default.unit,
-                            calories = default.calories * part.quantity,
+                            name = resolvedFood.name,
+                            amount = resolvedFood.amount,
+                            unit = resolvedFood.unit,
+                            grams = resolvedFood.grams,
+                            calories = resolvedFood.calories,
                             source = default.source,
                             confidence = default.confidence,
                             notes = default.notes,
@@ -792,17 +830,18 @@ class FoodLogRepository(
                         createdAt = createdAt,
                     ),
                 )
-                part.saveDefaultTrigger
+                part.saveDefaultLookupKey
                     ?.trim()
                     ?.takeIf { it.isNotBlank() }
                     ?.also { trigger ->
                         userDefaultDao.upsert(
                             UserDefaultEntity(
-                                trigger = trigger,
+                                lookupKey = trigger.shortcutTrigger(),
                                 name = part.name.trim(),
-                                calories = part.calories / (part.amount?.takeIf { it > 0.0 } ?: 1.0),
-                                unit = part.unit?.trim().orEmpty().ifBlank { "serving" },
+                                calories = part.calories,
+                                unit = part.unit?.trim().orEmpty().ifBlank { DEFAULT_PORTION_UNIT },
                                 notes = part.notes?.trim().orEmpty().ifBlank { null },
+                                defaultAmount = part.amount?.takeIf { it > 0.0 },
                             ),
                         )
                     }
@@ -987,17 +1026,17 @@ class FoodLogRepository(
             rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
             markFoodChanged(rawEntry.logDate)
 
-            val savedDefaultTrigger = if (saveAsDefault) {
+            val savedDefaultLookupKey = if (saveAsDefault) {
                 val parsed = parser.parse(rawEntry.rawText, rawEntry.logDate)
                 parsed.shortcutTrigger
                     ?.takeIf { it.isNotBlank() }
                     ?.also { trigger ->
                         userDefaultDao.upsert(
                             UserDefaultEntity(
-                                trigger = trigger,
+                                lookupKey = trigger,
                                 name = trimmedName,
-                                calories = calories / (normalizedAmount ?: 1.0),
-                                unit = normalizedUnit ?: "serving",
+                                calories = calories,
+                                unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
                                 notes = normalizedNotes,
                                 defaultAmount = normalizedAmount,
                             ),
@@ -1010,7 +1049,7 @@ class FoodLogRepository(
             ManualResolveResult.Resolved(
                 foodItemId = foodItemId,
                 logDate = rawEntry.logDate,
-                savedDefaultTrigger = savedDefaultTrigger,
+                savedDefaultLookupKey = savedDefaultLookupKey,
             )
         }
 
@@ -1064,16 +1103,16 @@ class FoodLogRepository(
             )
             markFoodChanged(logDate)
 
-            val savedDefaultTrigger = if (saveAsDefault) {
+            val savedDefaultLookupKey = if (saveAsDefault) {
                 trimmedName.shortcutTrigger()
                     .takeIf { it.isNotBlank() }
                     ?.also { trigger ->
                         userDefaultDao.upsert(
                             UserDefaultEntity(
-                                trigger = trigger,
+                                lookupKey = trigger,
                                 name = trimmedName,
-                                calories = calories / (normalizedAmount ?: 1.0),
-                                unit = normalizedUnit ?: "serving",
+                                calories = calories,
+                                unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
                                 notes = normalizedNotes,
                                 defaultAmount = normalizedAmount,
                             ),
@@ -1087,7 +1126,7 @@ class FoodLogRepository(
                 rawEntryId = rawEntryId,
                 foodItemId = foodItemId,
                 logDate = logDate,
-                savedDefaultTrigger = savedDefaultTrigger,
+                savedDefaultLookupKey = savedDefaultLookupKey,
             )
         }
 
@@ -1201,11 +1240,33 @@ class FoodLogRepository(
     private suspend fun ParsedFoodPart.toPreviewPart(): FoodItemDefaultEditPreviewPart =
         FoodItemDefaultEditPreviewPart(
             inputText = normalizedFoodText,
-            trigger = shortcutTrigger,
+            lookupKey = shortcutTrigger,
             quantity = quantity,
             quantityUnit = quantityUnit,
             default = shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
         )
+
+    private suspend fun shortcutUpdateCandidateForFoodItem(existing: FoodItemEntity): ShortcutUpdateCandidate? {
+        val rawEntry = rawEntryDao.getById(existing.rawEntryId) ?: return null
+        val parsed = parser.parse(
+            input = rawEntry.rawText,
+            today = dateTimeProvider.today(),
+            defaultLogDate = rawEntry.logDate,
+        )
+        val part = parsed.parts.singleOrNull() ?: return null
+        val lookupKey = part.shortcutTrigger?.takeIf { it.isNotBlank() } ?: return null
+        val default = userDefaultDao.getActiveDefault(lookupKey) ?: return null
+        val resolved = default.resolveShortcutFood(part)
+        return ShortcutUpdateCandidate(
+            lookupKey = lookupKey,
+            name = resolved.name,
+            amount = resolved.amount,
+            unit = resolved.unit,
+            calories = resolved.calories,
+            notes = default.notes,
+            default = default,
+        )
+    }
 
     private suspend fun insertReplacementParts(
         rawEntryId: Long,
@@ -1230,16 +1291,16 @@ class FoodLogRepository(
                     createdAt = createdAt,
                 ),
             )
-            part.saveDefaultTrigger
+            part.saveDefaultLookupKey
                 ?.shortcutTrigger()
                 ?.takeIf { it.isNotBlank() }
                 ?.also { trigger ->
                     userDefaultDao.upsert(
                         UserDefaultEntity(
-                            trigger = trigger,
+                            lookupKey = trigger,
                             name = part.name.trim(),
-                            calories = part.calories / (part.amount?.takeIf { it > 0.0 } ?: 1.0),
-                            unit = part.unit?.trim().orEmpty().ifBlank { "serving" },
+                            calories = part.calories,
+                            unit = part.unit?.trim().orEmpty().ifBlank { DEFAULT_PORTION_UNIT },
                             notes = part.notes?.trim().orEmpty().ifBlank { null },
                             defaultAmount = part.amount?.takeIf { it > 0.0 },
                         ),
@@ -1327,7 +1388,7 @@ class FoodLogRepository(
         data class Resolved(
             val foodItemId: Long,
             val logDate: LocalDate,
-            val savedDefaultTrigger: String?,
+            val savedDefaultLookupKey: String?,
         ) : ManualResolveResult
 
         data object InvalidInput : ManualResolveResult
@@ -1340,7 +1401,7 @@ class FoodLogRepository(
             val rawEntryId: Long,
             val foodItemId: Long,
             val logDate: LocalDate,
-            val savedDefaultTrigger: String?,
+            val savedDefaultLookupKey: String?,
         ) : ManualAddResult
 
         data object InvalidInput : ManualAddResult
@@ -1357,7 +1418,7 @@ class FoodLogRepository(
         data object UpdatedFromDefaults : FoodItemUpdateResult
         data object InvalidInput : FoodItemUpdateResult
         data class UnresolvedDefaults(
-            val missingTriggers: List<String>,
+            val missingLookupKeys: List<String>,
         ) : FoodItemUpdateResult
         data object NotFound : FoodItemUpdateResult
     }
@@ -1374,7 +1435,7 @@ class FoodLogRepository(
 
     data class FoodItemDefaultEditPreviewPart(
         val inputText: String,
-        val trigger: String?,
+        val lookupKey: String?,
         val quantity: Double,
         val quantityUnit: String?,
         val default: UserDefaultEntity?,
@@ -1388,7 +1449,17 @@ class FoodLogRepository(
         val source: FoodItemSource,
         val confidence: ConfidenceLevel,
         val notes: String?,
-        val saveDefaultTrigger: String? = null,
+        val saveDefaultLookupKey: String? = null,
+    )
+
+    data class ShortcutUpdateCandidate(
+        val lookupKey: String,
+        val name: String,
+        val amount: Double?,
+        val unit: String?,
+        val calories: Double,
+        val notes: String?,
+        val default: UserDefaultEntity,
     )
 
     sealed interface FoodItemRemoveResult {
@@ -1453,7 +1524,7 @@ class FoodLogRepository(
     )
 
     data class OcrShortcutInput(
-        val trigger: String,
+        val lookupKey: String,
         val name: String,
         val caloriesPerUnit: Double,
         val unit: String,
@@ -1489,7 +1560,7 @@ class FoodLogRepository(
             "foodlog-audit-$date.csv"
 
         val DEFAULT_TEA = UserDefaultEntity(
-            trigger = "tea",
+            lookupKey = "tea",
             name = "Tea",
             calories = 25.0,
             unit = "cup",
@@ -1532,6 +1603,142 @@ private fun String.shortcutTrigger(): String =
     trim()
         .lowercase()
         .replace(Regex("\\s+"), " ")
+
+private const val DEFAULT_PORTION_UNIT = "portion"
+
+private data class ResolvedShortcutFood(
+    val name: String,
+    val amount: Double?,
+    val unit: String?,
+    val grams: Double?,
+    val calories: Double,
+)
+
+private fun UserDefaultEntity.resolveShortcutFood(part: ParsedFoodPart): ResolvedShortcutFood {
+    val explicitQuantity = part.hasExplicitQuantity()
+    val defaultAmount = defaultAmount?.takeIf { it > 0.0 }
+    val resolved = when (portionMode) {
+        ShortcutPortionMode.ITEM -> resolveItemShortcutFood(part, explicitQuantity, defaultAmount)
+        ShortcutPortionMode.MEASURE -> resolveMeasureShortcutFood(part, explicitQuantity, defaultAmount)
+        ShortcutPortionMode.PLAIN -> resolvePlainShortcutFood(part, explicitQuantity, defaultAmount)
+    }
+    return resolved.copy(name = name)
+}
+
+private fun UserDefaultEntity.caloriesForUpdatedShortcut(
+    amount: Double?,
+    calories: Double,
+): Double =
+    when (portionMode) {
+        ShortcutPortionMode.ITEM,
+        ShortcutPortionMode.MEASURE ->
+            amount?.takeIf { it > 0.0 }?.let { calories / it } ?: calories
+        ShortcutPortionMode.PLAIN -> calories
+    }
+
+private fun UserDefaultEntity.resolvePlainShortcutFood(
+    part: ParsedFoodPart,
+    explicitQuantity: Boolean,
+    defaultAmount: Double?,
+): ResolvedShortcutFood {
+    val multiplier = if (explicitQuantity) part.quantity else 1.0
+    val amount = (defaultAmount ?: 1.0) * multiplier
+    return ResolvedShortcutFood(
+        name = name,
+        amount = amount,
+        unit = unit,
+        grams = if (unit == "g") amount else null,
+        calories = calories * multiplier,
+    )
+}
+
+private fun UserDefaultEntity.resolveItemShortcutFood(
+    part: ParsedFoodPart,
+    explicitQuantity: Boolean,
+    defaultAmount: Double?,
+): ResolvedShortcutFood {
+    val amount = if (explicitQuantity) part.quantity else defaultAmount ?: 1.0
+    val facts = toLabelFacts()
+    val resolution = facts?.let {
+        LabelPortionResolver.resolve(it, LabelInputMode.ITEMS, amount.toString())
+    }
+    return ResolvedShortcutFood(
+        name = name,
+        amount = resolution?.amount ?: amount,
+        unit = resolution?.unit ?: itemUnit ?: unit,
+        grams = resolution?.grams,
+        calories = resolution?.calories ?: calories * amount,
+    )
+}
+
+private fun UserDefaultEntity.resolveMeasureShortcutFood(
+    part: ParsedFoodPart,
+    explicitQuantity: Boolean,
+    defaultAmount: Double?,
+): ResolvedShortcutFood {
+    val explicitMeasure = explicitQuantity && part.quantityUnit in setOf("g", "ml")
+    val amount = when {
+        explicitMeasure -> part.quantity
+        explicitQuantity -> (defaultAmount ?: 1.0) * part.quantity
+        else -> defaultAmount ?: 1.0
+    }
+    val resolvedUnit = when {
+        explicitMeasure -> part.quantityUnit
+        unit in setOf("g", "ml") -> unit
+        itemSizeUnit in setOf("g", "ml") -> itemSizeUnit
+        else -> unit
+    } ?: unit
+    val facts = toLabelFacts()
+    val resolution = facts?.let {
+        LabelPortionResolver.resolve(it, LabelInputMode.MEASURE, "${amount.formatPlainNumber()}$resolvedUnit")
+    }
+    return ResolvedShortcutFood(
+        name = name,
+        amount = resolution?.amount ?: amount,
+        unit = resolution?.unit ?: resolvedUnit,
+        grams = resolution?.grams ?: amount.takeIf { resolvedUnit == "g" },
+        calories = resolution?.calories ?: calories * amount,
+    )
+}
+
+private fun ParsedFoodPart.hasExplicitQuantity(): Boolean =
+    quantityUnit != null || quantity != 1.0 || normalizedFoodText.shortcutTrigger() != shortcutTrigger
+
+private fun UserDefaultEntity.toLabelFacts(): LabelNutritionFacts? =
+    when {
+        portionMode == ShortcutPortionMode.ITEM &&
+            itemUnit != null &&
+            itemSizeAmount != null &&
+            itemSizeUnit == "g" &&
+            kcalPer100g != null ->
+            LabelNutritionFacts(
+                rawText = "",
+                kcalPer100g = kcalPer100g,
+                packageSizeGrams = itemSizeAmount,
+                packageItemCount = 1.0,
+                packageItemUnit = itemUnit,
+            )
+        portionMode == ShortcutPortionMode.ITEM &&
+            itemUnit != null &&
+            itemSizeAmount != null &&
+            itemSizeUnit == "ml" &&
+            kcalPer100ml != null ->
+            LabelNutritionFacts(
+                rawText = "",
+                kcalPer100ml = kcalPer100ml,
+                packageSizeMilliliters = itemSizeAmount,
+                packageItemCount = 1.0,
+                packageItemUnit = itemUnit,
+            )
+        portionMode == ShortcutPortionMode.MEASURE && kcalPer100g != null ->
+            LabelNutritionFacts(rawText = "", kcalPer100g = kcalPer100g)
+        portionMode == ShortcutPortionMode.MEASURE && kcalPer100ml != null ->
+            LabelNutritionFacts(rawText = "", kcalPer100ml = kcalPer100ml)
+        else -> null
+    }
+
+private fun Double.formatPlainNumber(): String =
+    if (this % 1.0 == 0.0) toInt().toString() else toString()
 
 private fun pendingNotes(
     amount: Double?,

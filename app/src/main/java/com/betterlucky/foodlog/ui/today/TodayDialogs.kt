@@ -67,6 +67,7 @@ import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
+import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
@@ -93,7 +94,7 @@ internal fun ShortcutPickerDialog(
     val filteredDefaults = userDefaults.filter { userDefault ->
         val normalizedQuery = query.trim()
         normalizedQuery.isBlank() ||
-            userDefault.trigger.contains(normalizedQuery, ignoreCase = true) ||
+            userDefault.lookupKey.contains(normalizedQuery, ignoreCase = true) ||
             userDefault.name.contains(normalizedQuery, ignoreCase = true)
     }
 
@@ -176,7 +177,7 @@ private fun ShortcutRow(
                 .fillMaxWidth()
                 .padding(12.dp),
         ) {
-            Text(text = userDefault.trigger, fontWeight = FontWeight.SemiBold)
+            Text(text = userDefault.name, fontWeight = FontWeight.SemiBold)
             Text(
                 text = shortcutSummaryText(userDefault),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -198,10 +199,15 @@ private fun ShortcutRow(
 }
 
 private fun shortcutSummaryText(userDefault: UserDefaultEntity): String {
-    val base = "${userDefault.name} - ${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}"
+    val base = "${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}"
     val usual = userDefault.defaultAmount?.let { amount ->
-        val calories = userDefault.calories * amount
-        "usual ${amount.formatAmount()} ${pluralizedShortcutUnit(userDefault.unit, amount)} (${calories.formatAmount()} kcal)"
+        when (userDefault.portionMode) {
+            ShortcutPortionMode.ITEM,
+            ShortcutPortionMode.MEASURE ->
+                "usual ${amount.formatAmount()} ${pluralizedShortcutUnit(userDefault.unit, amount)}"
+            ShortcutPortionMode.PLAIN ->
+                null
+        }
     }
     val stale = userDefault.nutritionBasisName
         ?.takeIf { it != userDefault.name }
@@ -214,6 +220,33 @@ private fun pluralizedShortcutUnit(
     amount: Double,
 ): String =
     if (amount == 1.0 || unit.endsWith("s")) unit else "${unit}s"
+
+private fun shortcutFieldsDiffer(
+    candidate: FoodLogRepository.ShortcutUpdateCandidate,
+    name: String,
+    amount: String,
+    unit: String,
+    calories: String,
+    notes: String,
+): Boolean {
+    val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
+    val parsedCalories = calories.trim().toDoubleOrNull()
+    return name.trim() != candidate.name ||
+        !nullableDoubleNearly(parsedAmount, candidate.amount) ||
+        unit.trim().ifBlank { null } != candidate.unit ||
+        !nullableDoubleNearly(parsedCalories, candidate.calories) ||
+        notes.trim().ifBlank { null } != candidate.notes
+}
+
+private fun nullableDoubleNearly(
+    left: Double?,
+    right: Double?,
+): Boolean =
+    when {
+        left == null && right == null -> true
+        left == null || right == null -> false
+        else -> (left - right).absoluteValue < 0.001
+    }
 
 @Composable
 private fun ShortcutModeButton(
@@ -259,28 +292,23 @@ internal fun EditShortcutDialog(
         kcalPer100ml: String,
     ) -> Unit,
 ) {
-    var name by remember(userDefault.trigger) { mutableStateOf(userDefault.name) }
-    var calories by remember(userDefault.trigger) { mutableStateOf(userDefault.calories.formatAmount()) }
-    var unit by remember(userDefault.trigger) { mutableStateOf(userDefault.unit) }
-    var notes by remember(userDefault.trigger) { mutableStateOf(userDefault.notes.orEmpty()) }
-    var defaultAmount by remember(userDefault.trigger) { mutableStateOf(userDefault.defaultAmount?.formatAmount().orEmpty()) }
-    var portionMode by remember(userDefault.trigger) { mutableStateOf(userDefault.portionMode) }
-    var itemUnit by remember(userDefault.trigger) { mutableStateOf(userDefault.itemUnit.orEmpty()) }
-    var itemSizeAmount by remember(userDefault.trigger) { mutableStateOf(userDefault.itemSizeAmount?.formatAmount().orEmpty()) }
-    var itemSizeUnit by remember(userDefault.trigger) { mutableStateOf(userDefault.itemSizeUnit.orEmpty()) }
-    var kcalPer100g by remember(userDefault.trigger) { mutableStateOf(userDefault.kcalPer100g?.formatAmount().orEmpty()) }
-    var kcalPer100ml by remember(userDefault.trigger) { mutableStateOf(userDefault.kcalPer100ml?.formatAmount().orEmpty()) }
+    var name by remember(userDefault.lookupKey) { mutableStateOf(userDefault.name) }
+    var calories by remember(userDefault.lookupKey) { mutableStateOf(userDefault.calories.formatAmount()) }
+    var unit by remember(userDefault.lookupKey) { mutableStateOf(userDefault.unit) }
+    var notes by remember(userDefault.lookupKey) { mutableStateOf(userDefault.notes.orEmpty()) }
+    var defaultAmount by remember(userDefault.lookupKey) { mutableStateOf(userDefault.defaultAmount?.formatAmount().orEmpty()) }
+    var portionMode by remember(userDefault.lookupKey) { mutableStateOf(userDefault.portionMode) }
+    var itemUnit by remember(userDefault.lookupKey) { mutableStateOf(userDefault.itemUnit.orEmpty()) }
+    var itemSizeAmount by remember(userDefault.lookupKey) { mutableStateOf(userDefault.itemSizeAmount?.formatAmount().orEmpty()) }
+    var itemSizeUnit by remember(userDefault.lookupKey) { mutableStateOf(userDefault.itemSizeUnit.orEmpty()) }
+    var kcalPer100g by remember(userDefault.lookupKey) { mutableStateOf(userDefault.kcalPer100g?.formatAmount().orEmpty()) }
+    var kcalPer100ml by remember(userDefault.lookupKey) { mutableStateOf(userDefault.kcalPer100ml?.formatAmount().orEmpty()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit shortcut") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = userDefault.trigger,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -302,7 +330,7 @@ internal fun EditShortcutDialog(
                         onValueChange = { unit = it },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        label = { Text("Unit") },
+                        label = { Text("Unit (optional)") },
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -423,9 +451,8 @@ internal fun EditShortcutDialog(
 @Composable
 internal fun AddShortcutDialog(
     onDismiss: () -> Unit,
-    onSave: (trigger: String, name: String, calories: String, unit: String, notes: String) -> Unit,
+    onSave: (name: String, calories: String, unit: String, notes: String) -> Unit,
 ) {
-    var trigger by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var calories by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("") }
@@ -437,18 +464,11 @@ internal fun AddShortcutDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = trigger,
-                    onValueChange = { trigger = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("Shortcut") },
-                )
-                OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("Item") },
+                    label = { Text("Name") },
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -464,7 +484,7 @@ internal fun AddShortcutDialog(
                         onValueChange = { unit = it },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        label = { Text("Unit") },
+                        label = { Text("Unit (optional)") },
                     )
                 }
                 OutlinedTextField(
@@ -480,7 +500,7 @@ internal fun AddShortcutDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(trigger, name, calories, unit, notes) }) {
+            Button(onClick = { onSave(name, calories, unit, notes) }) {
                 Text("Save")
             }
         },
@@ -503,7 +523,7 @@ internal fun ForgetShortcutDialog(
         title = { Text("Forget shortcut?") },
         text = {
             Text(
-                text = "'${userDefault.trigger}' currently logs ${userDefault.name} at ${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}.",
+                text = "'${userDefault.name}' logs at ${userDefault.calories.formatAmount()} kcal per ${userDefault.unit}.",
             )
         },
         confirmButton = {
@@ -522,10 +542,11 @@ internal fun ForgetShortcutDialog(
 @Composable
 internal fun EditFoodItemDialog(
     item: com.betterlucky.foodlog.data.entities.FoodItemEntity,
+    shortcutUpdateCandidate: FoodLogRepository.ShortcutUpdateCandidate?,
     errorMessage: String?,
     onDismiss: () -> Unit,
     onRemove: () -> Unit,
-    onSave: (name: String, amount: String, unit: String, calories: String, time: String, notes: String) -> Unit,
+    onSave: (name: String, amount: String, unit: String, calories: String, time: String, notes: String, updateShortcut: Boolean) -> Unit,
 ) {
     val caloriesPerUnit = remember(item.id) {
         val a = item.amount?.takeIf { it > 0.0 }
@@ -540,6 +561,17 @@ internal fun EditFoodItemDialog(
     var notes by remember(item.id) { mutableStateOf(item.notes.orEmpty()) }
     var caloriesEdited by remember(item.id) { mutableStateOf(false) }
     var caloriesRecalculated by remember(item.id) { mutableStateOf(false) }
+    var updateShortcut by remember(item.id, shortcutUpdateCandidate?.lookupKey) { mutableStateOf(false) }
+    val shortcutChanged = shortcutUpdateCandidate?.let {
+        shortcutFieldsDiffer(
+            candidate = it,
+            name = name,
+            amount = amount,
+            unit = unit,
+            calories = calories,
+            notes = notes,
+        )
+    } == true
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -619,6 +651,15 @@ internal fun EditFoodItemDialog(
                     maxLines = 3,
                     label = { Text("Notes") },
                 )
+                if (shortcutChanged) {
+                    val candidate = checkNotNull(shortcutUpdateCandidate)
+                    ShortcutToggle(
+                        checked = updateShortcut,
+                        enabled = true,
+                        label = "Update shortcut '${candidate.name}'",
+                        onCheckedChange = { updateShortcut = it },
+                    )
+                }
                 errorMessage?.let {
                     Text(
                         text = it,
@@ -629,7 +670,7 @@ internal fun EditFoodItemDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(name, amount, unit, calories, time, notes) }) {
+            Button(onClick = { onSave(name, amount, unit, calories, time, notes, updateShortcut && shortcutChanged) }) {
                 Text("Save")
             }
         },
@@ -661,7 +702,7 @@ internal fun ResolveLoggedFoodEditDialog(
             resolution.parts.map { part ->
                 LoggedFoodEditResolvedPartInput(
                     inputText = part.inputText,
-                    trigger = part.trigger,
+                    lookupKey = part.lookupKey,
                     resolvedByDefault = part.resolvedByDefault,
                     name = part.name,
                     amount = part.amount?.formatAmount().orEmpty(),

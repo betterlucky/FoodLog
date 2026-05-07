@@ -25,7 +25,7 @@ This repository contains the first Phase 1 implementation slice:
 
 ## Current Direction
 
-Near-term work should polish the existing local daily workflow: OCR/manual product logging, shortcuts/defaults, and Lodestone export readiness. Barcode lookup is parked unless the plan is explicitly reopened.
+Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, then a longer-form append-log export. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though append-log fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
 
 ## Local Development
 
