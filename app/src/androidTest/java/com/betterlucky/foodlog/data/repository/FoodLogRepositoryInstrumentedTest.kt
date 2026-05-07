@@ -2,8 +2,10 @@ package com.betterlucky.foodlog.data.repository
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.betterlucky.foodlog.data.db.FoodLogDatabase
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.EntryKind
@@ -12,6 +14,7 @@ import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.ProductSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
+import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.dailyclose.DailyCloseReadiness
 import com.betterlucky.foodlog.domain.dailyclose.dailyCloseReadiness
@@ -22,8 +25,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.Instant
@@ -32,6 +37,12 @@ import java.time.LocalTime
 
 @RunWith(AndroidJUnit4::class)
 class FoodLogRepositoryInstrumentedTest {
+    @get:Rule
+    val migrationHelper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        FoodLogDatabase::class.java,
+    )
+
     private lateinit var database: FoodLogDatabase
     private lateinit var repository: FoodLogRepository
     private lateinit var dateTimeProvider: MutableDateTimeProvider
@@ -74,6 +85,81 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(25.0, tea?.calories)
         assertEquals(FoodItemSource.USER_DEFAULT, tea?.source)
         assertEquals(ConfidenceLevel.HIGH, tea?.confidence)
+    }
+
+    @Test
+    fun migration13To14BackfillsShortcutPortionColumns() {
+        val databaseName = "migration-13-14-${System.nanoTime()}"
+        migrationHelper.createDatabase(databaseName, 13).apply {
+            execSQL(
+                """
+                INSERT INTO user_defaults (
+                    `trigger`,
+                    name,
+                    calories,
+                    unit,
+                    notes,
+                    source,
+                    confidence,
+                    active,
+                    defaultAmount
+                ) VALUES (
+                    'tea',
+                    'Tea',
+                    25.0,
+                    'cup',
+                    'milk',
+                    'USER_DEFAULT',
+                    'HIGH',
+                    1,
+                    2.0
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            14,
+            true,
+            FoodLogDatabase.MIGRATION_13_14,
+        ).apply {
+            query(
+                """
+                SELECT
+                    name,
+                    calories,
+                    unit,
+                    notes,
+                    defaultAmount,
+                    portionMode,
+                    itemUnit,
+                    itemSizeAmount,
+                    itemSizeUnit,
+                    kcalPer100g,
+                    kcalPer100ml,
+                    nutritionBasisName
+                FROM user_defaults
+                WHERE `trigger` = 'tea'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Tea", cursor.getString(0))
+                assertEquals(25.0, cursor.getDouble(1), 0.001)
+                assertEquals("cup", cursor.getString(2))
+                assertEquals("milk", cursor.getString(3))
+                assertEquals(2.0, cursor.getDouble(4), 0.001)
+                assertEquals("PLAIN", cursor.getString(5))
+                assertNull(cursor.getString(6))
+                assertTrue(cursor.isNull(7))
+                assertNull(cursor.getString(8))
+                assertTrue(cursor.isNull(9))
+                assertTrue(cursor.isNull(10))
+                assertNull(cursor.getString(11))
+            }
+            close()
+        }
     }
 
     @Test
@@ -1067,6 +1153,102 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals("food_log_2026-04-24.csv", status?.legacyExportFileName)
         assertEquals(now, status?.legacyExportedAt)
         assertTrue(csv.contains("2026-04-24,13:15,Tomato soup,1 cup,83,Label scan"))
+    }
+
+    @Test
+    fun ocrShortcutStoresPortionMetadataAndLogsLikeShortcut() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                trigger = "Yoghurt pot",
+                name = "Yoghurt pot",
+                caloriesPerUnit = 80.0,
+                unit = "pot",
+                notes = "From label",
+                defaultAmount = 1.0,
+                portionMode = ShortcutPortionMode.ITEM,
+                itemUnit = "pot",
+                itemSizeAmount = 125.0,
+                itemSizeUnit = "g",
+                kcalPer100g = 64.0,
+                kcalPer100ml = null,
+            ),
+        )
+        val default = database.userDefaultDao().getActiveDefault("yoghurt pot")
+        val logResult = repository.submitText("half yoghurt pot")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.Updated, addResult)
+        assertEquals(ShortcutPortionMode.ITEM, default?.portionMode)
+        assertEquals(1.0, default?.defaultAmount ?: 0.0, 0.001)
+        assertEquals("pot", default?.itemUnit)
+        assertEquals(125.0, default?.itemSizeAmount ?: 0.0, 0.001)
+        assertEquals("g", default?.itemSizeUnit)
+        assertEquals(64.0, default?.kcalPer100g ?: 0.0, 0.001)
+        assertEquals("Yoghurt pot", default?.nutritionBasisName)
+        assertTrue(logResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals(0.5, foodItem.amount ?: 0.0, 0.001)
+        assertEquals("pot", foodItem.unit)
+        assertEquals(40.0, foodItem.calories, 0.001)
+    }
+
+    @Test
+    fun shortcutNutritionBasisStalesOnNameChangeButNotAmountChange() = runTest {
+        repository.seedDefaults()
+        repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                trigger = "yoghurt",
+                name = "Yoghurt",
+                caloriesPerUnit = 80.0,
+                unit = "pot",
+                notes = null,
+                defaultAmount = 1.0,
+                portionMode = ShortcutPortionMode.ITEM,
+                itemUnit = "pot",
+                itemSizeAmount = 125.0,
+                itemSizeUnit = "g",
+                kcalPer100g = 64.0,
+                kcalPer100ml = null,
+            ),
+        )
+
+        repository.updateDefault(
+            trigger = "yoghurt",
+            name = "Yoghurt",
+            calories = 80.0,
+            unit = "pot",
+            notes = null,
+            defaultAmount = 0.5,
+            portionMode = ShortcutPortionMode.ITEM,
+            itemUnit = "pot",
+            itemSizeAmount = 125.0,
+            itemSizeUnit = "g",
+            kcalPer100g = 64.0,
+            kcalPer100ml = null,
+        )
+        val amountOnly = database.userDefaultDao().getActiveDefault("yoghurt")
+
+        repository.updateDefault(
+            trigger = "yoghurt",
+            name = "Greek yoghurt",
+            calories = 80.0,
+            unit = "pot",
+            notes = null,
+            defaultAmount = 0.5,
+            portionMode = ShortcutPortionMode.ITEM,
+            itemUnit = "pot",
+            itemSizeAmount = 125.0,
+            itemSizeUnit = "g",
+            kcalPer100g = 64.0,
+            kcalPer100ml = null,
+        )
+        val renamed = database.userDefaultDao().getActiveDefault("yoghurt")
+
+        assertEquals(0.5, amountOnly?.defaultAmount ?: 0.0, 0.001)
+        assertEquals("Yoghurt", amountOnly?.nutritionBasisName)
+        assertEquals("Greek yoghurt", renamed?.name)
+        assertEquals("Yoghurt", renamed?.nutritionBasisName)
     }
 
     @Test

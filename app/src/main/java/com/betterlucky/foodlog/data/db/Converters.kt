@@ -8,6 +8,7 @@ import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.ProductPhotoStatus
 import com.betterlucky.foodlog.data.entities.ProductSource
 import com.betterlucky.foodlog.data.entities.RawEntryStatus
+import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -72,4 +73,10 @@ class Converters {
 
     @TypeConverter
     fun stringToConfidenceLevel(value: String?): ConfidenceLevel? = value?.let(ConfidenceLevel::valueOf)
+
+    @TypeConverter
+    fun shortcutPortionModeToString(value: ShortcutPortionMode?): String? = value?.name
+
+    @TypeConverter
+    fun stringToShortcutPortionMode(value: String?): ShortcutPortionMode? = value?.let(ShortcutPortionMode::valueOf)
 }

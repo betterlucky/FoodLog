@@ -46,6 +46,12 @@ enum class FoodItemSource {
     ESTIMATE,
 }
 
+enum class ShortcutPortionMode {
+    PLAIN,
+    ITEM,
+    MEASURE,
+}
+
 enum class ConfidenceLevel {
     HIGH,
     MEDIUM,
