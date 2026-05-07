@@ -160,15 +160,11 @@ class FoodLogRepository(
             }
             val userDefault = userDefaultDao.getActiveDefault(normalizedLookupKey)
                 ?: return@withTransaction ShortcutLogResult.NotFound
-            val calendarToday = dateTimeProvider.today()
             val localTime = dateTimeProvider.localTime()
-            val parsed = parser.parse(
-                input = normalizedLookupKey,
-                today = calendarToday,
-                defaultLogDate = targetLogDate,
+            val part = ParsedFoodPart(
+                normalizedFoodText = normalizedLookupKey,
+                shortcutTrigger = normalizedLookupKey,
             )
-            val part = parsed.parts.singleOrNull()
-                ?: return@withTransaction ShortcutLogResult.InvalidInput
             val createdAt = dateTimeProvider.nowInstant()
             val rawEntryId = rawEntryDao.insert(
                 RawEntryEntity(

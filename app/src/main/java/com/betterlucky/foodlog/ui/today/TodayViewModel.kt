@@ -715,8 +715,22 @@ class TodayViewModel(
             return
         }
 
+        if (parsedStone < 0.0) {
+            val error = "Stone must be zero or more."
+            message.value = error
+            onError(error)
+            return
+        }
+
         if (pounds.isNotBlank() && pounds.trim().toDoubleOrNull() == null) {
             val error = "Pounds must be a number."
+            message.value = error
+            onError(error)
+            return
+        }
+
+        if (parsedPounds < 0.0) {
+            val error = "Pounds must be zero or more."
             message.value = error
             onError(error)
             return
@@ -1190,26 +1204,26 @@ class TodayViewModel(
             onError(error)
             return
         }
-        if (defaultAmount.isNotBlank() && parsedDefaultAmount == null) {
-            val error = "Usual amount must be a number."
+        if (defaultAmount.isNotBlank() && (parsedDefaultAmount == null || parsedDefaultAmount <= 0.0)) {
+            val error = "Usual amount must be a positive number."
             message.value = error
             onError(error)
             return
         }
-        if (itemSizeAmount.isNotBlank() && parsedItemSizeAmount == null) {
-            val error = "Item size must be a number."
+        if (itemSizeAmount.isNotBlank() && (parsedItemSizeAmount == null || parsedItemSizeAmount <= 0.0)) {
+            val error = "Item size must be a positive number."
             message.value = error
             onError(error)
             return
         }
-        if (kcalPer100g.isNotBlank() && parsedKcalPer100g == null) {
-            val error = "kcal/100g must be a number."
+        if (kcalPer100g.isNotBlank() && (parsedKcalPer100g == null || parsedKcalPer100g <= 0.0)) {
+            val error = "kcal/100g must be a positive number."
             message.value = error
             onError(error)
             return
         }
-        if (kcalPer100ml.isNotBlank() && parsedKcalPer100ml == null) {
-            val error = "kcal/100ml must be a number."
+        if (kcalPer100ml.isNotBlank() && (parsedKcalPer100ml == null || parsedKcalPer100ml <= 0.0)) {
+            val error = "kcal/100ml must be a positive number."
             message.value = error
             onError(error)
             return
@@ -1269,7 +1283,7 @@ class TodayViewModel(
                     "Saved shortcut '${name.trim().lowercase()}'"
                 }
                 FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a name and calories to create a shortcut."
-                FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
+                FoodLogRepository.DefaultUpdateResult.NotFound -> "Could not create the shortcut."
             }
             message.value = resultMessage
             if (result != FoodLogRepository.DefaultUpdateResult.Updated) {

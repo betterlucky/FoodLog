@@ -1029,6 +1029,24 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pickerShortcutLogDoesNotSplitShortcutName() = runTest {
+        repository.addDefault(
+            lookupKey = "fish & chips",
+            name = "Fish & chips",
+            calories = 650.0,
+            unit = "portion",
+            notes = null,
+        )
+
+        val result = repository.logActiveShortcut("fish & chips", today)
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertTrue(result is FoodLogRepository.ShortcutLogResult.Logged)
+        assertEquals("Fish & chips", foodItem.name)
+        assertEquals(650.0, foodItem.calories, 0.001)
+    }
+
+    @Test
     fun pickerShortcutLogRejectsInactiveShortcutWithoutCreatingPendingEntry() = runTest {
         repository.seedDefaults()
         repository.deactivateDefault("tea")
