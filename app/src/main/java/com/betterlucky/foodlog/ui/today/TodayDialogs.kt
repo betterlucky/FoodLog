@@ -277,6 +277,7 @@ private fun ShortcutModeButton(
 @Composable
 internal fun EditShortcutDialog(
     userDefault: UserDefaultEntity,
+    errorMessage: String?,
     onDismiss: () -> Unit,
     onSave: (
         name: String,
@@ -417,6 +418,7 @@ internal fun EditShortcutDialog(
                     maxLines = 3,
                     label = { Text("Notes") },
                 )
+                DialogErrorText(errorMessage)
             }
         },
         confirmButton = {
@@ -450,6 +452,7 @@ internal fun EditShortcutDialog(
 
 @Composable
 internal fun AddShortcutDialog(
+    errorMessage: String?,
     onDismiss: () -> Unit,
     onSave: (name: String, calories: String, unit: String, notes: String) -> Unit,
 ) {
@@ -497,6 +500,7 @@ internal fun AddShortcutDialog(
                     maxLines = 3,
                     label = { Text("Notes") },
                 )
+                DialogErrorText(errorMessage)
             }
         },
         confirmButton = {
@@ -952,6 +956,7 @@ internal fun DayBoundaryDialog(
 @Composable
 internal fun DailyWeightDialog(
     dailyWeight: DailyWeightEntity?,
+    errorMessage: String?,
     onDismiss: () -> Unit,
     onSave: (stone: String, pounds: String, time: String) -> Unit,
 ) {
@@ -998,6 +1003,7 @@ internal fun DailyWeightDialog(
                     label = "Time",
                     supportingText = "Blank = now",
                 )
+                DialogErrorText(errorMessage)
             }
         },
         confirmButton = {
@@ -1011,6 +1017,17 @@ internal fun DailyWeightDialog(
             }
         },
     )
+}
+
+@Composable
+private fun DialogErrorText(errorMessage: String?) {
+    errorMessage?.let {
+        Text(
+            text = it,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1592,67 +1609,6 @@ private fun LoggingWizardDismissButtons(
             Text(if (step == LoggingWizardStep.Product && currentIndex == 0) "Cancel" else "Back")
         }
     }
-}
-
-@Composable
-internal fun QuantityPickerDialog(
-    shortcut: UserDefaultEntity,
-    onDismiss: () -> Unit,
-    onConfirm: (Double) -> Unit,
-) {
-    var amountText by remember { mutableStateOf("") }
-    val parsedAmount = amountText.toDoubleOrNull()?.takeIf { it > 0.0 }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("How much ${shortcut.name}?") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "${shortcut.calories.formatAmount()} kcal per ${shortcut.unit}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = { amountText = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    label = { Text("Amount (${shortcut.unit})") },
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(
-                        "1" to 1.0,
-                        "½" to 0.5,
-                        "⅓" to (1.0 / 3.0),
-                        "⅔" to (2.0 / 3.0),
-                    ).forEach { (label, value) ->
-                        val selected = parsedAmount?.let { (it - value).absoluteValue < 0.001 } == true
-                        ShortcutModeButton(
-                            label = label,
-                            selected = selected,
-                            onClick = { amountText = value.formatAmount() },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { parsedAmount?.let(onConfirm) },
-                enabled = parsedAmount != null,
-            ) {
-                Text("Log")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        },
-    )
 }
 
 // --- Shared helper composables and functions ---
