@@ -476,6 +476,9 @@ class FoodLogRepository(
             ?: return@withTransaction FoodItemUpdateResult.NotFound
 
         if (calories == null) {
+            if (updateShortcutLookupKey != null) {
+                return@withTransaction FoodItemUpdateResult.InvalidInput
+            }
             val parsed = parser.parse(
                 input = trimmedName,
                 today = dateTimeProvider.today(),
@@ -1237,14 +1240,22 @@ class FoodLogRepository(
     private suspend fun resolveDefaults(parts: List<ParsedFoodPart>): List<Pair<ParsedFoodPart, UserDefaultEntity?>> =
         parts.map { part -> part to part.shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) } }
 
-    private suspend fun ParsedFoodPart.toPreviewPart(): FoodItemDefaultEditPreviewPart =
-        FoodItemDefaultEditPreviewPart(
+    private suspend fun ParsedFoodPart.toPreviewPart(): FoodItemDefaultEditPreviewPart {
+        val default = shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) }
+        val resolved = default?.resolveShortcutFood(this)
+        return FoodItemDefaultEditPreviewPart(
             inputText = normalizedFoodText,
             lookupKey = shortcutTrigger,
             quantity = quantity,
             quantityUnit = quantityUnit,
-            default = shortcutTrigger?.let { userDefaultDao.getActiveDefault(it) },
+            default = default,
+            resolvedName = resolved?.name ?: normalizedFoodText,
+            resolvedAmount = resolved?.amount ?: quantity,
+            resolvedUnit = resolved?.unit ?: quantityUnit.orEmpty(),
+            resolvedCalories = resolved?.calories,
+            resolvedNotes = default?.notes.orEmpty(),
         )
+    }
 
     private suspend fun shortcutUpdateCandidateForFoodItem(existing: FoodItemEntity): ShortcutUpdateCandidate? {
         val rawEntry = rawEntryDao.getById(existing.rawEntryId) ?: return null
@@ -1439,6 +1450,11 @@ class FoodLogRepository(
         val quantity: Double,
         val quantityUnit: String?,
         val default: UserDefaultEntity?,
+        val resolvedName: String,
+        val resolvedAmount: Double?,
+        val resolvedUnit: String?,
+        val resolvedCalories: Double?,
+        val resolvedNotes: String,
     )
 
     data class FoodItemEditReplacementPart(

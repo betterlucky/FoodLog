@@ -823,6 +823,12 @@ class TodayViewModel(
                 }
             }
 
+            if (updateShortcut && parsedCalories == null) {
+                val error = "Add calories before updating the shortcut."
+                message.value = error
+                onError(error)
+                return@launch
+            }
             val result = repository.updateFoodItem(
                 id = id,
                 name = name,
@@ -1042,7 +1048,7 @@ class TodayViewModel(
                     if (result.savedDefaultLookupKey == null) {
                         "Logged item for ${result.logDate}"
                     } else {
-                        "Logged item and saved shortcut '${result.savedDefaultLookupKey}'"
+                        "Logged item and saved shortcut '${name.trim()}'"
                     }
                 }
                 FoodLogRepository.ManualAddResult.InvalidInput -> "Add an item name and calories to log the item."
@@ -1131,7 +1137,7 @@ class TodayViewModel(
                     if (result.savedDefaultLookupKey == null) {
                         "Resolved pending entry for ${result.logDate}"
                     } else {
-                        "Resolved and saved shortcut '${result.savedDefaultLookupKey}'"
+                        "Resolved and saved shortcut '${name.trim()}'"
                     }
                 }
                 FoodLogRepository.ManualResolveResult.InvalidInput -> "Add an item name and calories to resolve the pending entry."
@@ -1306,16 +1312,15 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewResult.Ready.toLoggedFoo
     LoggedFoodEditResolution(
         rawText = rawText,
         parts = parts.map { part ->
-            val default = part.default
             LoggedFoodEditResolutionPart(
                 inputText = part.inputText,
                 lookupKey = part.lookupKey,
-                resolvedByDefault = default != null,
-                name = default?.name ?: part.inputText,
-                amount = part.quantity,
-                unit = default?.unit ?: part.quantityUnit.orEmpty(),
-                calories = default?.calories?.times(part.quantity),
-                notes = default?.notes.orEmpty(),
+                resolvedByDefault = part.default != null,
+                name = part.resolvedName,
+                amount = part.resolvedAmount,
+                unit = part.resolvedUnit.orEmpty(),
+                calories = part.resolvedCalories,
+                notes = part.resolvedNotes,
             )
         },
     )
@@ -1413,14 +1418,14 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toLoggingWizardPart
         inputText = inputText,
         lookupKey = lookupKey,
         resolvedByDefault = default != null,
-        name = default?.name ?: lookupKey?.replaceFirstChar { it.titlecase() } ?: inputText,
-        amount = quantity
-            .takeIf { quantityUnit != null || it != 1.0 }
+        name = resolvedName,
+        amount = resolvedAmount
+            ?.takeIf { resolvedUnit != null || it != 1.0 }
             ?.formatDraftAmount()
             .orEmpty(),
-        unit = default?.unit ?: quantityUnit.orEmpty(),
-        calories = default?.calories?.times(quantity)?.formatDraftAmount().orEmpty(),
-        notes = default?.notes.orEmpty(),
+        unit = resolvedUnit.orEmpty(),
+        calories = resolvedCalories?.formatDraftAmount().orEmpty(),
+        notes = resolvedNotes,
     )
 }
 
@@ -1655,16 +1660,15 @@ private fun FoodLogRepository.PendingEntryResolutionPreviewResult.Ready.toLogged
     LoggedFoodEditResolution(
         rawText = rawText,
         parts = parts.map { part ->
-            val default = part.default
             LoggedFoodEditResolutionPart(
                 inputText = part.inputText,
                 lookupKey = part.lookupKey,
-                resolvedByDefault = default != null,
-                name = default?.name ?: part.inputText,
-                amount = part.quantity,
-                unit = default?.unit ?: part.quantityUnit.orEmpty(),
-                calories = default?.calories?.times(part.quantity),
-                notes = default?.notes.orEmpty(),
+                resolvedByDefault = part.default != null,
+                name = part.resolvedName,
+                amount = part.resolvedAmount,
+                unit = part.resolvedUnit.orEmpty(),
+                calories = part.resolvedCalories,
+                notes = part.resolvedNotes,
             )
         },
     )
