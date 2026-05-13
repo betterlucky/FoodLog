@@ -1042,7 +1042,7 @@ internal fun ManualFoodDialog(
         time: String,
         notes: String,
         saveAsShortcut: Boolean,
-    ) -> Unit,
+    ) -> Boolean,
 ) {
     var name by remember(date) { mutableStateOf("") }
     var amount by remember(date) { mutableStateOf("1") }
@@ -1051,7 +1051,14 @@ internal fun ManualFoodDialog(
     var time by remember(date) { mutableStateOf(LocalTime.now().withSecond(0).withNano(0).toString()) }
     var notes by remember(date) { mutableStateOf("") }
     var saveAsShortcut by remember(date) { mutableStateOf(false) }
+    var isSaving by remember(date) { mutableStateOf(false) }
     val canSaveAsShortcut = name.isNotBlank() && calories.trim().toDoubleOrNull()?.let { it > 0.0 } == true
+
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) {
+            isSaving = false
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1121,7 +1128,8 @@ internal fun ManualFoodDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(
+                    if (isSaving) return@Button
+                    val accepted = onSave(
                         name,
                         amount,
                         unit,
@@ -1130,7 +1138,11 @@ internal fun ManualFoodDialog(
                         notes,
                         saveAsShortcut && canSaveAsShortcut,
                     )
+                    if (accepted) {
+                        isSaving = true
+                    }
                 },
+                enabled = !isSaving,
             ) {
                 Text("Log")
             }

@@ -1252,6 +1252,44 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun loggedLabelShortcutEditPreservesStoredNutritionBasisWhenItemSizeMissing() = runTest {
+        repository.seedDefaults()
+        repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                lookupKey = "yoghurt",
+                name = "Yoghurt",
+                caloriesPerUnit = 80.0,
+                unit = "pot",
+                notes = "Initial",
+                defaultAmount = 0.5,
+                portionMode = ShortcutPortionMode.ITEM,
+                itemUnit = "pot",
+                itemSizeAmount = null,
+                itemSizeUnit = "g",
+                kcalPer100g = 64.0,
+                kcalPer100ml = null,
+            ),
+        )
+        val logResult = repository.submitText("yoghurt") as FoodLogRepository.SubmitResult.Parsed
+        val candidate = repository.shortcutUpdateCandidateForFoodItem(logResult.foodItemId)
+
+        repository.updateFoodItem(
+            id = logResult.foodItemId,
+            name = "Yoghurt",
+            amount = 0.5,
+            unit = "pot",
+            calories = 50.0,
+            consumedTime = LocalTime.parse("10:00"),
+            notes = "Richer pot",
+            updateShortcutLookupKey = candidate?.lookupKey,
+        )
+        val default = database.userDefaultDao().getActiveDefault("yoghurt")
+
+        assertEquals(100.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(64.0, default?.kcalPer100g ?: 0.0, 0.001)
+    }
+
+    @Test
     fun loggedShortcutEditRejectsShortcutUpdateWhenCaloriesAreBlank() = runTest {
         repository.seedDefaults()
         val pendingResult = repository.submitText("toast")

@@ -1791,6 +1791,7 @@ private fun UserDefaultEntity.updatedKcalPer100g(
         ShortcutPortionMode.ITEM ->
             if (itemSizeUnit == "g") {
                 itemSizeAmount?.takeIf { it > 0.0 }?.let { updatedCalories * 100.0 / it }
+                    ?: kcalPer100g
             } else {
                 kcalPer100g
             }
@@ -1807,6 +1808,7 @@ private fun UserDefaultEntity.updatedKcalPer100ml(
         ShortcutPortionMode.ITEM ->
             if (itemSizeUnit == "ml") {
                 itemSizeAmount?.takeIf { it > 0.0 }?.let { updatedCalories * 100.0 / it }
+                    ?: kcalPer100ml
             } else {
                 kcalPer100ml
             }

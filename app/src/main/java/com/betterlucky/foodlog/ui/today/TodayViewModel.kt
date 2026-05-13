@@ -1061,7 +1061,7 @@ class TodayViewModel(
         saveAsDefault: Boolean,
         onAdded: () -> Unit,
         onError: (String) -> Unit = {},
-    ) {
+    ): Boolean {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedCalories = calories.trim().toDoubleOrNull()
         val parsedTime = time.trim().takeIf { it.isNotBlank() }?.let(::parseTimeOrNull)
@@ -1070,21 +1070,21 @@ class TodayViewModel(
             val error = "Add an item name and calories to log the item."
             message.value = error
             onError(error)
-            return
+            return false
         }
 
         if (amount.isNotBlank() && parsedAmount == null) {
             val error = "Amount must be a number."
             message.value = error
             onError(error)
-            return
+            return false
         }
 
         if (time.isNotBlank() && parsedTime == null) {
             val error = "Time must use HH:mm, such as 08:30."
             message.value = error
             onError(error)
-            return
+            return false
         }
 
         viewModelScope.launch {
@@ -1114,6 +1114,7 @@ class TodayViewModel(
                 onError(resultMessage)
             }
         }
+        return true
     }
 
     fun resolvePendingEntry(
@@ -1553,7 +1554,7 @@ private fun LabelInputMode.toShortcutPortionMode(): ShortcutPortionMode =
     }
 
 private fun userProvidedItemSize(part: LoggingWizardPartDraft): LabelShortcutItemSize? {
-    val amount = part.shortcutItemSizeAmount.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
+    val amount = part.shortcutItemSizeAmount.trim().toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
     val unit = part.shortcutItemSizeUnit.trim().lowercase().takeIf { it == "g" || it == "ml" } ?: return null
     return LabelShortcutItemSize(amount = amount, unit = unit)
 }
