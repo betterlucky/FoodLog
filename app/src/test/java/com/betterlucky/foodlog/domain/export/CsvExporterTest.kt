@@ -4,6 +4,8 @@ import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
+import com.betterlucky.foodlog.data.entities.ProductEntity
+import com.betterlucky.foodlog.data.entities.ProductSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,6 +30,73 @@ class CsvExporterTest {
             "log_date,consumed_time,item,amount,unit,grams,calories,source,confidence,product,notes,raw_entry_id,created_at",
             csv,
         )
+    }
+
+    @Test
+    fun journalDefaultHeaderMatchesDailyReportShape() {
+        val csv = JournalCsvExporter().export(
+            items = emptyList(),
+            productsById = emptyMap(),
+            dailyWeights = emptyList(),
+        )
+
+        assertEquals("date,time_local,item,quantity,calories_kcal,notes", csv)
+    }
+
+    @Test
+    fun journalExportsFoodOnlyByDefault() {
+        val csv = JournalCsvExporter().export(
+            items = listOf(foodItem()),
+            productsById = emptyMap(),
+            dailyWeights = listOf(dailyWeight()),
+        )
+
+        assertEquals(2, csv.lines().size)
+        assertTrue(csv.lines()[1].startsWith("2026-04-24,16:00,Tea,1 cup,25"))
+        assertFalse(csv.contains("weight"))
+    }
+
+    @Test
+    fun journalIncludesWeightOnlyWhenSelected() {
+        val csv = JournalCsvExporter().export(
+            items = listOf(foodItem(consumedTime = LocalTime.parse("16:00"))),
+            productsById = emptyMap(),
+            dailyWeights = listOf(dailyWeight()),
+            options = JournalExportOptions(includeWeight = true),
+        )
+
+        assertEquals("2026-04-24,07:15,weight,82.6 kg,,Recorded weight", csv.lines()[1])
+        assertTrue(csv.lines()[2].startsWith("2026-04-24,16:00,Tea"))
+    }
+
+    @Test
+    fun journalOptionalColumnsAreUserFacingBeforeAdvancedFields() {
+        val csv = JournalCsvExporter().export(
+            items = listOf(
+                foodItem(
+                    productId = 5,
+                    grams = 250.0,
+                    source = FoodItemSource.SAVED_LABEL,
+                ),
+            ),
+            productsById = mapOf(5L to product()),
+            dailyWeights = emptyList(),
+            options = JournalExportOptions(
+                includeProduct = true,
+                includeSource = true,
+                includeGrams = true,
+                includeRawEntryId = true,
+                includeCreatedAt = true,
+                includeConfidence = true,
+                includeProductId = true,
+            ),
+        )
+
+        assertEquals(
+            "date,time_local,item,quantity,calories_kcal,notes,product,source,grams,raw_entry_id,created_at,confidence,product_id",
+            csv.lines()[0],
+        )
+        assertTrue(csv.lines()[1].contains("Better Lucky Tea,label scan,250,10,2026-04-24T15:00:00Z,High,5"))
     }
 
     @Test
@@ -89,6 +158,9 @@ class CsvExporterTest {
         consumedTime: LocalTime? = LocalTime.parse("16:00"),
         amount: Double = 1.0,
         voided: Boolean = false,
+        productId: Long? = null,
+        grams: Double? = null,
+        source: FoodItemSource = FoodItemSource.USER_DEFAULT,
     ): FoodItemEntity =
         FoodItemEntity(
             id = 1,
@@ -96,13 +168,34 @@ class CsvExporterTest {
             logDate = LocalDate.parse("2026-04-24"),
             consumedTime = consumedTime,
             name = name,
+            productId = productId,
             amount = amount,
             unit = "cup",
+            grams = grams,
             calories = 25.0,
-            source = FoodItemSource.USER_DEFAULT,
+            source = source,
             confidence = ConfidenceLevel.HIGH,
             notes = notes,
             createdAt = Instant.parse("2026-04-24T15:00:00Z"),
             voided = voided,
+        )
+
+    private fun dailyWeight(): DailyWeightEntity =
+        DailyWeightEntity(
+            logDate = LocalDate.parse("2026-04-24"),
+            weightKg = 82.6,
+            measuredTime = LocalTime.parse("07:15"),
+            createdAt = Instant.parse("2026-04-24T06:15:00Z"),
+            updatedAt = Instant.parse("2026-04-24T06:15:00Z"),
+        )
+
+    private fun product(): ProductEntity =
+        ProductEntity(
+            id = 5,
+            name = "Tea",
+            brand = "Better Lucky",
+            source = ProductSource.PACKAGING_PHOTO,
+            confidence = ConfidenceLevel.HIGH,
+            createdAt = Instant.parse("2026-04-23T12:00:00Z"),
         )
 }

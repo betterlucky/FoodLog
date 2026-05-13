@@ -53,6 +53,7 @@ import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.domain.dailyclose.DailyCloseReadiness
 import com.betterlucky.foodlog.domain.dailyclose.closePromptText
 import com.betterlucky.foodlog.domain.dailyclose.dailyCloseReadiness
+import com.betterlucky.foodlog.domain.dailyclose.legacyExportActionText
 import com.betterlucky.foodlog.domain.dailyclose.legacyExportAuditText
 import com.betterlucky.foodlog.domain.dailyclose.legacyExportStatusText
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
@@ -85,6 +86,7 @@ internal fun FoodLogDayPage(
     onShowShortcuts: () -> Unit,
     onChooseLabelImage: () -> Unit,
     onExportLegacy: (LocalDate) -> Unit,
+    onOpenJournalExport: () -> Unit,
 ) {
     val dayState by viewModel.dayState(date).collectAsState()
     val focusManager = LocalFocusManager.current
@@ -314,6 +316,10 @@ internal fun FoodLogDayPage(
                     onExportLegacy = { onExportLegacy(date) },
                 )
             }
+
+            item {
+                JournalExportPrompt(onOpenJournalExport = onOpenJournalExport)
+            }
         }
     }
 }
@@ -499,7 +505,7 @@ private fun TodayStatusSummary(
             }
             if (readiness != DailyCloseReadiness.NoFoodLogged) {
                 Text(
-                    text = "Lodestone: ${dailyStatus.legacyExportStatusText()}",
+                    text = "Daily report: ${dailyStatus.legacyExportStatusText()}",
                     color = color,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -650,6 +656,70 @@ internal fun DailyClosePrompt(
             },
         ),
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = "Daily close",
+                fontWeight = FontWeight.SemiBold,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                text = readiness.closePromptText(),
+                color = when (readiness) {
+                    DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
+                    DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
+                    DailyCloseReadiness.NoFoodLogged,
+                    DailyCloseReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (readiness != DailyCloseReadiness.NoFoodLogged) {
+                val auditText = dailyStatus.legacyExportAuditText()
+                Text(
+                    text = "Daily report: ${dailyStatus.legacyExportStatusText()}",
+                    color = when (readiness) {
+                        DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
+                        DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
+                        DailyCloseReadiness.AlreadyExported,
+                        DailyCloseReadiness.NoFoodLogged -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (auditText != null) {
+                    Text(
+                        text = auditText,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            if (readiness == DailyCloseReadiness.ReadyToExport) {
+                Button(
+                    onClick = onExportLegacy,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(dailyStatus.legacyExportActionText())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun JournalExportPrompt(
+    onOpenJournalExport: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = FoodLogCardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -657,47 +727,23 @@ internal fun DailyClosePrompt(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 Text(
-                    text = "Daily close",
+                    text = "Journal export",
                     fontWeight = FontWeight.SemiBold,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    text = readiness.closePromptText(),
-                    color = when (readiness) {
-                        DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
-                        DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
-                        DailyCloseReadiness.NoFoodLogged,
-                        DailyCloseReadiness.AlreadyExported -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    text = "Create a longer CSV from saved food rows.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
-                if (readiness != DailyCloseReadiness.NoFoodLogged) {
-                    val auditText = dailyStatus.legacyExportAuditText()
-                    Text(
-                        text = "Lodestone: ${dailyStatus.legacyExportStatusText()}",
-                        color = when (readiness) {
-                            DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
-                            DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
-                            DailyCloseReadiness.AlreadyExported,
-                            DailyCloseReadiness.NoFoodLogged -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    if (auditText != null) {
-                        Text(
-                            text = auditText,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
             }
-            if (readiness == DailyCloseReadiness.ReadyToExport) {
-                Button(onClick = onExportLegacy) {
-                    Text("Export")
-                }
+            OutlinedButton(onClick = onOpenJournalExport) {
+                Text("Export")
             }
         }
     }

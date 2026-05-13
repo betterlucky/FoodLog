@@ -18,4 +18,19 @@ interface DailyWeightDao {
 
     @Query("SELECT * FROM daily_weights WHERE logDate = :date")
     suspend fun getByDate(date: LocalDate): DailyWeightEntity?
+
+    @Query(
+        """
+        SELECT * FROM daily_weights
+        WHERE logDate BETWEEN :startDate AND :endDate
+        ORDER BY logDate ASC, measuredTime ASC, createdAt ASC
+        """,
+    )
+    suspend fun getBetween(
+        startDate: LocalDate,
+        endDate: LocalDate,
+    ): List<DailyWeightEntity>
+
+    @Query("DELETE FROM daily_weights WHERE logDate = :date")
+    suspend fun deleteByDate(date: LocalDate): Int
 }

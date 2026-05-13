@@ -20,6 +20,7 @@ fun dailyCloseReadiness(
 ): DailyCloseReadiness =
     when {
         pendingCount > 0 -> DailyCloseReadiness.ResolvePending
+        dailyStatus.isLegacyExportStale() -> DailyCloseReadiness.ReadyToExport
         foodItemCount == 0 && !hasDailyWeight -> DailyCloseReadiness.NoFoodLogged
         dailyStatus.isLegacyExportCurrent() -> DailyCloseReadiness.AlreadyExported
         else -> DailyCloseReadiness.ReadyToExport
@@ -28,19 +29,27 @@ fun dailyCloseReadiness(
 fun DailyCloseReadiness.closePromptText(): String =
     when (this) {
         DailyCloseReadiness.NoFoodLogged -> "No export needed yet."
-        DailyCloseReadiness.ResolvePending -> "Resolve pending entries before Lodestone export."
-        DailyCloseReadiness.ReadyToExport -> "Export the Lodestone CSV before closing this day."
-        DailyCloseReadiness.AlreadyExported -> "Lodestone export is current."
+        DailyCloseReadiness.ResolvePending -> "Resolve pending entries before the daily report."
+        DailyCloseReadiness.ReadyToExport -> "Export the latest daily report before closing this day."
+        DailyCloseReadiness.AlreadyExported -> "Daily report is current."
     }
 
 fun DailyStatusEntity?.legacyExportStatusText(): String {
     val exportedAt = this?.legacyExportedAt ?: return "not exported"
-    return if (lastFoodChangedAt != null && lastFoodChangedAt > exportedAt) {
-        "needs update since ${exportedAt.displayTime()}"
+    val changedAt = lastFoodChangedAt
+    return if (changedAt != null && changedAt > exportedAt) {
+        "needs re-export: changed ${changedAt.displayTime()} after ${exportedAt.displayTime()} export"
     } else {
         "exported ${exportedAt.displayTime()}"
     }
 }
+
+fun DailyStatusEntity?.legacyExportActionText(): String =
+    if (this?.legacyExportedAt == null) {
+        "Export daily report"
+    } else {
+        "Re-export daily report"
+    }
 
 fun DailyStatusEntity?.legacyExportAuditText(): String? {
     val exportedAt = this?.legacyExportedAt ?: return null
@@ -51,6 +60,12 @@ private fun DailyStatusEntity?.isLegacyExportCurrent(): Boolean {
     val exportedAt = this?.legacyExportedAt ?: return false
     val changedAt = lastFoodChangedAt ?: return true
     return changedAt <= exportedAt
+}
+
+private fun DailyStatusEntity?.isLegacyExportStale(): Boolean {
+    val exportedAt = this?.legacyExportedAt ?: return false
+    val changedAt = lastFoodChangedAt ?: return false
+    return changedAt > exportedAt
 }
 
 private fun String?.exportFileSuffix(): String =

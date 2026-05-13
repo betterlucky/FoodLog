@@ -1120,6 +1120,23 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun dailyWeightCanBeRemoved() = runTest {
+        repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.0,
+            measuredTime = LocalTime.parse("07:15"),
+        )
+
+        val removeResult = repository.removeDailyWeight(today)
+        val missingRemoveResult = repository.removeDailyWeight(today)
+        val weight = repository.observeDailyWeightForDate(today).first()
+
+        assertEquals(FoodLogRepository.DailyWeightRemoveResult.Removed, removeResult)
+        assertEquals(FoodLogRepository.DailyWeightRemoveResult.NotFound, missingRemoveResult)
+        assertNull(weight)
+    }
+
+    @Test
     fun savedShortcutCanBeUpdated() = runTest {
         repository.seedDefaults()
         val pendingResult = repository.submitText("toast")
@@ -1869,7 +1886,7 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
         assertEquals(Instant.parse("2026-04-24T12:15:00Z"), status?.lastFoodChangedAt)
         assertEquals(
-            DailyCloseReadiness.NoFoodLogged,
+            DailyCloseReadiness.ReadyToExport,
             dailyCloseReadiness(
                 dailyStatus = status,
                 pendingCount = 0,
@@ -1905,6 +1922,35 @@ class FoodLogRepositoryInstrumentedTest {
                 pendingCount = 0,
                 foodItemCount = 1,
                 hasDailyWeight = true,
+            ),
+        )
+    }
+
+    @Test
+    fun dailyWeightRemovalAfterExportMarksDayAsChangedSinceExport() = runTest {
+        repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.6,
+            measuredTime = LocalTime.parse("07:15"),
+        )
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
+        repository.exportLegacyHealthCsv(today)
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:20:00Z")
+        val removeResult = repository.removeDailyWeight(today)
+        val status = database.dailyStatusDao().observeByDate(today).first()
+
+        assertEquals(FoodLogRepository.DailyWeightRemoveResult.Removed, removeResult)
+        assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
+        assertEquals(Instant.parse("2026-04-24T12:20:00Z"), status?.lastFoodChangedAt)
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = status,
+                pendingCount = 0,
+                foodItemCount = 0,
+                hasDailyWeight = false,
             ),
         )
     }

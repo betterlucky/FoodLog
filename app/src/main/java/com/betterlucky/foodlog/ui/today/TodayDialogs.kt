@@ -68,6 +68,7 @@ import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
+import com.betterlucky.foodlog.domain.export.JournalExportOptions
 import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
@@ -76,6 +77,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import kotlin.math.absoluteValue
 
 private val DialogCardShape = RoundedCornerShape(8.dp)
@@ -958,6 +960,7 @@ internal fun DailyWeightDialog(
     dailyWeight: DailyWeightEntity?,
     errorMessage: String?,
     onDismiss: () -> Unit,
+    onRemove: (() -> Unit)? = null,
     onSave: (stone: String, pounds: String, time: String) -> Unit,
 ) {
     val existing = remember(dailyWeight?.logDate, dailyWeight?.updatedAt) {
@@ -1012,8 +1015,15 @@ internal fun DailyWeightDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onRemove != null) {
+                    TextButton(onClick = onRemove) {
+                        Text("Remove weight")
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
             }
         },
     )
@@ -1064,6 +1074,213 @@ internal fun LogDatePickerDialog(
         DatePicker(
             state = datePickerState,
             showModeToggle = true,
+        )
+    }
+}
+
+@Composable
+internal fun JournalExportDialog(
+    selectedDate: LocalDate,
+    onDismiss: () -> Unit,
+    onExport: (LocalDate, LocalDate, JournalExportOptions) -> Unit,
+) {
+    var startText by remember(selectedDate) { mutableStateOf(selectedDate.minusDays(6).toString()) }
+    var endText by remember(selectedDate) { mutableStateOf(selectedDate.toString()) }
+    var includeWeight by remember { mutableStateOf(false) }
+    var includeProduct by remember { mutableStateOf(false) }
+    var includeSource by remember { mutableStateOf(false) }
+    var includeGrams by remember { mutableStateOf(false) }
+    var showAdvanced by remember { mutableStateOf(false) }
+    var includeRawEntryId by remember { mutableStateOf(false) }
+    var includeCreatedAt by remember { mutableStateOf(false) }
+    var includeConfidence by remember { mutableStateOf(false) }
+    var includeProductId by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    fun parsedDate(text: String): LocalDate? =
+        try {
+            LocalDate.parse(text.trim())
+        } catch (_: DateTimeParseException) {
+            null
+        }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Journal export") },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Text(
+                        text = "Create a regenerated CSV from saved food rows.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = startText,
+                            onValueChange = {
+                                startText = it
+                                errorMessage = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("Start") },
+                            supportingText = { Text("YYYY-MM-DD") },
+                        )
+                        OutlinedTextField(
+                            value = endText,
+                            onValueChange = {
+                                endText = it
+                                errorMessage = null
+                            },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("End") },
+                            supportingText = { Text("YYYY-MM-DD") },
+                        )
+                    }
+                }
+                item {
+                    JournalOptionRow(
+                        checked = includeWeight,
+                        label = "Include weight rows",
+                        onCheckedChange = { includeWeight = it },
+                    )
+                }
+                item {
+                    Text(
+                        text = "Optional columns",
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                item {
+                    JournalOptionRow(
+                        checked = includeProduct,
+                        label = "Product",
+                        onCheckedChange = { includeProduct = it },
+                    )
+                }
+                item {
+                    JournalOptionRow(
+                        checked = includeSource,
+                        label = "Source",
+                        onCheckedChange = { includeSource = it },
+                    )
+                }
+                item {
+                    JournalOptionRow(
+                        checked = includeGrams,
+                        label = "g",
+                        onCheckedChange = { includeGrams = it },
+                    )
+                }
+                item {
+                    TextButton(onClick = { showAdvanced = !showAdvanced }) {
+                        Text(if (showAdvanced) "Hide advanced" else "Show advanced")
+                    }
+                }
+                if (showAdvanced) {
+                    item {
+                        JournalOptionRow(
+                            checked = includeRawEntryId,
+                            label = "Raw entry id",
+                            onCheckedChange = { includeRawEntryId = it },
+                        )
+                    }
+                    item {
+                        JournalOptionRow(
+                            checked = includeCreatedAt,
+                            label = "Created at",
+                            onCheckedChange = { includeCreatedAt = it },
+                        )
+                    }
+                    item {
+                        JournalOptionRow(
+                            checked = includeConfidence,
+                            label = "Confidence",
+                            onCheckedChange = { includeConfidence = it },
+                        )
+                    }
+                    item {
+                        JournalOptionRow(
+                            checked = includeProductId,
+                            label = "Product id",
+                            onCheckedChange = { includeProductId = it },
+                        )
+                    }
+                }
+                item {
+                    DialogErrorText(errorMessage)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val startDate = parsedDate(startText)
+                    val endDate = parsedDate(endText)
+                    when {
+                        startDate == null || endDate == null -> {
+                            errorMessage = "Use dates like 2026-05-08."
+                        }
+                        endDate.isBefore(startDate) -> {
+                            errorMessage = "End date must be on or after start date."
+                        }
+                        else -> {
+                            onExport(
+                                startDate,
+                                endDate,
+                                JournalExportOptions(
+                                    includeWeight = includeWeight,
+                                    includeProduct = includeProduct,
+                                    includeSource = includeSource,
+                                    includeGrams = includeGrams,
+                                    includeRawEntryId = includeRawEntryId,
+                                    includeCreatedAt = includeCreatedAt,
+                                    includeConfidence = includeConfidence,
+                                    includeProductId = includeProductId,
+                                ),
+                            )
+                        }
+                    }
+                },
+            ) {
+                Text("Export")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun JournalOptionRow(
+    checked: Boolean,
+    label: String,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
         )
     }
 }

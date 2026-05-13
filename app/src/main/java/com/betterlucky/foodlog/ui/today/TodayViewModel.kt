@@ -11,6 +11,7 @@ import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.ocr.LabelOcrReader
 import com.betterlucky.foodlog.data.ocr.LabelOcrResult
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
+import com.betterlucky.foodlog.domain.export.JournalExportOptions
 import com.betterlucky.foodlog.domain.intent.EntryIntent
 import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
@@ -656,10 +657,10 @@ class TodayViewModel(
             }.onSuccess { fileName ->
                 val nextDate = date.plusDays(1)
                 setSelectedDate(nextDate)
-                message.value = "Saved $fileName. Moved to $nextDate."
+                message.value = "Saved $fileName. Daily report is current for $date. Moved to $nextDate."
                 onAdvanceToDate(nextDate)
             }.onFailure {
-                message.value = "Could not save Lodestone export."
+                message.value = "Could not save daily report."
             }
         }
     }
@@ -674,6 +675,31 @@ class TodayViewModel(
                 message.value = "Saved $fileName."
             }.onFailure {
                 message.value = "Could not save audit export."
+            }
+        }
+    }
+
+    fun exportJournalCsv(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        options: JournalExportOptions,
+        onExported: (String, String) -> String,
+        onExportedSuccessfully: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            runCatching {
+                val exported = repository.buildJournalCsv(
+                    startDate = startDate,
+                    endDate = endDate,
+                    options = options,
+                )
+                onExported(exported.csv, exported.fileName)
+                exported.fileName
+            }.onSuccess { fileName ->
+                onExportedSuccessfully()
+                message.value = "Saved journal export $fileName."
+            }.onFailure {
+                message.value = "Could not save journal export."
             }
         }
     }
@@ -773,6 +799,21 @@ class TodayViewModel(
             message.value = resultMessage
             if (result == FoodLogRepository.DailyWeightResult.InvalidInput) {
                 onError(resultMessage)
+            }
+        }
+    }
+
+    fun removeDailyWeight(
+        date: LocalDate,
+        onRemoved: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            message.value = when (repository.removeDailyWeight(date)) {
+                FoodLogRepository.DailyWeightRemoveResult.Removed -> {
+                    onRemoved()
+                    "Removed weight for $date"
+                }
+                FoodLogRepository.DailyWeightRemoveResult.NotFound -> "No weight is saved for $date."
             }
         }
     }
