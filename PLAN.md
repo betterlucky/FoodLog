@@ -74,6 +74,10 @@ Optional AI conversation:
 
 AI calls should eventually be served to the app through a Cloudflare Worker or similarly thin backend proxy.
 
+Final polish / resilience ideas:
+
+- Consider a lightweight recovery journal only after the core workflow is otherwise dependable. The aim would be same-day resilience after reinstall/restore surprises, not a full database backup system. Keep it append-only, Room-grounded, and replayable only with explicit user review; do not let it become a stale parallel source of truth.
+
 ## Non-Negotiable Rules
 
 - Save raw submitted text before interpretation whenever a text entry is submitted.
