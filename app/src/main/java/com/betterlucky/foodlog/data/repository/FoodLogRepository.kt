@@ -524,7 +524,7 @@ class FoodLogRepository(
     ): FoodItemUpdateResult = database.withTransaction {
         val trimmedName = name.trim()
         val normalizedAmount = amount?.takeIf { it > 0.0 }
-        val normalizedUnit = unit?.trim().orEmpty().ifBlank { null }
+        val normalizedUnit = unit?.trim().orEmpty().lowercase().ifBlank { null }
         val normalizedNotes = notes?.trim().orEmpty().ifBlank { null }
 
         if (trimmedName.isBlank() || (calories != null && calories <= 0.0)) {

@@ -1596,7 +1596,7 @@ class FoodLogRepositoryInstrumentedTest {
             id = logResult.foodItemId,
             name = "Shake",
             amount = 100.0,
-            unit = "ml",
+            unit = "ML",
             calories = 20.0,
             consumedTime = LocalTime.parse("10:00"),
             notes = null,
@@ -1607,6 +1607,7 @@ class FoodLogRepositoryInstrumentedTest {
         val latestFoodItem = repository.observeFoodItemsForDate(today).first().last()
 
         assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
+        assertEquals("ml", default?.unit)
         assertEquals(null, default?.kcalPer100g)
         assertEquals(20.0, default?.kcalPer100ml ?: 0.0, 0.001)
         assertEquals(20.0, latestFoodItem.calories, 0.001)
