@@ -1030,6 +1030,120 @@ internal fun DailyWeightDialog(
 }
 
 @Composable
+internal fun ManualFoodDialog(
+    date: LocalDate,
+    errorMessage: String?,
+    onDismiss: () -> Unit,
+    onSave: (
+        name: String,
+        amount: String,
+        unit: String,
+        calories: String,
+        time: String,
+        notes: String,
+        saveAsShortcut: Boolean,
+    ) -> Unit,
+) {
+    var name by remember(date) { mutableStateOf("") }
+    var amount by remember(date) { mutableStateOf("1") }
+    var unit by remember(date) { mutableStateOf("serving") }
+    var calories by remember(date) { mutableStateOf("") }
+    var time by remember(date) { mutableStateOf(LocalTime.now().withSecond(0).withNano(0).toString()) }
+    var notes by remember(date) { mutableStateOf("") }
+    var saveAsShortcut by remember(date) { mutableStateOf(false) }
+    val canSaveAsShortcut = name.isNotBlank() && calories.trim().toDoubleOrNull()?.let { it > 0.0 } == true
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Manual food") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Item") },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        label = { Text("Amount") },
+                    )
+                    OutlinedTextField(
+                        value = unit,
+                        onValueChange = { unit = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Unit") },
+                    )
+                }
+                OutlinedTextField(
+                    value = calories,
+                    onValueChange = {
+                        calories = it
+                        if (it.isBlank()) saveAsShortcut = false
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    label = { Text("Calories") },
+                )
+                TimeTextField(
+                    value = time,
+                    onValueChange = { time = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = "Time",
+                )
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp),
+                    minLines = 2,
+                    maxLines = 3,
+                    label = { Text("Notes") },
+                )
+                ShortcutToggle(
+                    checked = saveAsShortcut && canSaveAsShortcut,
+                    enabled = canSaveAsShortcut,
+                    label = "Save as shortcut",
+                    onCheckedChange = { saveAsShortcut = it },
+                )
+                DialogErrorText(errorMessage)
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        name,
+                        amount,
+                        unit,
+                        calories,
+                        time,
+                        notes,
+                        saveAsShortcut && canSaveAsShortcut,
+                    )
+                },
+            ) {
+                Text("Log")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
 private fun DialogErrorText(errorMessage: String?) {
     errorMessage?.let {
         Text(
@@ -1697,6 +1811,13 @@ private fun WizardTimeNotesStep(
             label = "Save as shortcut",
             onCheckedChange = { onPartChanged(currentIndex, currentPart.copy(saveAsShortcut = it)) },
         )
+        if (session.source == LoggingWizardSource.Label && currentPart.saveAsShortcut) {
+            Text(
+                text = "Saves this portion for repeat logging; item-size math stays behind the shortcut when available.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
         if (
             session.source == LoggingWizardSource.Label &&
             currentPart.saveAsShortcut &&

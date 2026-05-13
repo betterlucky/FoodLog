@@ -606,16 +606,25 @@ class FoodLogRepository(
                     ?.takeIf { it.lookupKey == lookupKey }
                     ?: userDefaultDao.getActiveDefault(lookupKey)
                 shortcut?.let {
+                    val updatedCalories = it.caloriesForUpdatedShortcut(
+                        amount = normalizedAmount,
+                        calories = calories,
+                    )
                     userDefaultDao.upsert(
                         it.copy(
                             name = trimmedName,
-                            calories = it.caloriesForUpdatedShortcut(
-                                amount = normalizedAmount,
-                                calories = calories,
-                            ),
+                            calories = updatedCalories,
                             unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
                             notes = normalizedNotes,
                             defaultAmount = normalizedAmount,
+                            kcalPer100g = it.updatedKcalPer100g(
+                                updatedCalories = updatedCalories,
+                                unit = normalizedUnit,
+                            ),
+                            kcalPer100ml = it.updatedKcalPer100ml(
+                                updatedCalories = updatedCalories,
+                                unit = normalizedUnit,
+                            ),
                         ),
                     )
                 }
@@ -1772,6 +1781,38 @@ private fun UserDefaultEntity.caloriesForUpdatedShortcut(
         ShortcutPortionMode.MEASURE ->
             amount?.takeIf { it > 0.0 }?.let { calories / it } ?: calories
         ShortcutPortionMode.PLAIN -> calories
+    }
+
+private fun UserDefaultEntity.updatedKcalPer100g(
+    updatedCalories: Double,
+    unit: String?,
+): Double? =
+    when (portionMode) {
+        ShortcutPortionMode.ITEM ->
+            if (itemSizeUnit == "g") {
+                itemSizeAmount?.takeIf { it > 0.0 }?.let { updatedCalories * 100.0 / it }
+            } else {
+                kcalPer100g
+            }
+        ShortcutPortionMode.MEASURE ->
+            if ((unit ?: this.unit) == "g") updatedCalories * 100.0 else kcalPer100g
+        ShortcutPortionMode.PLAIN -> kcalPer100g
+    }
+
+private fun UserDefaultEntity.updatedKcalPer100ml(
+    updatedCalories: Double,
+    unit: String?,
+): Double? =
+    when (portionMode) {
+        ShortcutPortionMode.ITEM ->
+            if (itemSizeUnit == "ml") {
+                itemSizeAmount?.takeIf { it > 0.0 }?.let { updatedCalories * 100.0 / it }
+            } else {
+                kcalPer100ml
+            }
+        ShortcutPortionMode.MEASURE ->
+            if ((unit ?: this.unit) == "ml") updatedCalories * 100.0 else kcalPer100ml
+        ShortcutPortionMode.PLAIN -> kcalPer100ml
     }
 
 private fun UserDefaultEntity.resolvePlainShortcutFood(

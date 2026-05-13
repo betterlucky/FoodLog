@@ -85,6 +85,7 @@ internal fun FoodLogDayPage(
     onEditFoodItem: (FoodItemEntity) -> Unit,
     onShowShortcuts: () -> Unit,
     onChooseLabelImage: () -> Unit,
+    onAddManualFood: () -> Unit,
     onExportLegacy: (LocalDate) -> Unit,
     onOpenJournalExport: () -> Unit,
 ) {
@@ -190,6 +191,17 @@ internal fun FoodLogDayPage(
                     modifier = Modifier.weight(1f),
                 ) {
                     Text("Scan label")
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onAddManualFood,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Manual")
                 }
             }
         }
