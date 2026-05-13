@@ -58,11 +58,13 @@ fun TodayScreen(
     var editingBoundary by remember { mutableStateOf(false) }
     var showingShortcuts by remember { mutableStateOf(false) }
     var addingShortcut by remember { mutableStateOf(false) }
+    var addingManualFood by remember { mutableStateOf(false) }
     var pickingDate by remember { mutableStateOf(false) }
     var choosingLabelImage by remember { mutableStateOf(false) }
     var showingJournalExport by remember { mutableStateOf(false) }
     var loggedItemsViewMode by remember { mutableStateOf(LoggedItemsViewMode.Time) }
     var shortcutDialogError by remember { mutableStateOf<String?>(null) }
+    var manualFoodError by remember { mutableStateOf<String?>(null) }
     var weightDialogError by remember { mutableStateOf<String?>(null) }
     var editFoodError by remember { mutableStateOf<String?>(null) }
     var editResolution by remember { mutableStateOf<LoggedFoodEditResolution?>(null) }
@@ -146,6 +148,7 @@ fun TodayScreen(
             !editingBoundary &&
             !showingShortcuts &&
             !addingShortcut &&
+            !addingManualFood &&
             !pickingDate &&
             !choosingLabelImage &&
             !showingJournalExport
@@ -192,6 +195,10 @@ fun TodayScreen(
                         },
                         onShowShortcuts = { showingShortcuts = true },
                         onChooseLabelImage = { choosingLabelImage = true },
+                        onAddManualFood = {
+                            manualFoodError = null
+                            addingManualFood = true
+                        },
                         onExportLegacy = ::exportLegacyAndAdvance,
                         onOpenJournalExport = { showingJournalExport = true },
                     )
@@ -227,12 +234,16 @@ fun TodayScreen(
         onShowingShortcutsChanged = { showingShortcuts = it },
         addingShortcut = addingShortcut,
         onAddingShortcutChanged = { addingShortcut = it },
+        addingManualFood = addingManualFood,
+        onAddingManualFoodChanged = { addingManualFood = it },
         pickingDate = pickingDate,
         onPickingDateChanged = { pickingDate = it },
         choosingLabelImage = choosingLabelImage,
         onChoosingLabelImageChanged = { choosingLabelImage = it },
         shortcutDialogError = shortcutDialogError,
         onShortcutDialogErrorChanged = { shortcutDialogError = it },
+        manualFoodError = manualFoodError,
+        onManualFoodErrorChanged = { manualFoodError = it },
         weightDialogError = weightDialogError,
         onWeightDialogErrorChanged = { weightDialogError = it },
         editFoodError = editFoodError,
@@ -313,12 +324,16 @@ private fun TodayScreenDialogs(
     onShowingShortcutsChanged: (Boolean) -> Unit,
     addingShortcut: Boolean,
     onAddingShortcutChanged: (Boolean) -> Unit,
+    addingManualFood: Boolean,
+    onAddingManualFoodChanged: (Boolean) -> Unit,
     pickingDate: Boolean,
     onPickingDateChanged: (Boolean) -> Unit,
     choosingLabelImage: Boolean,
     onChoosingLabelImageChanged: (Boolean) -> Unit,
     shortcutDialogError: String?,
     onShortcutDialogErrorChanged: (String?) -> Unit,
+    manualFoodError: String?,
+    onManualFoodErrorChanged: (String?) -> Unit,
     weightDialogError: String?,
     onWeightDialogErrorChanged: (String?) -> Unit,
     editFoodError: String?,
@@ -404,6 +419,32 @@ private fun TodayScreenDialogs(
                         onAddingShortcutChanged(false)
                     },
                     onError = onShortcutDialogErrorChanged,
+                )
+            },
+        )
+    }
+
+    if (addingManualFood) {
+        ManualFoodDialog(
+            date = uiState.selectedDate,
+            errorMessage = manualFoodError,
+            onDismiss = { onAddingManualFoodChanged(false) },
+            onSave = { name, amount, unit, calories, time, notes, saveAsShortcut ->
+                onManualFoodErrorChanged(null)
+                viewModel.addFoodItemManually(
+                    date = uiState.selectedDate,
+                    name = name,
+                    amount = amount,
+                    unit = unit,
+                    calories = calories,
+                    time = time,
+                    notes = notes,
+                    saveAsDefault = saveAsShortcut,
+                    onAdded = {
+                        onManualFoodErrorChanged(null)
+                        onAddingManualFoodChanged(false)
+                    },
+                    onError = onManualFoodErrorChanged,
                 )
             },
         )

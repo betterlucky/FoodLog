@@ -1,6 +1,6 @@
 # FoodLog Plan
 
-FoodLog is a local-first Android food logging app. The current goal is to make the existing daily workflow dependable enough for ordinary use, then add optional AI extras for harder capture cases, recent-data questions, meal ideas, and nutritional advice.
+FoodLog is a local-first Android food logging app. The current goal is to make the existing daily workflow dependable enough for ordinary use, then add optional local history assistance and AI extras for harder capture cases, recent-data questions, meal ideas, and nutritional advice.
 
 Room is the source of truth. Raw entries, food rows, daily weight, daily status, shortcuts, products, and exports must come from database state, not rendered UI text, chat history, or CSV files.
 
@@ -33,10 +33,22 @@ Current priorities:
 2. Label/manual shortcut polish: make scanned and manually entered foods reliable, understandable, and quick to repeat through shortcuts.
 3. Daily close/export polish: make the Lodestone handoff obvious, current, and trustworthy.
 4. Append-log export: add a longer-form Room-backed export for standalone review and analysis after the Lodestone handoff is trustworthy.
+5. History-assisted suggestions: use confirmed historical Room rows to prefill or suggest resolutions for repeated ambiguous foods, without silently auto-logging.
 
 ## Next Horizon
 
-After shortcut polish, daily close trust, and append-log export are dependable, begin optional AI integration. AI should help where deterministic local flows are weak, while staying grounded in Room data and user review. Compound meals and recipe-style shortcuts should come after that AI foundation rather than interrupting the basic logger polish.
+After shortcut polish, daily close trust, and append-log export are dependable, add a local history suggestion layer before reaching for AI. AI may still become useful as a chat client for user-initiated questions and as a final fallback where deterministic parsing, shortcuts, label/manual flows, and historical suggestions cannot provide a good reviewed candidate.
+
+History-assisted suggestions:
+
+- Search confirmed historical `FoodItemEntity` rows and associated raw-entry context from Room, not exported CSV files or rendered UI text.
+- Use normalized names, units, notes, source/provenance, and recent/frequent use to suggest candidates for pending resolution, manual logging, and shortcut creation.
+- Treat history as a prefill/suggestion mechanism only. Do not silently infer and log food from historical matches.
+- Let the user accept, edit, or promote a historical candidate into a shortcut when it proves repeatable.
+- Keep suggestions explainable enough to review, such as showing the prior item name, calories, amount/unit, and last-used date.
+- Avoid overfitting one-off restaurant meals, old product formulations, or previous mistakes; recency and user confirmation matter more than clever matching.
+
+Optional AI integration should come after this local history layer unless a specific capture problem cannot be solved locally. AI should help where deterministic and historical flows are weak, while staying grounded in Room data and user review. Compound meals and recipe-style shortcuts should come after that foundation rather than interrupting the basic logger polish.
 
 Future compound meals and recipes:
 
@@ -51,7 +63,7 @@ AI capture assistance:
 - fuzzy or unknown meals, such as homemade food at a friend's house
 - a picture of a plate of food
 - OCR-unreadable or partial nutrition labels
-- ambiguous text entries that deterministic shortcuts cannot resolve
+- ambiguous text entries that deterministic shortcuts and local history suggestions cannot resolve
 
 Optional AI conversation:
 
@@ -237,11 +249,12 @@ Active:
 - Improve repeat logging for OCR/manual foods through shortcuts with user-confirmed portion memory and optional "update shortcut" behavior.
 - Keep daily close/export status easy to trust after edits, removals, pending resolution, and weight changes.
 - Add the standalone append-log export after the Lodestone close path is solid.
+- Add Room-backed history suggestions for repeated manual or ambiguous foods before introducing AI capture fallback.
 - Expand focused tests only where the behavior is active and risky.
 
 Soon:
 
-- Backend/OpenAI features.
+- Backend/OpenAI features, mostly for user-initiated chat and final-fallback reviewed estimates.
 - Compound meals and recipe-style shortcuts that can log a single meal row while retaining ingredient-level breakdowns for later nutrition analysis.
 - Leftovers/container behavior.
 
@@ -268,6 +281,7 @@ Backend-backed AI is the next horizon after local daily use is dependable:
 - Use a thin backend proxy; do not ship provider API keys in the Android app.
 - Query structured database state first.
 - Prefer deterministic routes before AI.
+- Prefer local history suggestions before AI for repeated foods or ambiguous text.
 - Require strict versioned JSON contracts.
 - Treat AI calories as estimates with confidence and provenance.
 - Require user review when confidence is not high.

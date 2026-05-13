@@ -1209,6 +1209,87 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun loggedLabelShortcutEditUpdatesStoredNutritionBasis() = runTest {
+        repository.seedDefaults()
+        repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                lookupKey = "yoghurt",
+                name = "Yoghurt",
+                caloriesPerUnit = 80.0,
+                unit = "pot",
+                notes = "Initial",
+                defaultAmount = 0.5,
+                portionMode = ShortcutPortionMode.ITEM,
+                itemUnit = "pot",
+                itemSizeAmount = 125.0,
+                itemSizeUnit = "g",
+                kcalPer100g = 64.0,
+                kcalPer100ml = null,
+            ),
+        )
+        val logResult = repository.submitText("yoghurt") as FoodLogRepository.SubmitResult.Parsed
+        val candidate = repository.shortcutUpdateCandidateForFoodItem(logResult.foodItemId)
+
+        val updateResult = repository.updateFoodItem(
+            id = logResult.foodItemId,
+            name = "Yoghurt",
+            amount = 0.5,
+            unit = "pot",
+            calories = 50.0,
+            consumedTime = LocalTime.parse("10:00"),
+            notes = "Richer pot",
+            updateShortcutLookupKey = candidate?.lookupKey,
+        )
+        val default = database.userDefaultDao().getActiveDefault("yoghurt")
+        repository.submitText("2 yoghurt")
+        val latestFoodItem = repository.observeFoodItemsForDate(today).first().last()
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
+        assertEquals(100.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(80.0, default?.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(200.0, latestFoodItem.calories, 0.001)
+        assertEquals(250.0, latestFoodItem.grams ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun loggedLabelShortcutEditPreservesStoredNutritionBasisWhenItemSizeMissing() = runTest {
+        repository.seedDefaults()
+        repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                lookupKey = "yoghurt",
+                name = "Yoghurt",
+                caloriesPerUnit = 80.0,
+                unit = "pot",
+                notes = "Initial",
+                defaultAmount = 0.5,
+                portionMode = ShortcutPortionMode.ITEM,
+                itemUnit = "pot",
+                itemSizeAmount = null,
+                itemSizeUnit = "g",
+                kcalPer100g = 64.0,
+                kcalPer100ml = null,
+            ),
+        )
+        val logResult = repository.submitText("yoghurt") as FoodLogRepository.SubmitResult.Parsed
+        val candidate = repository.shortcutUpdateCandidateForFoodItem(logResult.foodItemId)
+
+        repository.updateFoodItem(
+            id = logResult.foodItemId,
+            name = "Yoghurt",
+            amount = 0.5,
+            unit = "pot",
+            calories = 50.0,
+            consumedTime = LocalTime.parse("10:00"),
+            notes = "Richer pot",
+            updateShortcutLookupKey = candidate?.lookupKey,
+        )
+        val default = database.userDefaultDao().getActiveDefault("yoghurt")
+
+        assertEquals(100.0, default?.calories ?: 0.0, 0.001)
+        assertEquals(64.0, default?.kcalPer100g ?: 0.0, 0.001)
+    }
+
+    @Test
     fun loggedShortcutEditRejectsShortcutUpdateWhenCaloriesAreBlank() = runTest {
         repository.seedDefaults()
         val pendingResult = repository.submitText("toast")
@@ -1486,6 +1567,49 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(listOf(50.0, 100.0), foodItems.map { it.amount ?: 0.0 })
         assertEquals(listOf("g", "g"), foodItems.map { it.unit })
         assertEquals(listOf(200.0, 400.0), foodItems.map { it.calories })
+    }
+
+    @Test
+    fun loggedMeasureShortcutEditClearsStaleOppositeNutritionBasis() = runTest {
+        repository.seedDefaults()
+
+        repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                lookupKey = "shake",
+                name = "Shake",
+                caloriesPerUnit = 4.0,
+                unit = "g",
+                notes = null,
+                defaultAmount = 50.0,
+                portionMode = ShortcutPortionMode.MEASURE,
+                itemUnit = null,
+                itemSizeAmount = null,
+                itemSizeUnit = null,
+                kcalPer100g = 400.0,
+                kcalPer100ml = 10.0,
+            ),
+        )
+        val logResult = repository.submitText("shake") as FoodLogRepository.SubmitResult.Parsed
+        val candidate = repository.shortcutUpdateCandidateForFoodItem(logResult.foodItemId)
+
+        val updateResult = repository.updateFoodItem(
+            id = logResult.foodItemId,
+            name = "Shake",
+            amount = 100.0,
+            unit = "ml",
+            calories = 20.0,
+            consumedTime = LocalTime.parse("10:00"),
+            notes = null,
+            updateShortcutLookupKey = candidate?.lookupKey,
+        )
+        val default = database.userDefaultDao().getActiveDefault("shake")
+        repository.submitText("100ml shake")
+        val latestFoodItem = repository.observeFoodItemsForDate(today).first().last()
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
+        assertEquals(null, default?.kcalPer100g)
+        assertEquals(20.0, default?.kcalPer100ml ?: 0.0, 0.001)
+        assertEquals(20.0, latestFoodItem.calories, 0.001)
     }
 
     @Test

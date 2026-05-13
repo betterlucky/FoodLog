@@ -17,6 +17,8 @@ import com.betterlucky.foodlog.domain.label.LabelInputMode
 import com.betterlucky.foodlog.domain.label.LabelNutritionFacts
 import com.betterlucky.foodlog.domain.label.LabelPortionResolution
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
+import com.betterlucky.foodlog.domain.label.LabelShortcutBuilder
+import com.betterlucky.foodlog.domain.label.LabelShortcutItemSize
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -501,37 +503,27 @@ class TodayViewModel(
             message.value = when (result) {
                 is FoodLogRepository.LabelLogResult.Logged -> {
                     val shortcutResult = if (part.saveAsShortcut) {
-                        val itemSize = shortcutItemSizeFor(facts, session.labelInputMode, resolvedPortion, part)
-                        val shortcutMode = shortcutModeForLabelSave(
+                        val shortcutDraft = LabelShortcutBuilder.build(
+                            facts = facts,
                             inputMode = session.labelInputMode,
-                            itemSize = itemSize,
-                            facts = facts,
-                        )
-                        val shortcutCalories = shortcutCaloriesPerUnit(
-                            mode = shortcutMode,
                             resolvedPortion = resolvedPortion,
-                            parsedCalories = parsedCalories,
-                            itemSize = itemSize,
-                            facts = facts,
+                            calories = parsedCalories,
+                            userProvidedItemSize = userProvidedItemSize(part),
                         )
                         repository.addOcrShortcut(
                             FoodLogRepository.OcrShortcutInput(
                                 lookupKey = part.name.trim().lowercase(),
                                 name = part.name,
-                                caloriesPerUnit = shortcutCalories,
-                                unit = shortcutUnit(
-                                    mode = shortcutMode,
-                                    resolvedUnit = resolvedPortion.unit,
-                                    itemSizeUnit = itemSize?.unit,
-                                ),
+                                caloriesPerUnit = shortcutDraft.caloriesPerUnit,
+                                unit = shortcutDraft.unit,
                                 notes = part.notes.ifBlank { null },
-                                defaultAmount = resolvedPortion.amount,
-                                portionMode = shortcutMode,
-                                itemUnit = resolvedPortion.unit?.takeIf { shortcutMode == ShortcutPortionMode.ITEM },
-                                itemSizeAmount = itemSize?.amount,
-                                itemSizeUnit = itemSize?.unit,
-                                kcalPer100g = facts.kcalPer100g,
-                                kcalPer100ml = facts.kcalPer100ml,
+                                defaultAmount = shortcutDraft.defaultAmount,
+                                portionMode = shortcutDraft.portionMode,
+                                itemUnit = shortcutDraft.itemUnit,
+                                itemSizeAmount = shortcutDraft.itemSizeAmount,
+                                itemSizeUnit = shortcutDraft.itemSizeUnit,
+                                kcalPer100g = shortcutDraft.kcalPer100g,
+                                kcalPer100ml = shortcutDraft.kcalPer100ml,
                             ),
                         )
                     } else {
@@ -1068,39 +1060,52 @@ class TodayViewModel(
         notes: String,
         saveAsDefault: Boolean,
         onAdded: () -> Unit,
-    ) {
+        onError: (String) -> Unit = {},
+    ): Boolean {
         val parsedAmount = amount.trim().takeIf { it.isNotBlank() }?.toDoubleOrNull()
         val parsedCalories = calories.trim().toDoubleOrNull()
         val parsedTime = time.trim().takeIf { it.isNotBlank() }?.let(::parseTimeOrNull)
 
         if (name.isBlank() || parsedCalories == null || parsedCalories <= 0.0) {
-            message.value = "Add an item name and calories to log the item."
-            return
+            val error = "Add an item name and calories to log the item."
+            message.value = error
+            onError(error)
+            return false
         }
 
         if (amount.isNotBlank() && parsedAmount == null) {
-            message.value = "Amount must be a number."
-            return
+            val error = "Amount must be a number."
+            message.value = error
+            onError(error)
+            return false
+        }
+
+        if (parsedAmount != null && parsedAmount <= 0.0) {
+            val error = "Amount must be greater than zero."
+            message.value = error
+            onError(error)
+            return false
         }
 
         if (time.isNotBlank() && parsedTime == null) {
-            message.value = "Time must use HH:mm, such as 08:30."
-            return
+            val error = "Time must use HH:mm, such as 08:30."
+            message.value = error
+            onError(error)
+            return false
         }
 
         viewModelScope.launch {
-            message.value = when (
-                val result = repository.addFoodItemManually(
-                    logDate = date,
-                    name = name,
-                    amount = parsedAmount,
-                    unit = unit,
-                    calories = parsedCalories,
-                    consumedTime = parsedTime,
-                    notes = notes,
-                    saveAsDefault = saveAsDefault,
-                )
-            ) {
+            val result = repository.addFoodItemManually(
+                logDate = date,
+                name = name,
+                amount = parsedAmount,
+                unit = unit,
+                calories = parsedCalories,
+                consumedTime = parsedTime,
+                notes = notes,
+                saveAsDefault = saveAsDefault,
+            )
+            val resultMessage = when (result) {
                 is FoodLogRepository.ManualAddResult.Added -> {
                     onAdded()
                     if (result.savedDefaultLookupKey == null) {
@@ -1111,7 +1116,12 @@ class TodayViewModel(
                 }
                 FoodLogRepository.ManualAddResult.InvalidInput -> "Add an item name and calories to log the item."
             }
+            message.value = resultMessage
+            if (result == FoodLogRepository.ManualAddResult.InvalidInput) {
+                onError(resultMessage)
+            }
         }
+        return true
     }
 
     fun resolvePendingEntry(
@@ -1477,7 +1487,7 @@ private fun LabelNutritionFacts.toLabelLoggingWizardSession(
     val itemUnit = LabelPortionResolver.itemUnit(this)
     val amountText = defaultLabelAmountText(inputMode, this)
     val resolved = LabelPortionResolver.resolve(this, inputMode, amountText)
-    val inferredItemSize = inferredFullItemSize(this, inputMode, resolved)
+    val inferredItemSize = LabelShortcutBuilder.inferredItemSize(this, inputMode, resolved)
     return LoggingWizardSession(
         source = LoggingWizardSource.Label,
         originalRawText = rawText,
@@ -1544,102 +1554,16 @@ private fun defaultMeasureRange(facts: LabelNutritionFacts): DefaultMeasureRange
     return null
 }
 
-private data class ShortcutItemSize(
-    val amount: Double,
-    val unit: String,
-)
-
 private fun LabelInputMode.toShortcutPortionMode(): ShortcutPortionMode =
     when (this) {
         LabelInputMode.ITEMS -> ShortcutPortionMode.ITEM
         LabelInputMode.MEASURE -> ShortcutPortionMode.MEASURE
     }
 
-private fun shortcutModeForLabelSave(
-    inputMode: LabelInputMode,
-    itemSize: ShortcutItemSize?,
-    facts: LabelNutritionFacts,
-): ShortcutPortionMode =
-    when {
-        inputMode == LabelInputMode.MEASURE -> ShortcutPortionMode.MEASURE
-        itemSize != null && (facts.kcalPer100g != null || facts.kcalPer100ml != null) -> ShortcutPortionMode.ITEM
-        else -> ShortcutPortionMode.PLAIN
-    }
-
-private fun shortcutCaloriesPerUnit(
-    mode: ShortcutPortionMode,
-    resolvedPortion: LabelPortionResolution,
-    parsedCalories: Double,
-    itemSize: ShortcutItemSize?,
-    facts: LabelNutritionFacts,
-): Double =
-    when (mode) {
-        ShortcutPortionMode.ITEM -> {
-            val size = itemSize
-            when {
-                size?.unit == "g" && facts.kcalPer100g != null -> facts.kcalPer100g * size.amount / 100.0
-                size?.unit == "ml" && facts.kcalPer100ml != null -> facts.kcalPer100ml * size.amount / 100.0
-                else -> resolvedPortion.amount?.takeIf { it > 0.0 }?.let { parsedCalories / it } ?: parsedCalories
-            }
-        }
-        ShortcutPortionMode.MEASURE,
-        ShortcutPortionMode.PLAIN ->
-            if (mode == ShortcutPortionMode.PLAIN) {
-                parsedCalories
-            } else {
-            resolvedPortion.amount?.takeIf { it > 0.0 }?.let { parsedCalories / it } ?: parsedCalories
-            }
-    }
-
-private fun shortcutUnit(
-    mode: ShortcutPortionMode,
-    resolvedUnit: String?,
-    itemSizeUnit: String?,
-): String =
-    when (mode) {
-        ShortcutPortionMode.ITEM -> resolvedUnit ?: "item"
-        ShortcutPortionMode.MEASURE -> itemSizeUnit ?: resolvedUnit ?: "g"
-        ShortcutPortionMode.PLAIN -> resolvedUnit ?: "serving"
-    }
-
-private fun shortcutItemSizeFor(
-    facts: LabelNutritionFacts,
-    inputMode: LabelInputMode,
-    resolvedPortion: LabelPortionResolution,
-    part: LoggingWizardPartDraft,
-): ShortcutItemSize? =
-    userProvidedItemSize(part)
-        ?: inferredFullItemSize(facts, inputMode, resolvedPortion)
-
-private fun userProvidedItemSize(part: LoggingWizardPartDraft): ShortcutItemSize? {
-    val amount = part.shortcutItemSizeAmount.toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
+private fun userProvidedItemSize(part: LoggingWizardPartDraft): LabelShortcutItemSize? {
+    val amount = part.shortcutItemSizeAmount.trim().toDoubleOrNull()?.takeIf { it > 0.0 } ?: return null
     val unit = part.shortcutItemSizeUnit.trim().lowercase().takeIf { it == "g" || it == "ml" } ?: return null
-    return ShortcutItemSize(amount = amount, unit = unit)
-}
-
-private fun inferredFullItemSize(
-    facts: LabelNutritionFacts,
-    inputMode: LabelInputMode,
-    resolvedPortion: LabelPortionResolution,
-): ShortcutItemSize? {
-    if (inputMode != LabelInputMode.ITEMS) return null
-    val amount = resolvedPortion.amount?.takeIf { it > 0.0 } ?: return null
-    resolvedPortion.grams?.takeIf { it > 0.0 }?.let {
-        return ShortcutItemSize(amount = it / amount, unit = "g")
-    }
-    resolvedPortion.milliliters?.takeIf { it > 0.0 }?.let {
-        return ShortcutItemSize(amount = it / amount, unit = "ml")
-    }
-    val packageItems = facts.packageItemCount?.takeIf { it > 0.0 }
-    if (packageItems != null) {
-        facts.packageSizeGrams?.takeIf { it > 0.0 }?.let {
-            return ShortcutItemSize(amount = it / packageItems, unit = "g")
-        }
-        facts.packageSizeMilliliters?.takeIf { it > 0.0 }?.let {
-            return ShortcutItemSize(amount = it / packageItems, unit = "ml")
-        }
-    }
-    return null
+    return LabelShortcutItemSize(amount = amount, unit = unit)
 }
 
 private fun LoggingWizardSession.withFirstIncompletePart(): LoggingWizardSession {
