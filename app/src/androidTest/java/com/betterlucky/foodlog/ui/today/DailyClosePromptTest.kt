@@ -52,7 +52,7 @@ class DailyClosePromptTest {
         }
 
         composeRule
-            .onNodeWithText("Lodestone: exported 21:00")
+            .onNodeWithText("Daily report: exported 21:00")
             .assertIsDisplayed()
         composeRule
             .onNodeWithText("Last exported: 21:00 - food_log_2026-05-06.csv")
@@ -79,13 +79,13 @@ class DailyClosePromptTest {
         }
 
         composeRule
-            .onNodeWithText("Lodestone: needs update since 21:00")
+            .onNodeWithText("Daily report: needs re-export: changed 21:01 after 21:00 export")
             .assertIsDisplayed()
         composeRule
             .onNodeWithText("Last exported: 21:00 - food_log_2026-05-06.csv")
             .assertIsDisplayed()
         composeRule
-            .onNodeWithText("Export")
+            .onNodeWithText("Re-export daily report")
             .assertIsDisplayed()
     }
 
@@ -104,10 +104,13 @@ class DailyClosePromptTest {
         }
 
         composeRule
-            .onNodeWithText("Lodestone: not exported")
+            .onNodeWithText("Daily report: not exported")
             .assertIsDisplayed()
         composeRule
             .onAllNodesWithText("Last exported", substring = true)
             .assertCountEquals(0)
+        composeRule
+            .onNodeWithText("Export daily report")
+            .assertIsDisplayed()
     }
 }

@@ -16,6 +16,8 @@ import com.betterlucky.foodlog.data.entities.RawEntryStatus
 import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.export.AuditCsvExporter
+import com.betterlucky.foodlog.domain.export.JournalCsvExporter
+import com.betterlucky.foodlog.domain.export.JournalExportOptions
 import com.betterlucky.foodlog.domain.export.LegacyHealthCsvExporter
 import com.betterlucky.foodlog.domain.dayboundary.FoodDayPolicy
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
@@ -37,6 +39,7 @@ class FoodLogRepository(
     private val dateTimeProvider: DateTimeProvider,
     private val legacyHealthCsvExporter: LegacyHealthCsvExporter = LegacyHealthCsvExporter(),
     private val auditCsvExporter: AuditCsvExporter = AuditCsvExporter(),
+    private val journalCsvExporter: JournalCsvExporter = JournalCsvExporter(),
     private val foodDayPolicy: FoodDayPolicy = FoodDayPolicy(),
 ) {
     private val appSettingsDao = database.appSettingsDao()
@@ -1215,6 +1218,17 @@ class FoodLogRepository(
         return DailyWeightResult.Saved
     }
 
+    suspend fun removeDailyWeight(logDate: LocalDate): DailyWeightRemoveResult =
+        database.withTransaction {
+            val removedCount = dailyWeightDao.deleteByDate(logDate)
+            if (removedCount == 0) {
+                DailyWeightRemoveResult.NotFound
+            } else {
+                markFoodChanged(logDate)
+                DailyWeightRemoveResult.Removed
+            }
+        }
+
     suspend fun exportLegacyHealthCsv(date: LocalDate): ExportedCsv {
         val exported = buildLegacyHealthCsv(date)
         markLegacyHealthCsvExported(date, exported.fileName)
@@ -1245,6 +1259,36 @@ class FoodLogRepository(
             csv = auditCsvExporter.export(items),
             fileName = fileName,
         ).also { markAuditExported(date, fileName) }
+    }
+
+    suspend fun buildJournalCsv(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        options: JournalExportOptions,
+    ): ExportedCsv {
+        require(!endDate.isBefore(startDate)) { "End date must be on or after start date." }
+
+        val items = foodItemDao.getActiveFoodItemsBetween(startDate, endDate)
+        val productIds = items.mapNotNull { it.productId }.distinct()
+        val productsById = if (productIds.isEmpty()) {
+            emptyMap()
+        } else {
+            productDao.getByIds(productIds).associateBy { it.id }
+        }
+        val weights = if (options.includeWeight) {
+            dailyWeightDao.getBetween(startDate, endDate)
+        } else {
+            emptyList()
+        }
+        return ExportedCsv(
+            csv = journalCsvExporter.export(
+                items = items,
+                productsById = productsById,
+                dailyWeights = weights,
+                options = options,
+            ),
+            fileName = journalFileName(startDate, endDate),
+        )
     }
 
     private suspend fun markLegacyExported(
@@ -1591,6 +1635,11 @@ class FoodLogRepository(
         data object InvalidInput : DailyWeightResult
     }
 
+    sealed interface DailyWeightRemoveResult {
+        data object Removed : DailyWeightRemoveResult
+        data object NotFound : DailyWeightRemoveResult
+    }
+
     data class LabelProductLogInput(
         val name: String,
         val kcalPer100g: Double?,
@@ -1641,6 +1690,12 @@ class FoodLogRepository(
 
         fun auditFileName(date: LocalDate): String =
             "foodlog-audit-$date.csv"
+
+        fun journalFileName(
+            startDate: LocalDate,
+            endDate: LocalDate,
+        ): String =
+            "foodlog_journal_${startDate}_to_${endDate}.csv"
 
         val DEFAULT_TEA = UserDefaultEntity(
             lookupKey = "tea",

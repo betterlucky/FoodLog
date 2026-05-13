@@ -108,24 +108,40 @@ class DailyCloseReadinessTest {
     }
 
     @Test
+    fun changedExportedDayRequiresFreshExportEvenWhenNoRowsRemain() {
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = exportedStatus(
+                    exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
+                    changedAt = Instant.parse("2026-05-06T20:01:00Z"),
+                ),
+                pendingCount = 0,
+                foodItemCount = 0,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
     fun promptTextMatchesEachCloseState() {
         assertEquals("No export needed yet.", DailyCloseReadiness.NoFoodLogged.closePromptText())
         assertEquals(
-            "Resolve pending entries before Lodestone export.",
+            "Resolve pending entries before the daily report.",
             DailyCloseReadiness.ResolvePending.closePromptText(),
         )
         assertEquals(
-            "Export the Lodestone CSV before closing this day.",
+            "Export the latest daily report before closing this day.",
             DailyCloseReadiness.ReadyToExport.closePromptText(),
         )
-        assertEquals("Lodestone export is current.", DailyCloseReadiness.AlreadyExported.closePromptText())
+        assertEquals("Daily report is current.", DailyCloseReadiness.AlreadyExported.closePromptText())
     }
 
     @Test
     fun exportStatusTextShowsMissingStaleAndCurrentStates() {
         assertEquals("not exported", null.legacyExportStatusText())
         assertEquals(
-            "needs update since 21:00",
+            "needs re-export: changed 21:01 after 21:00 export",
             exportedStatus(
                 exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
                 changedAt = Instant.parse("2026-05-06T20:01:00Z"),
@@ -138,6 +154,12 @@ class DailyCloseReadinessTest {
                 changedAt = Instant.parse("2026-05-06T19:59:00Z"),
             ).legacyExportStatusText(),
         )
+    }
+
+    @Test
+    fun exportActionTextDistinguishesFirstExportFromReExport() {
+        assertEquals("Export daily report", null.legacyExportActionText())
+        assertEquals("Re-export daily report", exportedStatus().legacyExportActionText())
     }
 
     @Test

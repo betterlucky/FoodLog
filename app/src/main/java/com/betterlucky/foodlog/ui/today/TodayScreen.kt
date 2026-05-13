@@ -21,9 +21,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import com.betterlucky.foodlog.domain.export.JournalExportOptions
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.math.absoluteValue
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 @Composable
@@ -58,6 +60,7 @@ fun TodayScreen(
     var addingShortcut by remember { mutableStateOf(false) }
     var pickingDate by remember { mutableStateOf(false) }
     var choosingLabelImage by remember { mutableStateOf(false) }
+    var showingJournalExport by remember { mutableStateOf(false) }
     var loggedItemsViewMode by remember { mutableStateOf(LoggedItemsViewMode.Time) }
     var shortcutDialogError by remember { mutableStateOf<String?>(null) }
     var weightDialogError by remember { mutableStateOf<String?>(null) }
@@ -104,10 +107,24 @@ fun TodayScreen(
         )
     }
 
+    fun exportJournal(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        options: JournalExportOptions,
+    ) {
+        viewModel.exportJournalCsv(
+            startDate = startDate,
+            endDate = endDate,
+            options = options,
+            onExported = onShareCsv,
+            onExportedSuccessfully = { showingJournalExport = false },
+        )
+    }
+
     DayStatePreloader(viewModel = viewModel, selectedDate = uiState.selectedDate)
 
     LaunchedEffect(pagerState, originDate) {
-        snapshotFlow { pagerState.settledPage }.collect { page ->
+        snapshotFlow { pagerState.settledPage }.drop(1).collect { page ->
             viewModel.selectDate(dateForPage(page))
         }
     }
@@ -130,7 +147,8 @@ fun TodayScreen(
             !showingShortcuts &&
             !addingShortcut &&
             !pickingDate &&
-            !choosingLabelImage
+            !choosingLabelImage &&
+            !showingJournalExport
 
     Box(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(
@@ -175,6 +193,7 @@ fun TodayScreen(
                         onShowShortcuts = { showingShortcuts = true },
                         onChooseLabelImage = { choosingLabelImage = true },
                         onExportLegacy = ::exportLegacyAndAdvance,
+                        onOpenJournalExport = { showingJournalExport = true },
                     )
                     if (!isSettledPage) {
                         Box(
@@ -226,6 +245,14 @@ fun TodayScreen(
         onTakeLabelPhoto = onTakeLabelPhoto,
         onChooseLabelImage = onChooseLabelImage,
     )
+
+    if (showingJournalExport) {
+        JournalExportDialog(
+            selectedDate = uiState.selectedDate,
+            onDismiss = { showingJournalExport = false },
+            onExport = ::exportJournal,
+        )
+    }
 }
 
 @Composable
@@ -464,6 +491,19 @@ private fun TodayScreenDialogs(
             dailyWeight = dayState.dailyWeight,
             errorMessage = weightDialogError,
             onDismiss = { onEditingWeightDateChanged(null) },
+            onRemove = if (dayState.dailyWeight == null) {
+                null
+            } else {
+                {
+                    viewModel.removeDailyWeight(
+                        date = date,
+                        onRemoved = {
+                            onWeightDialogErrorChanged(null)
+                            onEditingWeightDateChanged(null)
+                        },
+                    )
+                }
+            },
             onSave = { stone, pounds, time ->
                 viewModel.saveDailyWeight(
                     date = date,
