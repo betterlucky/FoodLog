@@ -9,7 +9,7 @@ enum class DailyCloseReadiness(val label: String) {
     NoFoodLogged("No food logged"),
     ResolvePending("Resolve pending entries"),
     ReadyToExport("Ready to export"),
-    AlreadyExported("Already exported"),
+    AlreadyExported("Export current"),
 }
 
 fun dailyCloseReadiness(
@@ -30,17 +30,17 @@ fun DailyCloseReadiness.closePromptText(): String =
     when (this) {
         DailyCloseReadiness.NoFoodLogged -> "No export needed yet."
         DailyCloseReadiness.ResolvePending -> "Resolve pending entries before the daily report."
-        DailyCloseReadiness.ReadyToExport -> "Export the latest daily report before closing this day."
-        DailyCloseReadiness.AlreadyExported -> "Daily report is current."
+        DailyCloseReadiness.ReadyToExport -> "Export the latest Lodestone CSV before closing this day."
+        DailyCloseReadiness.AlreadyExported -> "Lodestone CSV is current."
     }
 
 fun DailyStatusEntity?.legacyExportStatusText(): String {
     val exportedAt = this?.legacyExportedAt ?: return "not exported"
     val changedAt = lastFoodChangedAt
     return if (changedAt != null && changedAt > exportedAt) {
-        "needs re-export: changed ${changedAt.displayTime()} after ${exportedAt.displayTime()} export"
+        "changed since export: ${changedAt.displayTime()} after ${exportedAt.displayTime()}"
     } else {
-        "exported ${exportedAt.displayTime()}"
+        "current: exported ${exportedAt.displayTime()}"
     }
 }
 

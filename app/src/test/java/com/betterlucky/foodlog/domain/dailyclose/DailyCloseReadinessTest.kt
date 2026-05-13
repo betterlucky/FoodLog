@@ -125,30 +125,35 @@ class DailyCloseReadinessTest {
 
     @Test
     fun promptTextMatchesEachCloseState() {
+        assertEquals("No food logged", DailyCloseReadiness.NoFoodLogged.label)
+        assertEquals("Resolve pending entries", DailyCloseReadiness.ResolvePending.label)
+        assertEquals("Ready to export", DailyCloseReadiness.ReadyToExport.label)
+        assertEquals("Export current", DailyCloseReadiness.AlreadyExported.label)
+
         assertEquals("No export needed yet.", DailyCloseReadiness.NoFoodLogged.closePromptText())
         assertEquals(
             "Resolve pending entries before the daily report.",
             DailyCloseReadiness.ResolvePending.closePromptText(),
         )
         assertEquals(
-            "Export the latest daily report before closing this day.",
+            "Export the latest Lodestone CSV before closing this day.",
             DailyCloseReadiness.ReadyToExport.closePromptText(),
         )
-        assertEquals("Daily report is current.", DailyCloseReadiness.AlreadyExported.closePromptText())
+        assertEquals("Lodestone CSV is current.", DailyCloseReadiness.AlreadyExported.closePromptText())
     }
 
     @Test
     fun exportStatusTextShowsMissingStaleAndCurrentStates() {
         assertEquals("not exported", null.legacyExportStatusText())
         assertEquals(
-            "needs re-export: changed 21:01 after 21:00 export",
+            "changed since export: 21:01 after 21:00",
             exportedStatus(
                 exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
                 changedAt = Instant.parse("2026-05-06T20:01:00Z"),
             ).legacyExportStatusText(),
         )
         assertEquals(
-            "exported 21:00",
+            "current: exported 21:00",
             exportedStatus(
                 exportedAt = Instant.parse("2026-05-06T20:00:00Z"),
                 changedAt = Instant.parse("2026-05-06T19:59:00Z"),

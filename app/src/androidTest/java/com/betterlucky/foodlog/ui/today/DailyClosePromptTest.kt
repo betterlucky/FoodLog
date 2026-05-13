@@ -52,7 +52,7 @@ class DailyClosePromptTest {
         }
 
         composeRule
-            .onNodeWithText("Daily report: exported 21:00")
+            .onNodeWithText("Daily report: current: exported 21:00")
             .assertIsDisplayed()
         composeRule
             .onNodeWithText("Last exported: 21:00 - food_log_2026-05-06.csv")
@@ -79,7 +79,7 @@ class DailyClosePromptTest {
         }
 
         composeRule
-            .onNodeWithText("Daily report: needs re-export: changed 21:01 after 21:00 export")
+            .onNodeWithText("Daily report: changed since export: 21:01 after 21:00")
             .assertIsDisplayed()
         composeRule
             .onNodeWithText("Last exported: 21:00 - food_log_2026-05-06.csv")
