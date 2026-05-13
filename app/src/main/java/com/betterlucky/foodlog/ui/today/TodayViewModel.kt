@@ -1080,6 +1080,13 @@ class TodayViewModel(
             return false
         }
 
+        if (parsedAmount != null && parsedAmount <= 0.0) {
+            val error = "Amount must be greater than zero."
+            message.value = error
+            onError(error)
+            return false
+        }
+
         if (time.isNotBlank() && parsedTime == null) {
             val error = "Time must use HH:mm, such as 08:30."
             message.value = error

@@ -1796,7 +1796,11 @@ private fun UserDefaultEntity.updatedKcalPer100g(
                 kcalPer100g
             }
         ShortcutPortionMode.MEASURE ->
-            if ((unit ?: this.unit) == "g") updatedCalories * 100.0 else kcalPer100g
+            when (unit ?: this.unit) {
+                "g" -> updatedCalories * 100.0
+                "ml" -> null
+                else -> kcalPer100g
+            }
         ShortcutPortionMode.PLAIN -> kcalPer100g
     }
 
@@ -1813,7 +1817,11 @@ private fun UserDefaultEntity.updatedKcalPer100ml(
                 kcalPer100ml
             }
         ShortcutPortionMode.MEASURE ->
-            if ((unit ?: this.unit) == "ml") updatedCalories * 100.0 else kcalPer100ml
+            when (unit ?: this.unit) {
+                "ml" -> updatedCalories * 100.0
+                "g" -> null
+                else -> kcalPer100ml
+            }
         ShortcutPortionMode.PLAIN -> kcalPer100ml
     }
 

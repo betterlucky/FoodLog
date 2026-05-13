@@ -1570,6 +1570,49 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun loggedMeasureShortcutEditClearsStaleOppositeNutritionBasis() = runTest {
+        repository.seedDefaults()
+
+        repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                lookupKey = "shake",
+                name = "Shake",
+                caloriesPerUnit = 4.0,
+                unit = "g",
+                notes = null,
+                defaultAmount = 50.0,
+                portionMode = ShortcutPortionMode.MEASURE,
+                itemUnit = null,
+                itemSizeAmount = null,
+                itemSizeUnit = null,
+                kcalPer100g = 400.0,
+                kcalPer100ml = 10.0,
+            ),
+        )
+        val logResult = repository.submitText("shake") as FoodLogRepository.SubmitResult.Parsed
+        val candidate = repository.shortcutUpdateCandidateForFoodItem(logResult.foodItemId)
+
+        val updateResult = repository.updateFoodItem(
+            id = logResult.foodItemId,
+            name = "Shake",
+            amount = 100.0,
+            unit = "ml",
+            calories = 20.0,
+            consumedTime = LocalTime.parse("10:00"),
+            notes = null,
+            updateShortcutLookupKey = candidate?.lookupKey,
+        )
+        val default = database.userDefaultDao().getActiveDefault("shake")
+        repository.submitText("100ml shake")
+        val latestFoodItem = repository.observeFoodItemsForDate(today).first().last()
+
+        assertEquals(FoodLogRepository.FoodItemUpdateResult.Updated, updateResult)
+        assertEquals(null, default?.kcalPer100g)
+        assertEquals(20.0, default?.kcalPer100ml ?: 0.0, 0.001)
+        assertEquals(20.0, latestFoodItem.calories, 0.001)
+    }
+
+    @Test
     fun shortcutNutritionBasisStalesOnNameChangeButNotAmountChange() = runTest {
         repository.seedDefaults()
         repository.addOcrShortcut(
