@@ -1,7 +1,9 @@
 package com.betterlucky.foodlog
 
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,6 +48,26 @@ class MainActivity : ComponentActivity() {
             Toast.makeText(this, "No label image was selected.", Toast.LENGTH_SHORT).show()
         }
     }
+    private val chooseJournalFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) {
+            val persisted = runCatching {
+                contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }.isSuccess
+            if (!persisted) {
+                Toast.makeText(this, "Could not keep access to that file. Please choose it again.", Toast.LENGTH_LONG).show()
+                return@registerForActivityResult
+            }
+            viewModel.saveJournalExportFile(
+                uri = uri.toString(),
+                displayName = displayNameFor(uri),
+            )
+        } else {
+            Toast.makeText(this, "No journal file was selected.", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +77,8 @@ class MainActivity : ComponentActivity() {
                 TodayScreen(
                     viewModel = viewModel,
                     onShareCsv = ::shareCsv,
+                    onChooseJournalFile = ::chooseJournalFile,
+                    onSaveJournalCsv = ::saveJournalCsv,
                     onTakeLabelPhoto = ::takeLabelPhoto,
                     onChooseLabelImage = ::chooseLabelImage,
                 )
@@ -80,6 +104,20 @@ class MainActivity : ComponentActivity() {
         viewModel.processLabelImage(uri)
     }
 
+    private fun chooseJournalFile() {
+        chooseJournalFileLauncher.launch("foodlog_journal.csv")
+    }
+
+    private fun displayNameFor(uri: Uri): String? =
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+                } else {
+                    null
+                }
+            }
+
     private fun shareCsv(
         csv: String,
         fileName: String,
@@ -87,6 +125,19 @@ class MainActivity : ComponentActivity() {
         val path = csvShareHelper.saveCsv(csv, fileName)
         Toast.makeText(this, "Saved $path", Toast.LENGTH_LONG).show()
         return path
+    }
+
+    private fun saveJournalCsv(
+        csv: String,
+        fileName: String,
+        uriString: String,
+    ): String {
+        val uri = Uri.parse(uriString)
+        contentResolver.openOutputStream(uri, "wt")?.use { output ->
+            output.write(csv.toByteArray(Charsets.UTF_8))
+        } ?: error("Unable to open journal export file")
+        Toast.makeText(this, "Saved $fileName", Toast.LENGTH_LONG).show()
+        return uriString
     }
 }
 

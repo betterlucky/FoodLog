@@ -1,56 +1,31 @@
 package com.betterlucky.foodlog.domain.export
 
-import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
-import com.betterlucky.foodlog.data.entities.ProductEntity
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 
 data class JournalExportOptions(
     val includeWeight: Boolean = false,
-    val includeProduct: Boolean = false,
-    val includeSource: Boolean = false,
-    val includeGrams: Boolean = false,
-    val includeRawEntryId: Boolean = false,
-    val includeCreatedAt: Boolean = false,
-    val includeConfidence: Boolean = false,
-    val includeProductId: Boolean = false,
 )
 
 class JournalCsvExporter {
     fun export(
         items: List<FoodItemEntity>,
-        productsById: Map<Long, ProductEntity>,
         dailyWeights: List<DailyWeightEntity>,
         options: JournalExportOptions = JournalExportOptions(),
     ): String {
-        val rows = mutableListOf(header(options))
-        sortedRows(items, productsById, dailyWeights, options).forEach { row ->
-            rows += csvLine(row.csvValues(options))
+        val rows = mutableListOf(HEADER)
+        sortedRows(items, dailyWeights, options).forEach { row ->
+            rows += csvLine(row.csvValues)
         }
         return rows.joinToString("\n")
     }
 
-    private fun header(options: JournalExportOptions): String =
-        (
-            listOf("date", "time_local", "item", "quantity", "calories_kcal", "notes") +
-                listOfNotNull(
-                    "product".takeIf { options.includeProduct },
-                    "source".takeIf { options.includeSource },
-                    "grams".takeIf { options.includeGrams },
-                    "raw_entry_id".takeIf { options.includeRawEntryId },
-                    "created_at".takeIf { options.includeCreatedAt },
-                    "confidence".takeIf { options.includeConfidence },
-                    "product_id".takeIf { options.includeProductId },
-                )
-            ).joinToString(",")
-
     private fun sortedRows(
         items: List<FoodItemEntity>,
-        productsById: Map<Long, ProductEntity>,
         dailyWeights: List<DailyWeightEntity>,
         options: JournalExportOptions,
     ): List<JournalExportRow> {
@@ -61,16 +36,20 @@ class JournalCsvExporter {
                     logDate = item.logDate,
                     time = item.consumedTime,
                     createdAt = item.createdAt,
-                    item = item.name,
-                    quantity = quantityFor(item),
-                    calories = item.calories.formatCalories(),
-                    notes = item.notes.orEmpty(),
-                    product = item.productId?.let(productsById::get)?.displayName().orEmpty(),
-                    source = item.source.displayName(),
-                    grams = item.grams?.formatAmount().orEmpty(),
-                    rawEntryId = item.rawEntryId.toString(),
-                    confidence = item.confidence.displayName(),
-                    productId = item.productId?.toString().orEmpty(),
+                    csvValues = listOf(
+                        item.logDate.toString(),
+                        item.consumedTime?.toString().orEmpty(),
+                        "food",
+                        item.name,
+                        quantityFor(item),
+                        item.calories.formatCalories(),
+                        "",
+                        item.notes.orEmpty(),
+                        item.source.displayName(),
+                        item.id.toString(),
+                        item.productId?.toString().orEmpty(),
+                        item.createdAt.toString(),
+                    ),
                 )
             }
         val weightRows = if (options.includeWeight) {
@@ -79,16 +58,20 @@ class JournalCsvExporter {
                     logDate = weight.logDate,
                     time = weight.measuredTime,
                     createdAt = weight.createdAt,
-                    item = "weight",
-                    quantity = "${weight.weightKg.formatWeightKg()} kg",
-                    calories = "",
-                    notes = "Recorded weight",
-                    product = "",
-                    source = "",
-                    grams = "",
-                    rawEntryId = "",
-                    confidence = "",
-                    productId = "",
+                    csvValues = listOf(
+                        weight.logDate.toString(),
+                        weight.measuredTime.toString(),
+                        "weight",
+                        "weight",
+                        "",
+                        "",
+                        weight.weightKg.formatWeightKg(),
+                        "Recorded weight",
+                        "daily weight",
+                        "",
+                        "",
+                        weight.createdAt.toString(),
+                    ),
                 )
             }
         } else {
@@ -122,48 +105,17 @@ class JournalCsvExporter {
         }
 
     companion object {
-        const val DEFAULT_HEADER = "date,time_local,item,quantity,calories_kcal,notes"
+        const val HEADER =
+            "date,time_local,entry_type,item,quantity,calories_kcal,weight_kg,notes,source,food_item_id,product_id,created_at"
     }
 
     private data class JournalExportRow(
         val logDate: LocalDate,
         val time: LocalTime?,
         val createdAt: Instant,
-        val item: String,
-        val quantity: String,
-        val calories: String,
-        val notes: String,
-        val product: String,
-        val source: String,
-        val grams: String,
-        val rawEntryId: String,
-        val confidence: String,
-        val productId: String,
-    ) {
-        fun csvValues(options: JournalExportOptions): List<String?> =
-            listOf(
-                logDate.toString(),
-                time?.toString().orEmpty(),
-                item,
-                quantity,
-                calories,
-                notes,
-            ) +
-                listOfNotNull(
-                    product.takeIf { options.includeProduct },
-                    source.takeIf { options.includeSource },
-                    grams.takeIf { options.includeGrams },
-                    rawEntryId.takeIf { options.includeRawEntryId },
-                    createdAt.toString().takeIf { options.includeCreatedAt },
-                    confidence.takeIf { options.includeConfidence },
-                    productId.takeIf { options.includeProductId },
-                )
-    }
+        val csvValues: List<String?>,
+    )
 }
-
-private fun ProductEntity.displayName(): String =
-    listOfNotNull(brand?.takeIf { it.isNotBlank() }, name.takeIf { it.isNotBlank() })
-        .joinToString(" ")
 
 private fun FoodItemSource.displayName(): String =
     when (this) {
@@ -174,9 +126,6 @@ private fun FoodItemSource.displayName(): String =
         FoodItemSource.MANUAL_OVERRIDE -> "manual entry"
         FoodItemSource.ESTIMATE -> "estimate"
     }
-
-private fun ConfidenceLevel.displayName(): String =
-    name.lowercase().replaceFirstChar { it.uppercase() }
 
 private fun Double.formatWeightKg(): String =
     String.format(java.util.Locale.US, "%.1f", this)

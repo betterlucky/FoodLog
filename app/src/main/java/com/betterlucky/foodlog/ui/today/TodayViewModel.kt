@@ -171,6 +171,9 @@ class TodayViewModel(
                 dayBoundaryTime = settings?.dayBoundaryTime,
                 lastLabelInputMode = settings?.lastLabelInputMode
                     ?: AppSettingsEntity.LAST_LABEL_INPUT_MODE_ITEMS,
+                journalExportUri = settings?.journalExportUri,
+                journalExportDisplayName = settings?.journalExportDisplayName,
+                journalIncludeWeight = settings?.journalIncludeWeight ?: false,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -672,20 +675,17 @@ class TodayViewModel(
     }
 
     fun exportJournalCsv(
-        startDate: LocalDate,
-        endDate: LocalDate,
         options: JournalExportOptions,
-        onExported: (String, String) -> String,
+        onExported: (String, String, String) -> String,
         onExportedSuccessfully: () -> Unit,
     ) {
         viewModelScope.launch {
             runCatching {
-                val exported = repository.buildJournalCsv(
-                    startDate = startDate,
-                    endDate = endDate,
-                    options = options,
-                )
-                onExported(exported.csv, exported.fileName)
+                repository.setJournalIncludeWeight(options.includeWeight)
+                val uri = repository.getAppSettings()?.journalExportUri
+                    ?: error("No journal export file selected")
+                val exported = repository.buildFullJournalCsv(options = options)
+                onExported(exported.csv, exported.fileName, uri)
                 exported.fileName
             }.onSuccess { fileName ->
                 onExportedSuccessfully()
@@ -693,6 +693,23 @@ class TodayViewModel(
             }.onFailure {
                 message.value = "Could not save journal export."
             }
+        }
+    }
+
+    fun saveJournalExportFile(
+        uri: String,
+        displayName: String?,
+    ) {
+        viewModelScope.launch {
+            repository.setJournalExportFile(uri, displayName)
+            message.value = "Journal export file selected."
+        }
+    }
+
+    fun clearJournalExportUri() {
+        viewModelScope.launch {
+            repository.setJournalExportFile(null, null)
+            message.value = "Journal file forgotten."
         }
     }
 

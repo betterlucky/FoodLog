@@ -45,6 +45,15 @@ interface FoodItemDao {
 
     @Query(
         """
+        SELECT * FROM food_items
+        WHERE voided = 0
+        ORDER BY logDate ASC, consumedTime ASC, createdAt ASC
+        """,
+    )
+    suspend fun getAllActiveFoodItems(): List<FoodItemEntity>
+
+    @Query(
+        """
         SELECT COALESCE(SUM(calories), 0)
         FROM food_items
         WHERE logDate = :date AND voided = 0

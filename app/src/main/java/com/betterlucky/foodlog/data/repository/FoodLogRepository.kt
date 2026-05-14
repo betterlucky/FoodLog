@@ -277,6 +277,9 @@ class FoodLogRepository(
     fun observeAppSettings() =
         appSettingsDao.observeById()
 
+    suspend fun getAppSettings(): AppSettingsEntity? =
+        appSettingsDao.getById()
+
     suspend fun currentFoodDate(): LocalDate =
         currentFoodDate(
             calendarToday = dateTimeProvider.today(),
@@ -303,6 +306,30 @@ class FoodLogRepository(
             appSettingsDao.upsert(AppSettingsEntity(lastLabelInputMode = normalizedMode))
         } else {
             appSettingsDao.updateLastLabelInputMode(normalizedMode)
+        }
+    }
+
+    suspend fun setJournalExportFile(
+        journalExportUri: String?,
+        displayName: String?,
+    ) {
+        if (appSettingsDao.getById() == null) {
+            appSettingsDao.upsert(
+                AppSettingsEntity(
+                    journalExportUri = journalExportUri,
+                    journalExportDisplayName = displayName,
+                ),
+            )
+        } else {
+            appSettingsDao.updateJournalExportFile(journalExportUri, displayName)
+        }
+    }
+
+    suspend fun setJournalIncludeWeight(includeWeight: Boolean) {
+        if (appSettingsDao.getById() == null) {
+            appSettingsDao.upsert(AppSettingsEntity(journalIncludeWeight = includeWeight))
+        } else {
+            appSettingsDao.updateJournalIncludeWeight(includeWeight)
         }
     }
 
@@ -1278,12 +1305,6 @@ class FoodLogRepository(
         require(!endDate.isBefore(startDate)) { "End date must be on or after start date." }
 
         val items = foodItemDao.getActiveFoodItemsBetween(startDate, endDate)
-        val productIds = items.mapNotNull { it.productId }.distinct()
-        val productsById = if (productIds.isEmpty()) {
-            emptyMap()
-        } else {
-            productDao.getByIds(productIds).associateBy { it.id }
-        }
         val weights = if (options.includeWeight) {
             dailyWeightDao.getBetween(startDate, endDate)
         } else {
@@ -1292,11 +1313,27 @@ class FoodLogRepository(
         return ExportedCsv(
             csv = journalCsvExporter.export(
                 items = items,
-                productsById = productsById,
                 dailyWeights = weights,
                 options = options,
             ),
             fileName = journalFileName(startDate, endDate),
+        )
+    }
+
+    suspend fun buildFullJournalCsv(options: JournalExportOptions): ExportedCsv {
+        val items = foodItemDao.getAllActiveFoodItems()
+        val weights = if (options.includeWeight) {
+            dailyWeightDao.getAll()
+        } else {
+            emptyList()
+        }
+        return ExportedCsv(
+            csv = journalCsvExporter.export(
+                items = items,
+                dailyWeights = weights,
+                options = options,
+            ),
+            fileName = JOURNAL_FILE_NAME,
         )
     }
 
@@ -1705,6 +1742,8 @@ class FoodLogRepository(
             endDate: LocalDate,
         ): String =
             "foodlog_journal_${startDate}_to_${endDate}.csv"
+
+        const val JOURNAL_FILE_NAME = "foodlog_journal.csv"
 
         val DEFAULT_TEA = UserDefaultEntity(
             lookupKey = "tea",

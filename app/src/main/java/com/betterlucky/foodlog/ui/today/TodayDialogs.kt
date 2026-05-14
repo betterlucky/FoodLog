@@ -77,7 +77,6 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
 import kotlin.math.absoluteValue
 
 private val DialogCardShape = RoundedCornerShape(8.dp)
@@ -1206,178 +1205,78 @@ internal fun LogDatePickerDialog(
 
 @Composable
 internal fun JournalExportDialog(
-    selectedDate: LocalDate,
+    journalExportUri: String?,
+    journalExportDisplayName: String?,
+    includeWeight: Boolean,
     onDismiss: () -> Unit,
-    onExport: (LocalDate, LocalDate, JournalExportOptions) -> Unit,
+    onChooseFile: () -> Unit,
+    onClearFile: () -> Unit,
+    onExport: (JournalExportOptions) -> Unit,
 ) {
-    var startText by remember(selectedDate) { mutableStateOf(selectedDate.minusDays(6).toString()) }
-    var endText by remember(selectedDate) { mutableStateOf(selectedDate.toString()) }
-    var includeWeight by remember { mutableStateOf(false) }
-    var includeProduct by remember { mutableStateOf(false) }
-    var includeSource by remember { mutableStateOf(false) }
-    var includeGrams by remember { mutableStateOf(false) }
-    var showAdvanced by remember { mutableStateOf(false) }
-    var includeRawEntryId by remember { mutableStateOf(false) }
-    var includeCreatedAt by remember { mutableStateOf(false) }
-    var includeConfidence by remember { mutableStateOf(false) }
-    var includeProductId by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    fun parsedDate(text: String): LocalDate? =
-        try {
-            LocalDate.parse(text.trim())
-        } catch (_: DateTimeParseException) {
-            null
-        }
+    var includeWeightRows by remember(includeWeight) { mutableStateOf(includeWeight) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Journal export") },
         text = {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 520.dp),
+            Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item {
-                    Text(
-                        text = "Create a regenerated CSV from saved food rows.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = startText,
-                            onValueChange = {
-                                startText = it
-                                errorMessage = null
-                            },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            label = { Text("Start") },
-                            supportingText = { Text("YYYY-MM-DD") },
-                        )
-                        OutlinedTextField(
-                            value = endText,
-                            onValueChange = {
-                                endText = it
-                                errorMessage = null
-                            },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            label = { Text("End") },
-                            supportingText = { Text("YYYY-MM-DD") },
-                        )
+                Text(
+                    text = if (journalExportUri == null) {
+                        "Create a live journal CSV file. FoodLog will update it from saved rows whenever you export."
+                    } else {
+                        "Update the live journal CSV so it matches the saved food rows now."
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = if (journalExportUri == null) {
+                        "No journal file yet"
+                    } else {
+                        "Saving to ${journalExportDisplayName?.takeIf { it.isNotBlank() } ?: "journal file"}"
+                    },
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = if (journalExportUri == null) {
+                        "You will choose where to create foodlog_journal.csv."
+                    } else {
+                        "Each update rewrites the whole file from the current app data."
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                JournalOptionRow(
+                    checked = includeWeightRows,
+                    label = "Include weight rows",
+                    onCheckedChange = { includeWeightRows = it },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onChooseFile) {
+                        Text(if (journalExportUri == null) "Create journal file" else "Change file")
                     }
-                }
-                item {
-                    JournalOptionRow(
-                        checked = includeWeight,
-                        label = "Include weight rows",
-                        onCheckedChange = { includeWeight = it },
-                    )
-                }
-                item {
-                    Text(
-                        text = "Optional columns",
-                        fontWeight = FontWeight.SemiBold,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-                item {
-                    JournalOptionRow(
-                        checked = includeProduct,
-                        label = "Product",
-                        onCheckedChange = { includeProduct = it },
-                    )
-                }
-                item {
-                    JournalOptionRow(
-                        checked = includeSource,
-                        label = "Source",
-                        onCheckedChange = { includeSource = it },
-                    )
-                }
-                item {
-                    JournalOptionRow(
-                        checked = includeGrams,
-                        label = "g",
-                        onCheckedChange = { includeGrams = it },
-                    )
-                }
-                item {
-                    TextButton(onClick = { showAdvanced = !showAdvanced }) {
-                        Text(if (showAdvanced) "Hide advanced" else "Show advanced")
+                    if (journalExportUri != null) {
+                        TextButton(onClick = onClearFile) {
+                            Text("Forget file")
+                        }
                     }
-                }
-                if (showAdvanced) {
-                    item {
-                        JournalOptionRow(
-                            checked = includeRawEntryId,
-                            label = "Raw entry id",
-                            onCheckedChange = { includeRawEntryId = it },
-                        )
-                    }
-                    item {
-                        JournalOptionRow(
-                            checked = includeCreatedAt,
-                            label = "Created at",
-                            onCheckedChange = { includeCreatedAt = it },
-                        )
-                    }
-                    item {
-                        JournalOptionRow(
-                            checked = includeConfidence,
-                            label = "Confidence",
-                            onCheckedChange = { includeConfidence = it },
-                        )
-                    }
-                    item {
-                        JournalOptionRow(
-                            checked = includeProductId,
-                            label = "Product id",
-                            onCheckedChange = { includeProductId = it },
-                        )
-                    }
-                }
-                item {
-                    DialogErrorText(errorMessage)
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val startDate = parsedDate(startText)
-                    val endDate = parsedDate(endText)
-                    when {
-                        startDate == null || endDate == null -> {
-                            errorMessage = "Use dates like 2026-05-08."
-                        }
-                        endDate.isBefore(startDate) -> {
-                            errorMessage = "End date must be on or after start date."
-                        }
-                        else -> {
-                            onExport(
-                                startDate,
-                                endDate,
-                                JournalExportOptions(
-                                    includeWeight = includeWeight,
-                                    includeProduct = includeProduct,
-                                    includeSource = includeSource,
-                                    includeGrams = includeGrams,
-                                    includeRawEntryId = includeRawEntryId,
-                                    includeCreatedAt = includeCreatedAt,
-                                    includeConfidence = includeConfidence,
-                                    includeProductId = includeProductId,
-                                ),
-                            )
-                        }
+                    if (journalExportUri == null) {
+                        onChooseFile()
+                    } else {
+                        onExport(JournalExportOptions(includeWeight = includeWeightRows))
                     }
                 },
             ) {
-                Text("Export")
+                Text(if (journalExportUri == null) "Create file" else "Update journal")
             }
         },
         dismissButton = {

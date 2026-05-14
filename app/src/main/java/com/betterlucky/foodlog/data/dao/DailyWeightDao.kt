@@ -31,6 +31,14 @@ interface DailyWeightDao {
         endDate: LocalDate,
     ): List<DailyWeightEntity>
 
+    @Query(
+        """
+        SELECT * FROM daily_weights
+        ORDER BY logDate ASC, measuredTime ASC, createdAt ASC
+        """,
+    )
+    suspend fun getAll(): List<DailyWeightEntity>
+
     @Query("DELETE FROM daily_weights WHERE logDate = :date")
     suspend fun deleteByDate(date: LocalDate): Int
 }

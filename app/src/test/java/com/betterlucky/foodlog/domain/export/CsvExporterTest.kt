@@ -4,8 +4,6 @@ import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
 import com.betterlucky.foodlog.data.entities.FoodItemEntity
 import com.betterlucky.foodlog.data.entities.FoodItemSource
-import com.betterlucky.foodlog.data.entities.ProductEntity
-import com.betterlucky.foodlog.data.entities.ProductSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -36,41 +34,44 @@ class CsvExporterTest {
     fun journalDefaultHeaderMatchesDailyReportShape() {
         val csv = JournalCsvExporter().export(
             items = emptyList(),
-            productsById = emptyMap(),
             dailyWeights = emptyList(),
         )
 
-        assertEquals("date,time_local,item,quantity,calories_kcal,notes", csv)
+        assertEquals(
+            "date,time_local,entry_type,item,quantity,calories_kcal,weight_kg,notes,source,food_item_id,product_id,created_at",
+            csv,
+        )
     }
 
     @Test
     fun journalExportsFoodOnlyByDefault() {
         val csv = JournalCsvExporter().export(
             items = listOf(foodItem()),
-            productsById = emptyMap(),
             dailyWeights = listOf(dailyWeight()),
         )
 
         assertEquals(2, csv.lines().size)
-        assertTrue(csv.lines()[1].startsWith("2026-04-24,16:00,Tea,1 cup,25"))
-        assertFalse(csv.contains("weight"))
+        assertTrue(csv.lines()[1].startsWith("2026-04-24,16:00,food,Tea,1 cup,25"))
+        assertFalse(csv.lines().drop(1).any { it.contains(",weight,") })
     }
 
     @Test
     fun journalIncludesWeightOnlyWhenSelected() {
         val csv = JournalCsvExporter().export(
             items = listOf(foodItem(consumedTime = LocalTime.parse("16:00"))),
-            productsById = emptyMap(),
             dailyWeights = listOf(dailyWeight()),
             options = JournalExportOptions(includeWeight = true),
         )
 
-        assertEquals("2026-04-24,07:15,weight,82.6 kg,,Recorded weight", csv.lines()[1])
-        assertTrue(csv.lines()[2].startsWith("2026-04-24,16:00,Tea"))
+        assertEquals(
+            "2026-04-24,07:15,weight,weight,,,82.6,Recorded weight,daily weight,,,2026-04-24T06:15:00Z",
+            csv.lines()[1],
+        )
+        assertTrue(csv.lines()[2].startsWith("2026-04-24,16:00,food,Tea"))
     }
 
     @Test
-    fun journalOptionalColumnsAreUserFacingBeforeAdvancedFields() {
+    fun journalIncludesStableFoodIdentifiers() {
         val csv = JournalCsvExporter().export(
             items = listOf(
                 foodItem(
@@ -79,24 +80,10 @@ class CsvExporterTest {
                     source = FoodItemSource.SAVED_LABEL,
                 ),
             ),
-            productsById = mapOf(5L to product()),
             dailyWeights = emptyList(),
-            options = JournalExportOptions(
-                includeProduct = true,
-                includeSource = true,
-                includeGrams = true,
-                includeRawEntryId = true,
-                includeCreatedAt = true,
-                includeConfidence = true,
-                includeProductId = true,
-            ),
         )
 
-        assertEquals(
-            "date,time_local,item,quantity,calories_kcal,notes,product,source,grams,raw_entry_id,created_at,confidence,product_id",
-            csv.lines()[0],
-        )
-        assertTrue(csv.lines()[1].contains("Better Lucky Tea,label scan,250,10,2026-04-24T15:00:00Z,High,5"))
+        assertTrue(csv.lines()[1].contains("label scan,1,5,2026-04-24T15:00:00Z"))
     }
 
     @Test
@@ -187,15 +174,5 @@ class CsvExporterTest {
             measuredTime = LocalTime.parse("07:15"),
             createdAt = Instant.parse("2026-04-24T06:15:00Z"),
             updatedAt = Instant.parse("2026-04-24T06:15:00Z"),
-        )
-
-    private fun product(): ProductEntity =
-        ProductEntity(
-            id = 5,
-            name = "Tea",
-            brand = "Better Lucky",
-            source = ProductSource.PACKAGING_PHOTO,
-            confidence = ConfidenceLevel.HIGH,
-            createdAt = Instant.parse("2026-04-23T12:00:00Z"),
         )
 }

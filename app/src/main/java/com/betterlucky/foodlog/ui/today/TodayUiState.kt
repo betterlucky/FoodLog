@@ -10,6 +10,9 @@ data class TodayUiState(
     val userDefaults: List<UserDefaultEntity> = emptyList(),
     val dayBoundaryTime: LocalTime? = null,
     val lastLabelInputMode: String = AppSettingsEntity.LAST_LABEL_INPUT_MODE_ITEMS,
+    val journalExportUri: String? = null,
+    val journalExportDisplayName: String? = null,
+    val journalIncludeWeight: Boolean = false,
     val inputDrafts: Map<LocalDate, String> = emptyMap(),
     val message: String? = null,
 )
