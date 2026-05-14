@@ -50,11 +50,15 @@ class MainActivity : ComponentActivity() {
     }
     private val chooseJournalFileLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) {
-            runCatching {
+            val persisted = runCatching {
                 contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
+            }.isSuccess
+            if (!persisted) {
+                Toast.makeText(this, "Could not keep access to that file. Please choose it again.", Toast.LENGTH_LONG).show()
+                return@registerForActivityResult
             }
             viewModel.saveJournalExportFile(
                 uri = uri.toString(),
