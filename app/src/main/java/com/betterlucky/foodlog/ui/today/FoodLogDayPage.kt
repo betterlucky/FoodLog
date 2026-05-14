@@ -88,6 +88,7 @@ internal fun FoodLogDayPage(
     onAddManualFood: () -> Unit,
     onExportLegacy: (LocalDate) -> Unit,
     onOpenJournalExport: () -> Unit,
+    journalExportConfigured: Boolean,
 ) {
     val dayState by viewModel.dayState(date).collectAsState()
     val focusManager = LocalFocusManager.current
@@ -330,7 +331,10 @@ internal fun FoodLogDayPage(
             }
 
             item {
-                JournalExportPrompt(onOpenJournalExport = onOpenJournalExport)
+                JournalExportPrompt(
+                    journalExportConfigured = journalExportConfigured,
+                    onOpenJournalExport = onOpenJournalExport,
+                )
             }
         }
     }
@@ -723,6 +727,7 @@ internal fun DailyClosePrompt(
 
 @Composable
 private fun JournalExportPrompt(
+    journalExportConfigured: Boolean,
     onOpenJournalExport: () -> Unit,
 ) {
     Card(
@@ -749,13 +754,17 @@ private fun JournalExportPrompt(
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    text = "Create a longer CSV from saved food rows.",
+                    text = if (journalExportConfigured) {
+                        "Update the live food journal CSV."
+                    } else {
+                        "Create the live food journal CSV."
+                    },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             OutlinedButton(onClick = onOpenJournalExport) {
-                Text("Export")
+                Text(if (journalExportConfigured) "Update" else "Create")
             }
         }
     }

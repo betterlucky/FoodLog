@@ -241,6 +241,50 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun migration15To16AddsJournalSettings() {
+        val databaseName = "migration-15-16-${System.nanoTime()}"
+        migrationHelper.createDatabase(databaseName, 15).apply {
+            execSQL(
+                """
+                INSERT INTO app_settings (
+                    id,
+                    dayBoundaryTime,
+                    lastLabelInputMode
+                ) VALUES (
+                    1,
+                    '03:00',
+                    'MEASURE'
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            16,
+            true,
+            FoodLogDatabase.MIGRATION_15_16,
+        ).apply {
+            query(
+                """
+                SELECT dayBoundaryTime, lastLabelInputMode, journalExportUri, journalExportDisplayName, journalIncludeWeight
+                FROM app_settings
+                WHERE id = 1
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("03:00", cursor.getString(0))
+                assertEquals("MEASURE", cursor.getString(1))
+                assertNull(cursor.getString(2))
+                assertNull(cursor.getString(3))
+                assertEquals(0, cursor.getInt(4))
+            }
+            close()
+        }
+    }
+
+    @Test
     fun teaSubmissionCreatesParsedRawEntryAndFoodItem() = runTest {
         repository.seedDefaults()
 

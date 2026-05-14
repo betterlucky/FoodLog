@@ -32,12 +32,12 @@ Current priorities:
 1. Shortcut polish: make common foods easy to save, find, edit, forget, and log without creating duplicate or confusing defaults.
 2. Label/manual shortcut polish: make scanned and manually entered foods reliable, understandable, and quick to repeat through shortcuts.
 3. Daily close/export polish: make the Lodestone handoff obvious, current, and trustworthy.
-4. Append-log export: add a longer-form Room-backed export for standalone review and analysis after the Lodestone handoff is trustworthy.
+4. Live journal export: add a longer-form Room-backed journal for standalone review and analysis after the Lodestone handoff is trustworthy, with clean replacement of stale entries.
 5. History-assisted suggestions: use confirmed historical Room rows to prefill or suggest resolutions for repeated ambiguous foods, without silently auto-logging.
 
 ## Next Horizon
 
-After shortcut polish, daily close trust, and append-log export are dependable, add a local history suggestion layer before reaching for AI. AI may still become useful as a chat client for user-initiated questions and as a final fallback where deterministic parsing, shortcuts, label/manual flows, and historical suggestions cannot provide a good reviewed candidate.
+After shortcut polish, daily close trust, and live journal export are dependable, add a local history suggestion layer before reaching for AI. AI may still become useful as a chat client for user-initiated questions and as a final fallback where deterministic parsing, shortcuts, label/manual flows, and historical suggestions cannot provide a good reviewed candidate.
 
 History-assisted suggestions:
 
@@ -205,17 +205,21 @@ Daily close/readiness should remain simple:
 
 The richer audit CSV exporter is retained for developer/data tracing, but it should not become the main user workflow.
 
-## Append-Log Export
+## Live Journal Export
 
-After the Lodestone daily close path is trustworthy, add a longer-form append-log export for standalone review and analysis. This is separate from the Lodestone handoff and should not destabilize the daily CSV contract.
+After the Lodestone daily close path is trustworthy, add a longer-form live food journal export for standalone review and analysis. This is separate from the Lodestone handoff and should not destabilize the daily CSV contract.
 
-Append-log rules:
+Live journal rules:
 
 - Generate from Room rows only.
-- Preserve raw-entry audit context where useful without treating raw text as confirmed food.
+- Treat the output as a replaceable live journal, not an auditable database or immutable ledger.
+- Keep the main journal as a full-history export. On each update, rewrite the whole chosen CSV from current Room data rather than appending or merging stale rows.
+- Let the user create or choose the journal CSV file once, then update that same file on later exports.
+- Exclude weight rows by default, with a user option to include them.
 - Include enough structured detail for external analysis, not just the legacy Lodestone columns.
-- Choose stable fields that could also support future in-app charts, such as dates, times, source/provenance, shortcut/product ids, active/removed state, calories, weight, and status timestamps where appropriate.
-- Append or produce long-form history in a deterministic way that can be re-run safely.
+- Choose stable fields that could also support future in-app charts, such as dates, times, source/provenance, shortcut/product ids, current active/removed state, calories, weight, and status timestamps where appropriate.
+- Keep focused date-range/report exports separate from the main live journal file.
+- Produce long-form history in a deterministic way that can be re-run safely.
 - Do not call AI during export.
 
 ## Verification
@@ -252,7 +256,7 @@ Active:
 - Polish label/manual shortcut wizard validation and copy.
 - Improve repeat logging for OCR/manual foods through shortcuts with user-confirmed portion memory and optional "update shortcut" behavior.
 - Keep daily close/export status easy to trust after edits, removals, pending resolution, and weight changes.
-- Add the standalone append-log export after the Lodestone close path is solid.
+- Add the standalone live journal export after the Lodestone close path is solid.
 - Add Room-backed history suggestions for repeated manual or ambiguous foods before introducing AI capture fallback.
 - Expand focused tests only where the behavior is active and risky.
 
@@ -266,7 +270,7 @@ Parked:
 
 - Correction audit flows.
 - Fuzzy matching.
-- In-app insights and data visualisation from Room-backed history. Consider this after the logger, exports, and AI foundation are dependable; do not let charting requirements complicate the append-log export track beyond choosing sensible stable fields.
+- In-app insights and data visualisation from Room-backed history. Consider this after the logger, exports, and AI foundation are dependable; do not let charting requirements complicate the live journal export track beyond choosing sensible stable fields.
 - Direct Lodestone/Health Monitor integration intended to replace the CSV handoff.
 - Export reminders and richer closed-day semantics.
 

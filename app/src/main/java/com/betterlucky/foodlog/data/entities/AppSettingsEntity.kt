@@ -12,6 +12,10 @@ data class AppSettingsEntity(
     val dayBoundaryTime: LocalTime? = null,
     @ColumnInfo(defaultValue = "ITEMS")
     val lastLabelInputMode: String = LAST_LABEL_INPUT_MODE_ITEMS,
+    val journalExportUri: String? = null,
+    val journalExportDisplayName: String? = null,
+    @ColumnInfo(defaultValue = "0")
+    val journalIncludeWeight: Boolean = false,
 ) {
     companion object {
         const val FOOD_LOG_SETTINGS_ID = 1

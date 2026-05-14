@@ -32,6 +32,8 @@ import kotlinx.coroutines.launch
 fun TodayScreen(
     viewModel: TodayViewModel,
     onShareCsv: (String, String) -> String,
+    onChooseJournalFile: () -> Unit,
+    onSaveJournalCsv: (String, String, String) -> String,
     onTakeLabelPhoto: () -> Unit,
     onChooseLabelImage: () -> Unit,
 ) {
@@ -109,16 +111,10 @@ fun TodayScreen(
         )
     }
 
-    fun exportJournal(
-        startDate: LocalDate,
-        endDate: LocalDate,
-        options: JournalExportOptions,
-    ) {
+    fun exportJournal(options: JournalExportOptions) {
         viewModel.exportJournalCsv(
-            startDate = startDate,
-            endDate = endDate,
             options = options,
-            onExported = onShareCsv,
+            onExported = onSaveJournalCsv,
             onExportedSuccessfully = { showingJournalExport = false },
         )
     }
@@ -201,6 +197,7 @@ fun TodayScreen(
                         },
                         onExportLegacy = ::exportLegacyAndAdvance,
                         onOpenJournalExport = { showingJournalExport = true },
+                        journalExportConfigured = uiState.journalExportUri != null,
                     )
                     if (!isSettledPage) {
                         Box(
@@ -259,8 +256,12 @@ fun TodayScreen(
 
     if (showingJournalExport) {
         JournalExportDialog(
-            selectedDate = uiState.selectedDate,
+            journalExportUri = uiState.journalExportUri,
+            journalExportDisplayName = uiState.journalExportDisplayName,
+            includeWeight = uiState.journalIncludeWeight,
             onDismiss = { showingJournalExport = false },
+            onChooseFile = onChooseJournalFile,
+            onClearFile = viewModel::clearJournalExportUri,
             onExport = ::exportJournal,
         )
     }

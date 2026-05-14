@@ -38,7 +38,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
         AppSettingsEntity::class,
         DailyWeightEntity::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -300,6 +300,18 @@ abstract class FoodLogDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.addColumnIfMissing("app_settings", "journalExportUri", "TEXT")
+                db.addColumnIfMissing("app_settings", "journalExportDisplayName", "TEXT")
+                db.addColumnIfMissing(
+                    tableName = "app_settings",
+                    columnName = "journalIncludeWeight",
+                    declaration = "INTEGER NOT NULL DEFAULT 0",
+                )
+            }
+        }
+
         fun create(context: Context): FoodLogDatabase =
             Room.databaseBuilder(
                 context,
@@ -320,6 +332,7 @@ abstract class FoodLogDatabase : RoomDatabase() {
                 .addMigrations(MIGRATION_12_13)
                 .addMigrations(MIGRATION_13_14)
                 .addMigrations(MIGRATION_14_15)
+                .addMigrations(MIGRATION_15_16)
                 .build()
     }
 }

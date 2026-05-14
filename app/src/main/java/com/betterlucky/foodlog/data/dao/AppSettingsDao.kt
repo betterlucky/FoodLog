@@ -30,4 +30,24 @@ interface AppSettingsDao {
         lastLabelInputMode: String,
         id: Int = AppSettingsEntity.FOOD_LOG_SETTINGS_ID,
     )
+
+    @Query(
+        """
+        UPDATE app_settings
+        SET journalExportUri = :journalExportUri,
+            journalExportDisplayName = :displayName
+        WHERE id = :id
+        """,
+    )
+    suspend fun updateJournalExportFile(
+        journalExportUri: String?,
+        displayName: String?,
+        id: Int = AppSettingsEntity.FOOD_LOG_SETTINGS_ID,
+    )
+
+    @Query("UPDATE app_settings SET journalIncludeWeight = :includeWeight WHERE id = :id")
+    suspend fun updateJournalIncludeWeight(
+        includeWeight: Boolean,
+        id: Int = AppSettingsEntity.FOOD_LOG_SETTINGS_ID,
+    )
 }
