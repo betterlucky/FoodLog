@@ -81,6 +81,14 @@ import kotlin.math.absoluteValue
 
 private val DialogCardShape = RoundedCornerShape(8.dp)
 
+internal data class ManualFoodDialogInitialValues(
+    val name: String = "",
+    val amount: String = "1",
+    val unit: String = "serving",
+    val calories: String = "",
+    val notes: String = "",
+)
+
 @Composable
 internal fun ShortcutPickerDialog(
     userDefaults: List<UserDefaultEntity>,
@@ -551,6 +559,7 @@ internal fun EditFoodItemDialog(
     errorMessage: String?,
     onDismiss: () -> Unit,
     onRemove: () -> Unit,
+    onCopyToManual: (name: String, amount: String, unit: String, calories: String, notes: String) -> Unit,
     onSave: (name: String, amount: String, unit: String, calories: String, time: String, notes: String, updateShortcut: Boolean) -> Unit,
 ) {
     val caloriesPerUnit = remember(item.id) {
@@ -683,6 +692,9 @@ internal fun EditFoodItemDialog(
             Row {
                 TextButton(onClick = onRemove) {
                     Text("Remove")
+                }
+                TextButton(onClick = { onCopyToManual(name, amount, unit, calories, notes) }) {
+                    Text("Copy")
                 }
                 TextButton(onClick = onDismiss) {
                     Text("Cancel")
@@ -1031,6 +1043,7 @@ internal fun DailyWeightDialog(
 @Composable
 internal fun ManualFoodDialog(
     date: LocalDate,
+    initialValues: ManualFoodDialogInitialValues = ManualFoodDialogInitialValues(),
     errorMessage: String?,
     onDismiss: () -> Unit,
     onSave: (
@@ -1043,14 +1056,14 @@ internal fun ManualFoodDialog(
         saveAsShortcut: Boolean,
     ) -> Boolean,
 ) {
-    var name by remember(date) { mutableStateOf("") }
-    var amount by remember(date) { mutableStateOf("1") }
-    var unit by remember(date) { mutableStateOf("serving") }
-    var calories by remember(date) { mutableStateOf("") }
-    var time by remember(date) { mutableStateOf(LocalTime.now().withSecond(0).withNano(0).toString()) }
-    var notes by remember(date) { mutableStateOf("") }
-    var saveAsShortcut by remember(date) { mutableStateOf(false) }
-    var isSaving by remember(date) { mutableStateOf(false) }
+    var name by remember(date, initialValues) { mutableStateOf(initialValues.name) }
+    var amount by remember(date, initialValues) { mutableStateOf(initialValues.amount) }
+    var unit by remember(date, initialValues) { mutableStateOf(initialValues.unit) }
+    var calories by remember(date, initialValues) { mutableStateOf(initialValues.calories) }
+    var time by remember(date, initialValues) { mutableStateOf(LocalTime.now().withSecond(0).withNano(0).toString()) }
+    var notes by remember(date, initialValues) { mutableStateOf(initialValues.notes) }
+    var saveAsShortcut by remember(date, initialValues) { mutableStateOf(false) }
+    var isSaving by remember(date, initialValues) { mutableStateOf(false) }
     val canSaveAsShortcut = name.isNotBlank() && calories.trim().toDoubleOrNull()?.let { it > 0.0 } == true
 
     LaunchedEffect(errorMessage) {
