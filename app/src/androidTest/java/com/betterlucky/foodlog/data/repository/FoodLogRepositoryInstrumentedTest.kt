@@ -285,6 +285,54 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun migration16To17RepairsPartialJournalSettings() {
+        val databaseName = "migration-16-17-${System.nanoTime()}"
+        migrationHelper.createDatabase(databaseName, 15).apply {
+            execSQL(
+                """
+                INSERT INTO app_settings (
+                    id,
+                    dayBoundaryTime,
+                    lastLabelInputMode
+                ) VALUES (
+                    1,
+                    '03:00',
+                    'MEASURE'
+                )
+                """.trimIndent(),
+            )
+            execSQL("ALTER TABLE app_settings ADD COLUMN journalExportUri TEXT")
+            execSQL("ALTER TABLE app_settings ADD COLUMN journalIncludeWeight INTEGER NOT NULL DEFAULT 0")
+            execSQL("PRAGMA user_version = 16")
+            execSQL("UPDATE room_master_table SET identity_hash = '613e9979aad130f2100f125ee3e7080d' WHERE id = 42")
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            databaseName,
+            17,
+            true,
+            FoodLogDatabase.MIGRATION_16_17,
+        ).apply {
+            query(
+                """
+                SELECT dayBoundaryTime, lastLabelInputMode, journalExportUri, journalExportDisplayName, journalIncludeWeight
+                FROM app_settings
+                WHERE id = 1
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("03:00", cursor.getString(0))
+                assertEquals("MEASURE", cursor.getString(1))
+                assertNull(cursor.getString(2))
+                assertNull(cursor.getString(3))
+                assertEquals(0, cursor.getInt(4))
+            }
+            close()
+        }
+    }
+
+    @Test
     fun teaSubmissionCreatesParsedRawEntryAndFoodItem() = runTest {
         repository.seedDefaults()
 
