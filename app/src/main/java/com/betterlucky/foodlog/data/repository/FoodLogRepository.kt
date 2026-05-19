@@ -2,6 +2,7 @@ package com.betterlucky.foodlog.data.repository
 
 import androidx.room.withTransaction
 import com.betterlucky.foodlog.data.db.FoodLogDatabase
+import com.betterlucky.foodlog.data.dao.FoodHistorySuggestionRow
 import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.EntryKind
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
@@ -1406,7 +1407,31 @@ class FoodLogRepository(
             resolvedUnit = resolved?.unit ?: quantityUnit.orEmpty(),
             resolvedCalories = resolved?.calories,
             resolvedNotes = default?.notes.orEmpty(),
+            historySuggestions = if (default == null) historySuggestionsFor(this) else emptyList(),
         )
+    }
+
+    private suspend fun historySuggestionsFor(part: ParsedFoodPart): List<FoodHistorySuggestion> {
+        val query = (part.shortcutTrigger ?: part.normalizedFoodText)
+            .trim()
+            .lowercase()
+        if (query.isBlank()) return emptyList()
+
+        return foodItemDao.findHistorySuggestions(
+            exactQuery = query,
+            likeQuery = query.escapeSqlLikeWildcards(),
+            limit = HISTORY_SUGGESTION_QUERY_LIMIT,
+        )
+            .distinctBy { row ->
+                listOf(
+                    row.name.trim().lowercase(),
+                    row.amount?.toString().orEmpty(),
+                    row.unit.orEmpty().trim().lowercase(),
+                    row.calories.toString(),
+                )
+            }
+            .take(HISTORY_SUGGESTION_LIMIT)
+            .map { it.toHistorySuggestion() }
     }
 
     private suspend fun shortcutUpdateCandidateForFoodItem(existing: FoodItemEntity): ShortcutUpdateCandidate? {
@@ -1619,6 +1644,19 @@ class FoodLogRepository(
         val resolvedUnit: String?,
         val resolvedCalories: Double?,
         val resolvedNotes: String,
+        val historySuggestions: List<FoodHistorySuggestion>,
+    )
+
+    data class FoodHistorySuggestion(
+        val foodItemId: Long,
+        val rawText: String,
+        val lastUsedDate: LocalDate,
+        val name: String,
+        val amount: Double?,
+        val unit: String?,
+        val calories: Double,
+        val source: FoodItemSource,
+        val notes: String?,
     )
 
     data class FoodItemEditReplacementPart(
@@ -1751,6 +1789,8 @@ class FoodLogRepository(
             "foodlog_journal_${startDate}_to_${endDate}.csv"
 
         const val JOURNAL_FILE_NAME = "foodlog_journal.csv"
+        private const val HISTORY_SUGGESTION_LIMIT = 3
+        private const val HISTORY_SUGGESTION_QUERY_LIMIT = 30
 
         val DEFAULT_TEA = UserDefaultEntity(
             lookupKey = "tea",
@@ -1992,3 +2032,28 @@ private fun pendingNotes(
 
 private fun Double.formatDraftNumber(): String =
     if (rem(1.0) == 0.0) toInt().toString() else toString()
+
+private fun String.escapeSqlLikeWildcards(): String =
+    buildString(length) {
+        this@escapeSqlLikeWildcards.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '%' -> append("\\%")
+                '_' -> append("\\_")
+                else -> append(char)
+            }
+        }
+    }
+
+private fun FoodHistorySuggestionRow.toHistorySuggestion(): FoodLogRepository.FoodHistorySuggestion =
+    FoodLogRepository.FoodHistorySuggestion(
+        foodItemId = foodItemId,
+        rawText = rawText,
+        lastUsedDate = logDate,
+        name = name,
+        amount = amount,
+        unit = unit,
+        calories = calories,
+        source = source,
+        notes = notes,
+    )

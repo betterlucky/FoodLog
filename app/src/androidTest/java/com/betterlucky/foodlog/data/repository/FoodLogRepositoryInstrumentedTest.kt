@@ -819,6 +819,80 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingPreviewSuggestsMatchingHistoricalFoodRowsWithoutResolvingAutomatically() = runTest {
+        repository.seedDefaults()
+        val firstPending = repository.submitText("apple")
+        repository.resolvePendingEntryManually(
+            rawEntryId = firstPending.rawEntryId,
+            name = "Apple",
+            amount = 1.0,
+            unit = "medium",
+            calories = 95.0,
+            notes = "User estimate",
+            saveAsDefault = false,
+        )
+        database.foodItemDao().insert(
+            foodItem(
+                rawEntryId = firstPending.rawEntryId,
+                name = "Old apple",
+                calories = 120.0,
+                voided = true,
+            ),
+        )
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T14:00:00Z")
+        val repeatedPending = repository.submitText("apple")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = repeatedPending.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart
+        val suggestion = preview.part?.historySuggestions?.single()
+
+        assertEquals(null, preview.part?.default)
+        assertEquals(listOf("Apple"), preview.part?.historySuggestions?.map { it.name })
+        assertEquals("Apple", suggestion?.name)
+        assertEquals(95.0, suggestion?.calories ?: 0.0, 0.001)
+        assertEquals(1.0, suggestion?.amount ?: 0.0, 0.001)
+        assertEquals("medium", suggestion?.unit)
+        assertEquals(FoodItemSource.MANUAL_OVERRIDE, suggestion?.source)
+        assertEquals(today, suggestion?.lastUsedDate)
+        assertEquals(listOf("apple"), repository.observePendingEntriesForDate(today).first().map { it.rawText })
+    }
+
+    @Test
+    fun historySuggestionSearchTreatsSqlWildcardsLiterally() = runTest {
+        val literalRawEntryId = database.rawEntryDao().insert(
+            RawEntryEntity(
+                createdAt = now,
+                logDate = today,
+                consumedTime = localTime,
+                rawText = "5% yoghurt",
+                entryKind = EntryKind.TEXT,
+                status = RawEntryStatus.PARSED,
+            ),
+        )
+        val wildcardRawEntryId = database.rawEntryDao().insert(
+            RawEntryEntity(
+                createdAt = now,
+                logDate = today,
+                consumedTime = localTime,
+                rawText = "50 yoghurt",
+                entryKind = EntryKind.TEXT,
+                status = RawEntryStatus.PARSED,
+            ),
+        )
+        database.foodItemDao().insert(foodItem(rawEntryId = literalRawEntryId, name = "5% yoghurt"))
+        database.foodItemDao().insert(foodItem(rawEntryId = wildcardRawEntryId, name = "50 yoghurt"))
+
+        val suggestions = database.foodItemDao().findHistorySuggestions(
+            exactQuery = "5% yoghurt",
+            likeQuery = "5\\% yoghurt",
+            limit = 10,
+        )
+
+        assertEquals(listOf("5% yoghurt"), suggestions.map { it.name })
+    }
+
+    @Test
     fun manualPendingResolutionCanOverrideParsedTime() = runTest {
         repository.seedDefaults()
 

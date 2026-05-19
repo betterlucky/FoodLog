@@ -17,6 +17,7 @@ This repository contains the first Phase 1 implementation slice:
 - Room database
 - deterministic shortcut parsing
 - pending-entry and logged-item resolution wizard
+- Room-backed history suggestions for repeated ambiguous pending foods
 - local on-device OCR label scan flow
 - daily weight and daily close/export status
 - local CSV export
@@ -26,7 +27,7 @@ This repository contains the first Phase 1 implementation slice:
 
 ## Current Direction
 
-Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, then the live journal export and local history suggestions. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though journal fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
+Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, live journal export, and local history suggestion quality. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though journal fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
 
 ## Kanban Workflow
 
