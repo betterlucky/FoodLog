@@ -103,6 +103,16 @@ JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home 
 
 Use broader compile, connected, or smoke checks when Android, Room, Compose, export behavior, or device install behavior is touched. For docs-only workflow changes, link checks, `git diff --check`, and review may be enough.
 
+## Stale Work Audit
+
+Before cleanup work, or when multiple sessions have been active, run the non-destructive stale work audit:
+
+```sh
+scripts/stale-work-audit.sh --fetch
+```
+
+The audit reports open PRs, remote `codex/*` branches for the selected remote, local branches whose upstream is gone, worktree paths and dirty status, and kanban cards still outside `done`. It does not delete or move anything; even `--fetch` avoids pruning refs. That means `--fetch` updates new and changed refs, but it will not remove local tracking refs for branches deleted on the remote. If you need exact gone-upstream detection, decide deliberately whether to run a separate `git fetch --prune` first. Treat the audit output as a triage list: verify whether each item is merged, intentionally parked, or still active before running any cleanup command.
+
 ## Local Config
 
 Keep local board config and generated board files out of git:
