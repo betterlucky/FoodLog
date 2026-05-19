@@ -21,6 +21,9 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 ## Working Rules
 
 - Read `PLAN.md` before making product changes; it is the canonical plan.
+- Use the `FoodLog` kanban board for tracked work. Check whether a task is already implemented before changing code, and update docs when product direction, workflow, or verification expectations change.
+- After each board item is completed, commit the finished change, push a branch, open a PR, and wait for review unless the change clearly does not need one. CodeRabbit usually autoreviews within 10-15 minutes; if it reports a review quota delay, wait for the delay, then check comments yourself and trigger `@coderabbitai review` if needed. Once review is resolved or silent/clean, merge the PR and continue to the next board item. If scope or acceptance is unclear, ask for more context before continuing; use `/grill-me` style scrutiny when a task would benefit from adversarial review.
+- During review waits or other timed sleeps, state that you are waiting and then stay quiet until there is a result or a blocker.
 - Keep changes local-first and deterministic unless the plan says otherwise.
 - Save raw text before interpretation and preserve raw-entry audit records.
 - Use repository/database transactions for flows that create or update raw entries and food rows together.

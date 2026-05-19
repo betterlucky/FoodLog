@@ -1023,6 +1023,30 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun directShortcutAddRejectsActiveDuplicateWithoutOverwriting() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addDefault(
+            lookupKey = "tea",
+            name = "Tea large mug",
+            calories = 60.0,
+            unit = "mug",
+            notes = "Should not replace seeded tea",
+        )
+        val default = database.userDefaultDao().getActiveDefault("tea")
+        val logResult = repository.submitText("tea")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.AlreadyExists, addResult)
+        assertEquals("Tea", default?.name)
+        assertEquals(25.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("cup", default?.unit)
+        assertTrue(logResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Tea", foodItem.name)
+        assertEquals(25.0, foodItem.calories, 0.001)
+    }
+
+    @Test
     fun directShortcutWithBlankUnitDefaultsToPortion() = runTest {
         repository.seedDefaults()
 
@@ -1627,6 +1651,39 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(listOf(0.5, 2.0), foodItems.map { it.amount ?: 0.0 })
         assertEquals(listOf("pot", "pot"), foodItems.map { it.unit })
         assertEquals(listOf(40.0, 160.0), foodItems.map { it.calories })
+    }
+
+    @Test
+    fun ocrShortcutAddRejectsActiveDuplicateWithoutOverwriting() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addOcrShortcut(
+            FoodLogRepository.OcrShortcutInput(
+                lookupKey = "tea",
+                name = "Tea bottle",
+                caloriesPerUnit = 90.0,
+                unit = "bottle",
+                notes = "Label shortcut should not replace seeded tea",
+                defaultAmount = 1.0,
+                portionMode = ShortcutPortionMode.ITEM,
+                itemUnit = "bottle",
+                itemSizeAmount = 500.0,
+                itemSizeUnit = "ml",
+                kcalPer100g = null,
+                kcalPer100ml = 18.0,
+            ),
+        )
+        val default = database.userDefaultDao().getActiveDefault("tea")
+        val logResult = repository.submitText("tea")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.AlreadyExists, addResult)
+        assertEquals("Tea", default?.name)
+        assertEquals(25.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("cup", default?.unit)
+        assertTrue(logResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Tea", foodItem.name)
+        assertEquals(25.0, foodItem.calories, 0.001)
     }
 
     @Test

@@ -24,6 +24,10 @@ temp/
 # Claude local files
 .claude/
 
+# Codex local files
+.codex/kanban.json
+kanban-board/
+
 # Local device test artifacts
 device-backups/
 device-screenshots/

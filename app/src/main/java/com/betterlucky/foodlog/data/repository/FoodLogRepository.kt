@@ -431,6 +431,9 @@ class FoodLogRepository(
         if (normalizedLookupKey.isBlank() || trimmedName.isBlank() || calories <= 0.0) {
             return DefaultUpdateResult.InvalidInput
         }
+        if (userDefaultDao.getActiveDefault(normalizedLookupKey) != null) {
+            return DefaultUpdateResult.AlreadyExists
+        }
 
         userDefaultDao.upsert(
             UserDefaultEntity(
@@ -455,6 +458,9 @@ class FoodLogRepository(
         val unit = input.unit.trim().ifBlank { "serving" }
         if (normalizedTrigger.isBlank() || trimmedName.isBlank() || input.caloriesPerUnit <= 0.0) {
             return DefaultUpdateResult.InvalidInput
+        }
+        if (userDefaultDao.getActiveDefault(normalizedTrigger) != null) {
+            return DefaultUpdateResult.AlreadyExists
         }
 
         userDefaultDao.upsert(
@@ -1579,6 +1585,7 @@ class FoodLogRepository(
         data object Updated : DefaultUpdateResult
         data object InvalidInput : DefaultUpdateResult
         data object NotFound : DefaultUpdateResult
+        data object AlreadyExists : DefaultUpdateResult
     }
 
     sealed interface FoodItemUpdateResult {
