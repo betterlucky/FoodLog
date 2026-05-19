@@ -49,6 +49,19 @@ During timed review waits, state that you are waiting and stay quiet until there
 
 Treat CodeRabbit as skipped by policy only when review would add little signal or should not be requested: docs-only changes that do not alter commands, scripts, workflow policy, data contracts, or verification expectations; local-only housekeeping with no behavior change; or an explicit user instruction to avoid CodeRabbit for the card. Substantive code, script, workflow, data, or verification changes should either wait for CodeRabbit or use the multi-review guard when CodeRabbit is unavailable.
 
+## Done Checklist
+
+Before moving a card to `done`, complete these checks in order:
+
+- The branch has been pushed, the PR is merged or explicitly not needed, and GitHub shows the PR closed/merged when one was opened.
+- CodeRabbit review is resolved, clean, or unavailable with the fallback review result note recorded on the kanban card.
+- Valid review findings were fixed or explicitly rejected with a reason.
+- Relevant verification was rerun after the final change, and the result is recorded on the card.
+- Docs were updated when workflow, product direction, or verification expectations changed, or the card notes say docs were not needed.
+- The local worktree is clean on `main` after merge/pull, with no unrelated user changes staged or reverted.
+- The board has the implementation/test/review notes needed for the next agent to understand what happened.
+- Refresh the project brief if the card changed workflow policy, product direction, or current project state; otherwise leave a short note when the decision is not obvious.
+
 ## Multi-Review Guard
 
 For implementation review fallback, do not rely on one replacement reviewer. Prefer the three-way guard used by the kanban Shield step:
