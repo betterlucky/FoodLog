@@ -459,6 +459,9 @@ class FoodLogRepository(
         if (normalizedTrigger.isBlank() || trimmedName.isBlank() || input.caloriesPerUnit <= 0.0) {
             return DefaultUpdateResult.InvalidInput
         }
+        if (userDefaultDao.getActiveDefault(normalizedTrigger) != null) {
+            return DefaultUpdateResult.AlreadyExists
+        }
 
         userDefaultDao.upsert(
             UserDefaultEntity(
