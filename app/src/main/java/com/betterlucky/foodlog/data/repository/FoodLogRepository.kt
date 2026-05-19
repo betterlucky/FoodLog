@@ -1415,6 +1415,7 @@ class FoodLogRepository(
         val query = (part.shortcutTrigger ?: part.normalizedFoodText)
             .trim()
             .lowercase()
+            .escapeSqlLikeWildcards()
         if (query.isBlank()) return emptyList()
 
         return foodItemDao.findHistorySuggestions(query = query, limit = HISTORY_SUGGESTION_QUERY_LIMIT)
@@ -2028,6 +2029,18 @@ private fun pendingNotes(
 
 private fun Double.formatDraftNumber(): String =
     if (rem(1.0) == 0.0) toInt().toString() else toString()
+
+private fun String.escapeSqlLikeWildcards(): String =
+    buildString(length) {
+        this@escapeSqlLikeWildcards.forEach { char ->
+            when (char) {
+                '\\' -> append("\\\\")
+                '%' -> append("\\%")
+                '_' -> append("\\_")
+                else -> append(char)
+            }
+        }
+    }
 
 private fun FoodHistorySuggestionRow.toHistorySuggestion(): FoodLogRepository.FoodHistorySuggestion =
     FoodLogRepository.FoodHistorySuggestion(
