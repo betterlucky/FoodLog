@@ -250,8 +250,9 @@ run_local_reviewer() {
             sleep 1
         done
         have_lock=1
+        current_pid="$(python3 -c 'import os; print(os.getppid())' 2>/dev/null || printf '%s' "$$")"
         {
-            printf 'pid=%s\n' "$BASHPID"
+            printf 'pid=%s\n' "$current_pid"
             printf 'model=%s\n' "$model"
             printf 'source=%s\n' "$source"
             date -u '+acquired_at=%Y-%m-%dT%H:%M:%SZ'
