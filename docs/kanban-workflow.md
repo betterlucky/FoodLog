@@ -42,10 +42,24 @@ After each completed board item:
 1. Commit the finished change on a `codex/` branch.
 2. Push the branch and open a PR.
 3. Wait for CodeRabbit review unless the change clearly does not need one.
-4. If CodeRabbit reports a quota or availability delay and waiting would block progress, wait at least 20 minutes from the confirmed signal, then use the `gemini-fallback-review` skill.
-5. Resolve valid review findings, rerun the relevant verification, merge the PR, and only then move on to the next card.
+4. If CodeRabbit is skipped, unavailable, or quota-limited and waiting would block progress, run the multi-review guard. A confirmed skip or quota/unavailable response is enough to start the guard; do not wait indefinitely for CodeRabbit. Use all three reviewers where available because they catch different subsets of issues.
+5. Merge and deduplicate review findings, resolve valid comments, rerun the relevant verification, merge the PR, and only then move on to the next card.
 
 During timed review waits, state that you are waiting and stay quiet until there is a result or a blocker.
+
+## Multi-Review Guard
+
+For implementation review fallback, do not rely on one replacement reviewer. Prefer the three-way guard used by the kanban Shield step:
+
+- `Qwen3.6-27B-4bit` via the local oMLX server.
+- `gemma-4-E4B-it-MLX-8bit` via the local oMLX server.
+- Gemini via `gemini-shield` for Shield/test-advisor output, or `gemini-review` for PR diff review.
+
+Run the guard sequentially. oMLX model load/unload calls are shared machine state, so guard runs should take an interprocess lock such as `/tmp/omlx-guard.lock` before loading a local model. Do not assume concurrent sessions will queue safely at the API layer. Hold the lock through load, settle, review inference, unload, and cleanup; with the usual `flock` subshell pattern, the lock is released when that guarded block exits.
+
+When swapping local oMLX models, load one model, wait about 10 seconds for it to settle, run its review, unload it, then move to Gemini before loading the next oMLX model. After the final local-model review, unload that model too so the next guard run starts from a clean oMLX state. Prefer `oMLX -> Gemini -> oMLX` ordering when practical, because the Gemini pass usually gives the local server enough time between model swaps; if Gemini is skipped or returns unusually quickly, ensure about 10 seconds has passed or perform a health check before loading the second oMLX model.
+
+Treat all three as advisory. The agent remains responsible for judging findings, checking the code directly, applying fixes, and rerunning tests. If the oMLX server is unreachable, a model fails to load, or a reviewer command fails or times out, record that reviewer as unavailable and continue with the remaining reviewers rather than blocking indefinitely.
 
 ## Verification
 
