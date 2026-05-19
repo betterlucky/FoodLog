@@ -15,7 +15,7 @@ Options:
   --staged               Review staged changes
   --unstaged             Review unstaged working tree changes
   --context TEXT         Extra context for all reviewers
-  --output-dir DIR       Directory for raw/merged results (default: /tmp/foodlog-guard-review.TIMESTAMP)
+  --output-dir DIR       Directory for raw/merged results (default: $TMPDIR/foodlog-guard-review.XXXXXX)
   --settle-seconds N     Seconds to wait after oMLX model load (default: 10)
   --lock-timeout N       Seconds to wait for /tmp/omlx-guard.lock.d (default: 600)
   --review-timeout N     Seconds for each local model inference (default: 180)
