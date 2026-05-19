@@ -1567,16 +1567,10 @@ private fun WizardStepContent(
     onInputModeChanged: (LabelInputMode) -> Unit,
     onPortionModeChanged: (Int, LabelInputMode, LoggingWizardPartDraft) -> Unit,
 ) {
-    if (
-        currentPart != null &&
-        !currentPart.resolvedByDefault &&
-        !currentPart.isComplete &&
-        currentPart.historySuggestions.isNotEmpty() &&
-        step != LoggingWizardStep.Review
-    ) {
+    if (shouldShowHistorySuggestions(currentPart, step)) {
         HistorySuggestionOptions(
             currentIndex = currentIndex,
-            currentPart = currentPart,
+            currentPart = checkNotNull(currentPart),
             onPartChanged = onPartChanged,
         )
     }
@@ -1604,6 +1598,16 @@ private fun WizardStepContent(
         LoggingWizardStep.Review -> WizardReviewStep(session, currentIndex)
     }
 }
+
+private fun shouldShowHistorySuggestions(
+    currentPart: LoggingWizardPartDraft?,
+    step: LoggingWizardStep,
+): Boolean =
+    currentPart != null &&
+        !currentPart.resolvedByDefault &&
+        !currentPart.isComplete &&
+        currentPart.historySuggestions.isNotEmpty() &&
+        step != LoggingWizardStep.Review
 
 @Composable
 private fun WizardProductStep(
