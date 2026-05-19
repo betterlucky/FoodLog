@@ -859,6 +859,40 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun historySuggestionSearchTreatsSqlWildcardsLiterally() = runTest {
+        val literalRawEntryId = database.rawEntryDao().insert(
+            RawEntryEntity(
+                createdAt = now,
+                logDate = today,
+                consumedTime = localTime,
+                rawText = "5% yoghurt",
+                entryKind = EntryKind.TEXT,
+                status = RawEntryStatus.PARSED,
+            ),
+        )
+        val wildcardRawEntryId = database.rawEntryDao().insert(
+            RawEntryEntity(
+                createdAt = now,
+                logDate = today,
+                consumedTime = localTime,
+                rawText = "50 yoghurt",
+                entryKind = EntryKind.TEXT,
+                status = RawEntryStatus.PARSED,
+            ),
+        )
+        database.foodItemDao().insert(foodItem(rawEntryId = literalRawEntryId, name = "5% yoghurt"))
+        database.foodItemDao().insert(foodItem(rawEntryId = wildcardRawEntryId, name = "50 yoghurt"))
+
+        val suggestions = database.foodItemDao().findHistorySuggestions(
+            exactQuery = "5% yoghurt",
+            likeQuery = "5\\% yoghurt",
+            limit = 10,
+        )
+
+        assertEquals(listOf("5% yoghurt"), suggestions.map { it.name })
+    }
+
+    @Test
     fun manualPendingResolutionCanOverrideParsedTime() = runTest {
         repository.seedDefaults()
 

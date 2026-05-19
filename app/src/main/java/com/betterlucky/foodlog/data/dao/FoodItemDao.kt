@@ -81,17 +81,18 @@ interface FoodItemDao {
         INNER JOIN raw_entries ON raw_entries.id = food_items.rawEntryId
         WHERE food_items.voided = 0
             AND (
-                lower(food_items.name) = :query
-                OR lower(raw_entries.rawText) = :query
-                OR lower(food_items.name) LIKE '%' || :query || '%' ESCAPE '\'
-                OR lower(raw_entries.rawText) LIKE '%' || :query || '%' ESCAPE '\'
+                lower(food_items.name) = :exactQuery
+                OR lower(raw_entries.rawText) = :exactQuery
+                OR lower(food_items.name) LIKE '%' || :likeQuery || '%' ESCAPE '\'
+                OR lower(raw_entries.rawText) LIKE '%' || :likeQuery || '%' ESCAPE '\'
             )
         ORDER BY food_items.logDate DESC, food_items.createdAt DESC
         LIMIT :limit
         """,
     )
     suspend fun findHistorySuggestions(
-        query: String,
+        exactQuery: String,
+        likeQuery: String,
         limit: Int,
     ): List<FoodHistorySuggestionRow>
 

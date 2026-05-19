@@ -1415,10 +1415,13 @@ class FoodLogRepository(
         val query = (part.shortcutTrigger ?: part.normalizedFoodText)
             .trim()
             .lowercase()
-            .escapeSqlLikeWildcards()
         if (query.isBlank()) return emptyList()
 
-        return foodItemDao.findHistorySuggestions(query = query, limit = HISTORY_SUGGESTION_QUERY_LIMIT)
+        return foodItemDao.findHistorySuggestions(
+            exactQuery = query,
+            likeQuery = query.escapeSqlLikeWildcards(),
+            limit = HISTORY_SUGGESTION_QUERY_LIMIT,
+        )
             .distinctBy { row ->
                 listOf(
                     row.name.trim().lowercase(),
