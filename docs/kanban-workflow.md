@@ -41,20 +41,20 @@ After each completed board item:
 
 1. Commit the finished change on a `codex/` branch.
 2. Push the branch and open a PR.
-3. Wait for CodeRabbit review unless the change clearly does not need one.
-4. If CodeRabbit is skipped by policy, unavailable, or quota-limited and waiting would block progress, run the multi-review guard. A confirmed skip or quota/unavailable response is enough to start the guard; do not wait indefinitely for CodeRabbit. Use all three reviewers where available because they catch different subsets of issues.
+3. Decide whether CodeRabbit is required for this PR. CodeRabbit auto-review is disabled in `.coderabbit.yaml`; request it manually with `@coderabbitai review`, or `@coderabbitai full review` when a complete fresh pass is needed. If a requested CodeRabbit review does not respond within 15 minutes or reports quota/unavailability, treat it as unavailable and run the guard.
+4. If CodeRabbit is not requested, unavailable, or quota-limited and waiting would block progress, run the multi-review guard before merge. A deliberate no-CR decision or quota/unavailable response is enough to start the guard; do not wait indefinitely for CodeRabbit. Use all three reviewers where available because they catch different subsets of issues.
 5. Merge and deduplicate review findings, resolve valid comments, rerun the relevant verification, merge the PR, and only then move on to the next card.
 
 During timed review waits, state that you are waiting and stay quiet until there is a result or a blocker.
 
-Treat CodeRabbit as skipped by policy only when review would add little signal or should not be requested: docs-only changes that do not alter commands, scripts, workflow policy, data contracts, or verification expectations; local-only housekeeping with no behavior change; or an explicit user instruction to avoid CodeRabbit for the card. Substantive code, script, workflow, data, or verification changes should either wait for CodeRabbit or use the multi-review guard when CodeRabbit is unavailable.
+Use CodeRabbit manually for broad product code, data contracts, export behavior, database migrations, workflow scripts, security-sensitive changes, PRs touching more than three production source files, or anything already producing ambiguous guard findings. "CodeRabbit not requested" is valid only for work outside those categories, and only when the multi-review guard completes or any unavailable reviewer is recorded. For all PR-backed board work where CodeRabbit is not used, run the multi-review guard and record that CodeRabbit was not requested.
 
 ## Done Checklist
 
 Before moving a card to `done`, complete these checks in order:
 
 - The branch has been pushed, the PR is merged or explicitly not needed, and GitHub shows the PR closed/merged when one was opened.
-- CodeRabbit review is resolved, clean, or unavailable with the fallback review result note recorded on the kanban card.
+- CodeRabbit review is resolved/clean when requested, or the fallback review result note records that CodeRabbit was not requested, quota-limited, or unavailable and the guard was run.
 - Valid review findings were fixed or explicitly rejected with a reason.
 - Relevant verification was rerun after the final change, and the result is recorded on the card.
 - Docs were updated when workflow, product direction, or verification expectations changed, or the card notes say docs were not needed.
@@ -116,11 +116,11 @@ Gemini-only review is acceptable when local oMLX is unavailable, or for docs-onl
 
 ### Fallback Review Result Note
 
-When CodeRabbit is skipped, quota-limited, or unavailable, add a kanban card note with this shape before merging:
+When CodeRabbit is not requested, quota-limited, or unavailable, add a kanban card note with this shape before merging:
 
 ```md
 Fallback review result:
-- CodeRabbit: skipped | quota-limited until <time> | unavailable | no review needed because <reason>
+- CodeRabbit: not requested because <reason> | quota-limited until <time> | unavailable
 - Guard command: `<exact command>`
 - Reviewers completed: Qwen <result>, Gemini <result>, E4B/gemma-4-E4B-it-MLX-8bit <result>
 - Reviewers unavailable/skipped: <none | reviewer and reason>
