@@ -200,3 +200,4 @@ sleep 2
 "$ADB" exec-out screencap -p > "$SCREENSHOT_PATH"
 
 echo "Wrote screenshot: $SCREENSHOT_PATH"
+echo "Next smoke checklist: docs/android-smoke-scenario.md"
