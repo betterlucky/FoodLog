@@ -162,6 +162,7 @@ Label OCR is the current packaged-food path:
 Near-term polish:
 
 - Improve wizard validation for partial labels, especially when calories are present but item size or g/ml basis is ambiguous.
+- Do not treat ambiguous "per serving" calories as one arbitrary item. If the label gives serving calories plus a serving weight, g/ml entry may calculate the portion; otherwise ask the user for calories instead of guessing.
 - Make repeat use of label/manual entries flow through shortcuts, not a separate saved-products surface.
 - Prefer portion-backed shortcuts for label/manual foods. Use gram/ml details internally when needed for label math, but present and save the repeatable shortcut as the user's chosen portion wherever practical.
 - Add focused tests around OCR reader handoff where Android/ML Kit boundaries allow it.

@@ -101,6 +101,11 @@ object LabelPortionResolver {
         val milliliters = if (unit == "ml") amount else null
         val calories = when (unit) {
             "g" -> facts.kcalPer100g?.let { it * amount / 100.0 }
+                ?: facts.servingSizeGrams
+                    ?.takeIf { it > 0.0 }
+                    ?.let { servingGrams ->
+                        facts.kcalPerServing?.let { it * amount / servingGrams }
+                    }
             "ml" -> facts.kcalPer100ml?.let { it * amount / 100.0 }
             else -> null
         }
@@ -150,10 +155,6 @@ object LabelPortionResolver {
 
         if (milliliters != null && facts.kcalPer100ml != null) {
             return facts.kcalPer100ml * milliliters / 100.0
-        }
-
-        if (nearly(amount, 1.0) && facts.kcalPerServing != null) {
-            return facts.kcalPerServing
         }
 
         return null
