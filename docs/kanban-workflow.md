@@ -42,10 +42,12 @@ After each completed board item:
 1. Commit the finished change on a `codex/` branch.
 2. Push the branch and open a PR.
 3. Wait for CodeRabbit review unless the change clearly does not need one.
-4. If CodeRabbit is skipped by policy, unavailable, or quota-limited and waiting would block progress, run the multi-review guard. This replaces the older wait-20-minutes-then-Gemini-only fallback for substantive changes. A confirmed skip or quota/unavailable response is enough to start the guard; do not wait indefinitely for CodeRabbit. Use all three reviewers where available because they catch different subsets of issues.
+4. If CodeRabbit is skipped by policy, unavailable, or quota-limited and waiting would block progress, run the multi-review guard. A confirmed skip or quota/unavailable response is enough to start the guard; do not wait indefinitely for CodeRabbit. Use all three reviewers where available because they catch different subsets of issues.
 5. Merge and deduplicate review findings, resolve valid comments, rerun the relevant verification, merge the PR, and only then move on to the next card.
 
 During timed review waits, state that you are waiting and stay quiet until there is a result or a blocker.
+
+Treat CodeRabbit as skipped by policy only when review would add little signal or should not be requested: docs-only changes that do not alter commands, scripts, workflow policy, data contracts, or verification expectations; local-only housekeeping with no behavior change; or an explicit user instruction to avoid CodeRabbit for the card. Substantive code, script, workflow, data, or verification changes should either wait for CodeRabbit or use the multi-review guard when CodeRabbit is unavailable.
 
 ## Multi-Review Guard
 
