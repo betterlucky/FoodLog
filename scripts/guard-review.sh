@@ -21,6 +21,8 @@ Options:
   --review-timeout N     Seconds for each local model inference (default: 180)
   --gemini-timeout N     Seconds for the Gemini reviewer (default: 180)
   --max-chars N          Max subject characters sent to reviewers (default: 60000)
+  --lock-status          Show current oMLX guard lock holder diagnostics and exit
+  --clear-stale-lock     Clear the oMLX lock only when holder diagnostics prove it is stale
   --skip-local           Skip oMLX reviewers
   --skip-gemini          Skip Gemini reviewer
   -h, --help             Show help
@@ -30,6 +32,8 @@ Environment:
   OMLX_KEY               Default: 5555
   OMLX_LOCK_DIR          Default: /tmp/omlx-guard.lock.d
   OMLX_LOCK_FILE         Backward-compatible base path; script locks ${OMLX_LOCK_FILE}.d if OMLX_LOCK_DIR is unset
+  GUARD_ORPHAN_LOCK_SECONDS
+                          Seconds before reclaiming a lock directory with no holder metadata (default: 30)
   GUARD_QWEN_MODEL       Default: Qwen3.6-27B-4bit
   GUARD_GEMINI_MODEL     Default: gemini-3-flash-preview
   GUARD_E4B_MODEL        Default: gemma-4-E4B-it-MLX-8bit
@@ -57,6 +61,9 @@ lock_timeout="${GUARD_LOCK_TIMEOUT:-600}"
 review_timeout="${GUARD_REVIEW_TIMEOUT:-180}"
 gemini_timeout="${GUARD_GEMINI_TIMEOUT:-180}"
 max_chars="${GUARD_MAX_CHARS:-60000}"
+orphan_lock_seconds="${GUARD_ORPHAN_LOCK_SECONDS:-30}"
+lock_status=0
+clear_stale_lock=0
 skip_local=0
 skip_gemini=0
 
@@ -111,6 +118,14 @@ while [[ $# -gt 0 ]]; do
             max_chars="$2"
             shift 2
             ;;
+        --lock-status)
+            lock_status=1
+            shift
+            ;;
+        --clear-stale-lock)
+            clear_stale_lock=1
+            shift
+            ;;
         --skip-local)
             skip_local=1
             shift
@@ -134,6 +149,177 @@ done
 [[ "$review_timeout" =~ ^[0-9]+$ ]] || die "--review-timeout must be a number"
 [[ "$gemini_timeout" =~ ^[0-9]+$ ]] || die "--gemini-timeout must be a number"
 [[ "$max_chars" =~ ^[0-9]+$ ]] || die "--max-chars must be a number"
+[[ "$orphan_lock_seconds" =~ ^[0-9]+$ ]] || die "GUARD_ORPHAN_LOCK_SECONDS must be a number"
+
+OMLX_URL="${OMLX_URL:-http://127.0.0.1:8000}"
+OMLX_KEY="${OMLX_KEY:-5555}"
+OMLX_LOCK_DIR="${OMLX_LOCK_DIR:-${OMLX_LOCK_FILE:-/tmp/omlx-guard.lock}.d}"
+QWEN_MODEL="${GUARD_QWEN_MODEL:-Qwen3.6-27B-4bit}"
+GEMINI_MODEL="${GUARD_GEMINI_MODEL:-gemini-3-flash-preview}"
+E4B_MODEL="${GUARD_E4B_MODEL:-gemma-4-E4B-it-MLX-8bit}"
+
+holder_value() {
+    local holder_file="$1"
+    local key="$2"
+    awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$holder_file" 2>/dev/null
+}
+
+holder_age_seconds() {
+    local acquired_at="$1"
+    python3 - "$acquired_at" <<'PY'
+from datetime import datetime, timezone
+import sys
+
+value = sys.argv[1].strip()
+if not value:
+    print("")
+    raise SystemExit
+try:
+    acquired = datetime.fromisoformat(value.replace("Z", "+00:00"))
+except ValueError:
+    print("")
+    raise SystemExit
+print(max(0, int((datetime.now(timezone.utc) - acquired).total_seconds())))
+PY
+}
+
+lock_dir_age_seconds() {
+    local lock_dir="$1"
+    local modified_at=""
+    modified_at="$(stat -f %m "$lock_dir" 2>/dev/null || stat -c %Y "$lock_dir" 2>/dev/null || true)"
+    if [[ -z "$modified_at" || ! "$modified_at" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' ""
+        return
+    fi
+    printf '%s\n' "$(( $(date +%s) - modified_at ))"
+}
+
+holder_summary() {
+    local lock_dir="$1"
+    local holder_file="$lock_dir/holder"
+    if [[ ! -d "$lock_dir" ]]; then
+        printf 'no oMLX guard lock at %s\n' "$lock_dir"
+        return
+    fi
+    if [[ ! -x "$lock_dir" ]]; then
+        printf 'oMLX guard lock exists at %s but is not searchable by this user\n' "$lock_dir"
+        return
+    fi
+    if [[ ! -f "$holder_file" ]]; then
+        local lock_age
+        lock_age="$(lock_dir_age_seconds "$lock_dir")"
+        printf 'oMLX guard lock exists at %s but has no holder metadata; lock_age=%ss\n' "$lock_dir" "${lock_age:-unknown}"
+        return
+    fi
+    if [[ ! -r "$holder_file" ]]; then
+        printf 'oMLX guard lock exists at %s but holder metadata is not readable by this user\n' "$lock_dir"
+        return
+    fi
+    local pid model source label acquired_at age alive missing required_key process_command
+    local output_dir lock_timeout_value settle_seconds_value
+    pid="$(holder_value "$holder_file" pid)"
+    model="$(holder_value "$holder_file" model)"
+    source="$(holder_value "$holder_file" source)"
+    label="$(holder_value "$holder_file" label)"
+    acquired_at="$(holder_value "$holder_file" acquired_at)"
+    output_dir="$(holder_value "$holder_file" output_dir)"
+    lock_timeout_value="$(holder_value "$holder_file" lock_timeout_seconds)"
+    settle_seconds_value="$(holder_value "$holder_file" settle_seconds)"
+    age="$(holder_age_seconds "$acquired_at")"
+    missing=""
+    for required_key in pid model source label acquired_at output_dir lock_timeout_seconds settle_seconds; do
+        if [[ -z "$(holder_value "$holder_file" "$required_key")" ]]; then
+            missing="${missing}${missing:+,}${required_key}"
+        fi
+    done
+    alive="unknown"
+    process_command=""
+    if [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]]; then
+        if kill -0 "$pid" 2>/dev/null; then
+            alive="alive"
+            process_command="$(ps -p "$pid" -o command= 2>/dev/null | head -1 | tr '\n' ' ')"
+        else
+            alive="dead"
+        fi
+    fi
+    printf 'lock=%s pid=%s(%s) source=%s model=%s label=%s acquired_at=%s age=%ss output_dir=%s lock_timeout=%s settle=%s missing=%s process=%s\n' \
+        "$lock_dir" "${pid:-unknown}" "$alive" "${source:-unknown}" "${model:-unknown}" \
+        "${label:-unknown}" "${acquired_at:-unknown}" "${age:-unknown}" "${output_dir:-unknown}" \
+        "${lock_timeout_value:-unknown}" "${settle_seconds_value:-unknown}" "${missing:-none}" \
+        "${process_command:-unknown}"
+}
+
+print_lock_status() {
+    local lock_dir="$1"
+    holder_summary "$lock_dir"
+    if [[ -f "$lock_dir/holder" ]]; then
+        printf '%s\n' 'holder metadata:'
+        sed 's/^/  /' "$lock_dir/holder"
+        local pid
+        pid="$(holder_value "$lock_dir/holder" pid)"
+        if [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then
+            printf '%s\n' 'stale: holder pid is dead. The next guard run will reclaim this lock, or run scripts/guard-review.sh --clear-stale-lock for conservative cleanup.'
+        elif [[ -n "$pid" && "$pid" =~ ^[0-9]+$ ]]; then
+            printf 'process check: ps -p %s -o pid,ppid,command\n' "$pid"
+        fi
+    fi
+}
+
+safe_lock_dir() {
+    local lock_dir="$1"
+    case "$lock_dir" in
+        ""|"/"|"/tmp"|"/private/tmp"|"/var/tmp")
+            return 1
+            ;;
+    esac
+    return 0
+}
+
+clear_stale_lock_dir() {
+    local lock_dir="$1"
+    local holder_file="$lock_dir/holder"
+    safe_lock_dir "$lock_dir" || die "unsafe oMLX lock directory: $lock_dir"
+    if [[ ! -d "$lock_dir" ]]; then
+        printf 'no oMLX guard lock at %s\n' "$lock_dir"
+        return
+    fi
+    if [[ ! -f "$holder_file" ]]; then
+        local lock_age
+        lock_age="$(lock_dir_age_seconds "$lock_dir")"
+        if [[ -n "$lock_age" && "$lock_age" =~ ^[0-9]+$ && "$lock_age" -ge "$orphan_lock_seconds" ]]; then
+            if rmdir "$lock_dir" 2>/dev/null; then
+                printf 'cleared orphaned oMLX guard lock with no holder metadata at %s\n' "$lock_dir"
+                return
+            fi
+            die "lock has no holder metadata but is not empty; inspect $lock_dir and running guard processes before manual cleanup"
+        fi
+        die "lock exists without holder metadata but is only ${lock_age:-unknown}s old; wait or inspect running guard processes: ps ax -o pid,ppid,command | grep '[g]uard-review.sh'"
+    fi
+    local pid
+    pid="$(holder_value "$holder_file" pid)"
+    if [[ -z "$pid" || ! "$pid" =~ ^[0-9]+$ ]]; then
+        die "refusing to clear oMLX lock without a dead numeric holder pid"
+    fi
+    if kill -0 "$pid" 2>/dev/null; then
+        die "refusing to clear live oMLX lock held by pid $pid"
+    fi
+    rm -f "$holder_file"
+    if rmdir "$lock_dir" 2>/dev/null; then
+        printf 'cleared stale oMLX guard lock at %s\n' "$lock_dir"
+    else
+        die "removed stale holder metadata, but lock directory is not empty; inspect $lock_dir before manual cleanup"
+    fi
+}
+
+if [[ "$lock_status" == "1" ]]; then
+    print_lock_status "$OMLX_LOCK_DIR"
+    exit 0
+fi
+
+if [[ "$clear_stale_lock" == "1" ]]; then
+    clear_stale_lock_dir "$OMLX_LOCK_DIR"
+    exit 0
+fi
 
 case "$diff_kind" in
     staged)
@@ -178,13 +364,6 @@ fi
 subject_file="$output_dir/subject.diff"
 printf '%s\n' "$diff_text" > "$subject_file"
 
-OMLX_URL="${OMLX_URL:-http://127.0.0.1:8000}"
-OMLX_KEY="${OMLX_KEY:-5555}"
-OMLX_LOCK_DIR="${OMLX_LOCK_DIR:-${OMLX_LOCK_FILE:-/tmp/omlx-guard.lock}.d}"
-QWEN_MODEL="${GUARD_QWEN_MODEL:-Qwen3.6-27B-4bit}"
-GEMINI_MODEL="${GUARD_GEMINI_MODEL:-gemini-3-flash-preview}"
-E4B_MODEL="${GUARD_E4B_MODEL:-gemma-4-E4B-it-MLX-8bit}"
-
 timeout_bin=""
 if command -v gtimeout >/dev/null 2>&1; then
     timeout_bin="gtimeout"
@@ -222,24 +401,32 @@ run_local_reviewer() {
         have_lock=0
         cleanup_lock() {
             if [[ "$have_lock" == "1" ]]; then
-                rm -rf "$lock_dir"
+                rm -f "$lock_dir/holder" "$lock_dir"/holder.* 2>/dev/null || true
+                rmdir "$lock_dir" 2>/dev/null || true
             fi
         }
         trap cleanup_lock EXIT
 
         deadline=$((SECONDS + lock_timeout))
-        case "$lock_dir" in
-            ""|"/"|"/tmp"|"/private/tmp")
+        if ! safe_lock_dir "$lock_dir"; then
                 json_fallback "$source" "Unsafe oMLX lock directory: $lock_dir"
                 exit 0
-                ;;
-        esac
+        fi
+        next_notice=$SECONDS
         while ! mkdir "$lock_dir" 2>/dev/null; do
             if [[ -f "$lock_dir/holder" ]]; then
                 holder_pid="$(sed -n 's/^pid=//p' "$lock_dir/holder" 2>/dev/null | head -1)"
                 if [[ -n "$holder_pid" && "$holder_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$holder_pid" 2>/dev/null; then
                     printf '[guard] removing stale oMLX lock held by dead pid %s\n' "$holder_pid" >&2
-                    rm -rf "$lock_dir"
+                    rm -f "$lock_dir/holder" 2>/dev/null || true
+                    rmdir "$lock_dir" 2>/dev/null || true
+                    continue
+                fi
+            else
+                lock_age="$(lock_dir_age_seconds "$lock_dir")"
+                if [[ -n "$lock_age" && "$lock_age" =~ ^[0-9]+$ && "$lock_age" -ge "$orphan_lock_seconds" ]]; then
+                    printf '[guard] removing orphaned oMLX lock with no holder metadata after %ss\n' "$lock_age" >&2
+                    rmdir "$lock_dir" 2>/dev/null || true
                     continue
                 fi
             fi
@@ -247,16 +434,28 @@ run_local_reviewer() {
                 json_fallback "$source" "Could not acquire oMLX guard lock for $model"
                 exit 0
             fi
+            if (( SECONDS >= next_notice )); then
+                printf '[guard] waiting for oMLX lock: %s\n' "$(holder_summary "$lock_dir")" >&2
+                next_notice=$((SECONDS + 10))
+            fi
             sleep 1
         done
         have_lock=1
         current_pid="$(python3 -c 'import os; print(os.getppid())' 2>/dev/null || printf '%s' "$$")"
+        holder_tmp="$lock_dir/holder.$$"
         {
             printf 'pid=%s\n' "$current_pid"
+            printf 'parent_pid=%s\n' "$$"
+            printf 'host=%s\n' "$(hostname 2>/dev/null || printf unknown)"
             printf 'model=%s\n' "$model"
             printf 'source=%s\n' "$source"
+            printf 'label=%s\n' "$label"
+            printf 'output_dir=%s\n' "$output_dir"
+            printf 'lock_timeout_seconds=%s\n' "$lock_timeout"
+            printf 'settle_seconds=%s\n' "$settle_seconds"
             date -u '+acquired_at=%Y-%m-%dT%H:%M:%SZ'
-        } > "$lock_dir/holder"
+        } > "$holder_tmp"
+        mv "$holder_tmp" "$lock_dir/holder"
 
         printf '[guard] loading %s\n' "$model" >&2
         curl -sf --connect-timeout 5 --max-time 30 -X POST "$OMLX_URL/admin/api/models/${model_enc}/load" \

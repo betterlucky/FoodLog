@@ -106,6 +106,34 @@ The wrapper captures raw reviewer output in a private `mktemp` directory under t
 
 Run the guard sequentially. oMLX model load/unload calls are shared machine state, so guard runs should take an interprocess lock such as `/tmp/omlx-guard.lock.d` before loading a local model. Do not assume concurrent sessions will queue safely at the API layer. Hold the lock through load, settle, review inference, unload, and cleanup; `scripts/guard-review.sh` uses `OMLX_LOCK_DIR` as a portable lock directory, records holder metadata, reclaims locks whose holder pid is dead, and releases the lock when the guarded block exits. Linux `flock` is not required for the repo wrapper, so fresh macOS agents do not need an extra Homebrew package to participate.
 
+To inspect another session's local-model guard run without taking the lock:
+
+```sh
+scripts/guard-review.sh --lock-status
+```
+
+The status output includes the lock path, holder pid and liveness, reviewer source, model, reviewed diff label, acquisition time, age, missing metadata fields, process command, and raw holder metadata. While waiting for a busy lock, the wrapper prints this same holder summary about every 10 seconds. If the holder pid is dead, the next guard run will reclaim the lock automatically.
+
+For manual recovery, first run `scripts/guard-review.sh --lock-status`, then inspect any reported live pid with:
+
+```sh
+ps -p <pid> -o pid,ppid,command
+```
+
+Wait if the pid is alive and the command belongs to an active guard run. If the holder pid is dead, prefer the guarded cleanup command:
+
+```sh
+scripts/guard-review.sh --clear-stale-lock
+```
+
+The cleanup command refuses unsafe lock paths, live pids, and holder metadata without a dead numeric pid. If the lock directory exists with no holder metadata, the command only clears it after the orphan-lock grace period, which defaults to 30 seconds and can be tuned with `GUARD_ORPHAN_LOCK_SECONDS`. If the holder metadata is corrupt, inspect running guard processes before any manual cleanup:
+
+```sh
+ps ax -o pid,ppid,command | grep '[g]uard-review.sh'
+```
+
+Expected edge cases: `--lock-status` exits successfully when no lock exists, reports missing metadata fields instead of failing on a partial holder file, and reports lock age when the directory exists without a holder file. `--clear-stale-lock` refuses live pids, unsafe paths such as `/tmp` or `/`, and young orphan locks.
+
 When swapping local oMLX models, load one model, wait about 10 seconds for it to settle, run its review, unload it, then move to Gemini before loading the next oMLX model. After the final local-model review, unload that model too so the next guard run starts from a clean oMLX state. Prefer `oMLX -> Gemini -> oMLX` ordering when practical, because the Gemini pass usually gives the local server enough time between model swaps; if Gemini is skipped or returns unusually quickly, ensure about 10 seconds has passed or perform a health check before loading the second oMLX model.
 
 Treat all three as advisory. The agent remains responsible for judging findings, checking the code directly, applying fixes, and rerunning tests. If the oMLX server is unreachable, a model fails to load, or a reviewer command fails or times out, record that reviewer as unavailable and continue with the remaining reviewers rather than blocking indefinitely.
