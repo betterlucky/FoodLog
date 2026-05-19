@@ -1023,6 +1023,30 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun directShortcutAddRejectsActiveDuplicateWithoutOverwriting() = runTest {
+        repository.seedDefaults()
+
+        val addResult = repository.addDefault(
+            lookupKey = "tea",
+            name = "Tea large mug",
+            calories = 60.0,
+            unit = "mug",
+            notes = "Should not replace seeded tea",
+        )
+        val default = database.userDefaultDao().getActiveDefault("tea")
+        val logResult = repository.submitText("tea")
+        val foodItem = repository.observeFoodItemsForDate(today).first().single()
+
+        assertEquals(FoodLogRepository.DefaultUpdateResult.AlreadyExists, addResult)
+        assertEquals("Tea", default?.name)
+        assertEquals(25.0, default?.calories ?: 0.0, 0.001)
+        assertEquals("cup", default?.unit)
+        assertTrue(logResult is FoodLogRepository.SubmitResult.Parsed)
+        assertEquals("Tea", foodItem.name)
+        assertEquals(25.0, foodItem.calories, 0.001)
+    }
+
+    @Test
     fun directShortcutWithBlankUnitDefaultsToPortion() = runTest {
         repository.seedDefaults()
 

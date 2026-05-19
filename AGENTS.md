@@ -21,6 +21,8 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 ## Working Rules
 
 - Read `PLAN.md` before making product changes; it is the canonical plan.
+- Use the `FoodLog` kanban board for tracked work. Check whether a task is already implemented before changing code, and update docs when product direction, workflow, or verification expectations change.
+- After each board item is completed, commit the finished change, push a branch, open a PR, and wait for review unless the change clearly does not need one. If scope or acceptance is unclear, ask for more context before continuing; use `/grill-me` style scrutiny when a task would benefit from adversarial review.
 - Keep changes local-first and deterministic unless the plan says otherwise.
 - Save raw text before interpretation and preserve raw-entry audit records.
 - Use repository/database transactions for flows that create or update raw entries and food rows together.

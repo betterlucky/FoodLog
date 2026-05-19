@@ -27,6 +27,17 @@ This repository contains the first Phase 1 implementation slice:
 
 Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, then a longer-form append-log export. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though append-log fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
 
+## Kanban Workflow
+
+The active task board is `FoodLog` in the shared kanban service. Use `PLAN.md` as the source for product direction, then keep the board aligned as work is planned, implemented, reviewed, tested, and completed.
+
+Local kanban config lives in ignored files:
+
+- `.codex/kanban.json`
+- `.claude/kanban.json`
+
+Global board auth and URL live outside the repo in `~/.claude/kanban-auth`.
+
 ## Local Development
 
 This project uses the checked-in Gradle wrapper.

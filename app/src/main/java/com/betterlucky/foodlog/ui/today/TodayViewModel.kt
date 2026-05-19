@@ -539,6 +539,8 @@ class TodayViewModel(
                         FoodLogRepository.DefaultUpdateResult.InvalidInput,
                         FoodLogRepository.DefaultUpdateResult.NotFound ->
                             "Logged item, but could not save shortcut."
+                        FoodLogRepository.DefaultUpdateResult.AlreadyExists ->
+                            "Logged item, but shortcut already exists."
                         null -> "Logged item."
                     }
                 }
@@ -1241,6 +1243,7 @@ class TodayViewModel(
                 }
                 FoodLogRepository.DefaultUpdateResult.InvalidInput -> "That shortcut could not be forgotten."
                 FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
+                FoodLogRepository.DefaultUpdateResult.AlreadyExists -> "That shortcut already exists."
             }
         }
     }
@@ -1319,6 +1322,7 @@ class TodayViewModel(
                 }
                 FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a name and calories to update the shortcut."
                 FoodLogRepository.DefaultUpdateResult.NotFound -> "That shortcut no longer exists."
+                FoodLogRepository.DefaultUpdateResult.AlreadyExists -> "That shortcut already exists."
             }
             message.value = resultMessage
             if (result != FoodLogRepository.DefaultUpdateResult.Updated) {
@@ -1352,6 +1356,7 @@ class TodayViewModel(
                 }
                 FoodLogRepository.DefaultUpdateResult.InvalidInput -> "Add a name and calories to create a shortcut."
                 FoodLogRepository.DefaultUpdateResult.NotFound -> "Could not create the shortcut."
+                FoodLogRepository.DefaultUpdateResult.AlreadyExists -> "That shortcut already exists. Edit it instead."
             }
             message.value = resultMessage
             if (result != FoodLogRepository.DefaultUpdateResult.Updated) {

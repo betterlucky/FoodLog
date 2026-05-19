@@ -144,6 +144,7 @@ Important behavior:
 - Manual resolutions require at least item name and calories.
 - Optional "save as shortcut" should create reusable deterministic defaults around a user-understandable portion, not an unintuitive per-gram default where it can be avoided.
 - Shortcuts should save the portion the user actually means to repeat, such as "one pot", "one wrap", "one bowl", or another clear serving label, with calories for that portion.
+- Creating a shortcut should not silently overwrite an existing active shortcut. Use explicit edit/update flows when changing a saved default.
 - If the user logs the same shortcut with an edited portion or calorie value, offer a non-intrusive "update shortcut" toggle so they can choose whether the shortcut should learn the new normal.
 
 ## Label And Product Logging
