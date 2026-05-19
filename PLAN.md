@@ -247,7 +247,7 @@ scripts/android-smoke.sh /tmp/foodlog-smoke.png
 
 Do not fix install/signature problems with a plain `adb uninstall com.betterlucky.foodlog`; that wipes local FoodLog data. Use the smoke script's guarded reinstall path or take an app-private data backup first.
 
-Good next smoke scenario: log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current.
+Current smoke scenario: after the script launches the app, follow `docs/android-smoke-scenario.md` to log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current.
 
 Prefer local unit tests for parser, export, totals, daily close, day-boundary, label parsing, and portion resolution logic. Use instrumented tests when Room, Android framework behavior, or Compose interaction is the thing being verified.
 

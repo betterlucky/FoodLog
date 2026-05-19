@@ -62,7 +62,7 @@ scripts/android-smoke.sh /tmp/foodlog-smoke.png
 
 The smoke script uses `adb install -r` first, which preserves app data. It uses the normal Android debug keystore by default so it matches plain Gradle/connected-test installs. If Android still requires a reinstall because of a signature mismatch, the script attempts to back up and restore app-private data before uninstalling; it refuses to wipe data unless `FOODLOG_ALLOW_DATA_LOSS=1` is set.
 
-Useful smoke scenario: log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current.
+After launch, run the Lodestone daily close smoke checklist in [docs/android-smoke-scenario.md](docs/android-smoke-scenario.md): log one OCR/label-derived food row, add one daily weight, export the CSV consumed by Lodestone, and confirm the day reports as exported/current.
 
 Lodestone still imports from the historical `Downloads/FoodLogData` folder for now; keep that folder and filename contract stable unless the importer is updated at the same time.
 
