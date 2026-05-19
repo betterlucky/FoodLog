@@ -255,15 +255,20 @@ Prefer local unit tests for parser, export, totals, daily close, day-boundary, l
 
 ## Working Backlog
 
-Active:
+The kanban board is the source of truth for active implementation tasks. Keep this section as product direction and backlog shape rather than a second task tracker. When adding, completing, or parking work, update the board first and adjust this plan only when product direction, scope, or verification expectations change.
 
-- Smooth shortcut management for common daily foods.
-- Polish label/manual shortcut wizard validation and copy.
-- Improve repeat logging for OCR/manual foods through shortcuts with user-confirmed portion memory and optional "update shortcut" behavior.
-- Keep daily close/export status easy to trust after edits, removals, pending resolution, and weight changes.
-- Keep the standalone live journal export stable now that the Lodestone close path is solid.
-- Improve Room-backed history suggestions for repeated manual or ambiguous foods before introducing AI capture fallback.
-- Expand focused tests only where the behavior is active and risky.
+Recently completed local polish:
+
+- Shortcut management for common daily foods.
+- Label/manual wizard validation and repeat OCR/manual logging through portion-backed shortcuts.
+- Daily close/export freshness after edits, removals, pending resolution, and weight changes.
+- Standalone Room-backed live journal export.
+- Room-backed history suggestions for repeated ambiguous foods.
+
+Active themes:
+
+- Keep focused tests only where the behavior is active and risky.
+- Use the next kanban card to decide the immediate work, after checking whether the behavior is already implemented.
 
 Soon:
 
