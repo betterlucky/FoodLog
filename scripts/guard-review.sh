@@ -251,14 +251,14 @@ run_local_reviewer() {
         done
         have_lock=1
         {
-            printf 'pid=%s\n' "$$"
+            printf 'pid=%s\n' "$BASHPID"
             printf 'model=%s\n' "$model"
             printf 'source=%s\n' "$source"
             date -u '+acquired_at=%Y-%m-%dT%H:%M:%SZ'
         } > "$lock_dir/holder"
 
         printf '[guard] loading %s\n' "$model" >&2
-        curl -sf -X POST "$OMLX_URL/admin/api/models/${model_enc}/load" \
+        curl -sf --connect-timeout 5 --max-time 30 -X POST "$OMLX_URL/admin/api/models/${model_enc}/load" \
             -H "Authorization: Bearer $OMLX_KEY" >/dev/null \
             || { json_fallback "$source" "$model load failed"; exit 0; }
         sleep "$settle_seconds"
@@ -311,7 +311,7 @@ PY
         fi
 
         printf '[guard] unloading %s\n' "$model" >&2
-        if ! curl -sf -X POST "$OMLX_URL/admin/api/models/${model_enc}/unload" \
+        if ! curl -sf --connect-timeout 5 --max-time 30 -X POST "$OMLX_URL/admin/api/models/${model_enc}/unload" \
             -H "Authorization: Bearer $OMLX_KEY" >/dev/null; then
             result="$(python3 - "$result" "$source" "$model" <<'PY'
 import json, re, sys
