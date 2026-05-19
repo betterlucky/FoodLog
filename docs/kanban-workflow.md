@@ -75,6 +75,24 @@ If the guard is hard-killed while a local model is loaded, oMLX may retain resid
 
 Gemini-only review is acceptable when local oMLX is unavailable, or for docs-only changes that do not alter commands, scripts, workflow policy, data contracts, or verification expectations.
 
+### Fallback Review Result Note
+
+When CodeRabbit is skipped, quota-limited, or unavailable, add a kanban card note with this shape before merging:
+
+```md
+Fallback review result:
+- CodeRabbit: skipped | quota-limited until <time> | unavailable | no review needed because <reason>
+- Guard command: `<exact command>`
+- Reviewers completed: Qwen <result>, Gemini <result>, E4B/gemma-4-E4B-it-MLX-8bit <result>
+- Reviewers unavailable/skipped: <none | reviewer and reason>
+- Findings accepted: <finding -> fix commit/change>
+- Findings rejected: <finding -> reason it was false positive/out of scope>
+- Verification rerun: `<commands>` -> <result>
+- Merge decision: <why this is safe to merge now>
+```
+
+Keep the note factual and short. If a reviewer emits raw risks that were judged false positives, name the reason instead of silently dropping them.
+
 ## Verification
 
 Choose verification based on the changed surface. The default local check for this repo uses the JDK path documented in `README.md` and `AGENTS.md`; on another machine, use an equivalent installed JDK path:
