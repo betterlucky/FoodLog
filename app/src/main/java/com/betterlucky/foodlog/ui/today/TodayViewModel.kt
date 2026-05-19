@@ -478,10 +478,17 @@ class TodayViewModel(
         val parsedCalories = part.calories.toDoubleOrNull()?.takeIf { it > 0.0 }
         val parsedTime = TimeTextParser.parseOrNull(session.timeText)
         val resolvedPortion = LabelPortionResolver.resolve(facts, session.labelInputMode, part.amount)
-        if (part.name.isBlank() || parsedCalories == null || !resolvedPortion.isValidAmount) {
-            message.value = "Add item name and calories."
+        val validationMessage = labelWizardValidationMessage(
+            session = session,
+            part = part,
+            parsedCalories = parsedCalories,
+            resolvedPortion = resolvedPortion,
+        )
+        if (validationMessage != null) {
+            message.value = validationMessage
             return
         }
+        val calories = parsedCalories ?: return
         if (session.timeText.isBlank() || parsedTime == null) {
             message.value = "Time must use HH:mm, such as 08:30."
             return
@@ -497,7 +504,7 @@ class TodayViewModel(
                     amount = resolvedPortion.amount,
                     unit = resolvedPortion.unit,
                     grams = resolvedPortion.grams,
-                    calories = parsedCalories,
+                    calories = calories,
                     logDate = session.logDate,
                     consumedTime = parsedTime,
                     notes = part.notes.ifBlank { null },
@@ -510,7 +517,7 @@ class TodayViewModel(
                             facts = facts,
                             inputMode = session.labelInputMode,
                             resolvedPortion = resolvedPortion,
-                            calories = parsedCalories,
+                            calories = calories,
                             userProvidedItemSize = userProvidedItemSize(part),
                         )
                         repository.addOcrShortcut(
@@ -548,6 +555,25 @@ class TodayViewModel(
             }
         }
     }
+
+    private fun labelWizardValidationMessage(
+        session: LoggingWizardSession,
+        part: LoggingWizardPartDraft,
+        parsedCalories: Double?,
+        resolvedPortion: LabelPortionResolution,
+    ): String? =
+        when {
+            part.name.isBlank() -> "Add an item name from the label."
+            !resolvedPortion.isValidAmount && session.labelInputMode == LabelInputMode.MEASURE ->
+                "Enter a label amount with g or ml, such as 40g or 250ml."
+            !resolvedPortion.isValidAmount ->
+                "Enter a countable portion, such as 1, half, or 0.5."
+            parsedCalories == null && session.labelInputMode == LabelInputMode.MEASURE ->
+                "Add calories, or use a g/ml amount that matches calories on the label."
+            parsedCalories == null ->
+                "Add calories for this portion; the label does not clearly say what one item weighs or contains."
+            else -> null
+        }
 
     private fun submitText(
         text: String,

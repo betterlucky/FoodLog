@@ -61,6 +61,34 @@ class LabelPortionResolverTest {
     }
 
     @Test
+    fun measureResolvesFromServingCaloriesAndServingWeightWhenPer100gMissing() {
+        val facts = LabelNutritionFacts(
+            rawText = "",
+            kcalPerServing = 135.0,
+            servingSizeGrams = 30.0,
+        )
+
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.MEASURE, "15g")
+
+        assertTrue(resolved.isValidAmount)
+        assertEquals(15.0, resolved.amount ?: 0.0, 0.001)
+        assertEquals("g", resolved.unit)
+        assertEquals(15.0, resolved.grams ?: 0.0, 0.001)
+        assertEquals(67.5, resolved.calories ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun itemModeDoesNotTreatAmbiguousServingCaloriesAsOneItem() {
+        val facts = LabelNutritionFacts(rawText = "", kcalPerServing = 135.0)
+
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.ITEMS, "1")
+
+        assertTrue(resolved.isValidAmount)
+        assertEquals("item", resolved.unit)
+        assertEquals(null, resolved.calories)
+    }
+
+    @Test
     fun drinkMeasureResolvesOnlyFromPer100ml() {
         val facts = LabelNutritionFacts(rawText = "", kcalPer100ml = 45.0, kcalPer100g = 100.0)
 
