@@ -2171,6 +2171,63 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun resolvingPendingEntryAfterExportMarksDayAsChangedSinceExport() = runTest {
+        repository.seedDefaults()
+        repository.submitText("tea")
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:00:00Z")
+        repository.exportLegacyHealthCsv(today)
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:10:00Z")
+        val pendingResult = repository.submitText("apple")
+        var status = database.dailyStatusDao().observeByDate(today).first()
+        var pendingCount = repository.observePendingEntriesForDate(today).first().size
+        var foodItemCount = repository.observeFoodItemsForDate(today).first().size
+
+        assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
+        assertEquals(Instant.parse("2026-04-24T11:30:00Z"), status?.lastFoodChangedAt)
+        assertEquals(1, pendingCount)
+        assertEquals(1, foodItemCount)
+        assertEquals(
+            DailyCloseReadiness.ResolvePending,
+            dailyCloseReadiness(
+                dailyStatus = status,
+                pendingCount = pendingCount,
+                foodItemCount = foodItemCount,
+                hasDailyWeight = false,
+            ),
+        )
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T12:25:00Z")
+        val resolveResult = repository.resolvePendingEntryManually(
+            rawEntryId = pendingResult.rawEntryId,
+            name = "Apple",
+            amount = 1.0,
+            unit = "medium",
+            calories = 95.0,
+            notes = null,
+        )
+        status = database.dailyStatusDao().observeByDate(today).first()
+        pendingCount = repository.observePendingEntriesForDate(today).first().size
+        foodItemCount = repository.observeFoodItemsForDate(today).first().size
+
+        assertTrue(resolveResult is FoodLogRepository.ManualResolveResult.Resolved)
+        assertEquals(Instant.parse("2026-04-24T12:00:00Z"), status?.legacyExportedAt)
+        assertEquals(Instant.parse("2026-04-24T12:25:00Z"), status?.lastFoodChangedAt)
+        assertEquals(0, pendingCount)
+        assertEquals(2, foodItemCount)
+        assertEquals(
+            DailyCloseReadiness.ReadyToExport,
+            dailyCloseReadiness(
+                dailyStatus = status,
+                pendingCount = pendingCount,
+                foodItemCount = foodItemCount,
+                hasDailyWeight = false,
+            ),
+        )
+    }
+
+    @Test
     fun dailyWeightChangeAfterExportMarksDayAsChangedSinceExport() = runTest {
         repository.seedDefaults()
         repository.submitText("tea")

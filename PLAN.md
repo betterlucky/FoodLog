@@ -203,6 +203,7 @@ Daily close/readiness should remain simple:
 - Pending entries: resolve pending entries before handoff.
 - Confirmed food or weight with missing/stale export: ready to export.
 - Confirmed food or weight with current export: already exported/current.
+- Food additions, pending resolutions, logged-item edits/removals, and daily weight saves/removals should mark a previously exported day as changed so the close prompt asks for a fresh Lodestone export.
 - Daily close is the main-screen Lodestone export action; avoid a duplicate standalone export button.
 
 The richer audit CSV exporter is retained for developer/data tracing, but it should not become the main user workflow.
