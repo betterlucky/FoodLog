@@ -62,6 +62,32 @@ Before moving a card to `done`, complete these checks in order:
 - The board has the implementation/test/review notes needed for the next agent to understand what happened.
 - Refresh the project brief if the card changed workflow policy, product direction, or current project state; otherwise leave a short note when the decision is not obvious.
 
+## Project Brief Refresh
+
+Refresh the kanban project brief after a meaningful batch of completed cards: after about three completed workflow/product cards, after any workflow policy or product-direction change, or whenever the next likely work changes. The done checklist is the per-card reminder; this section is the batch summary update. The brief should stay short enough to be useful as startup context without rereading all docs; 200-500 characters is a guideline, not a reason to drop essential context.
+
+Use this shape:
+
+```text
+<current product/workflow state>. Recent decisions: <1-2 decisions>. Current direction: <next likely work>.
+```
+
+To update it:
+
+1. Read the current project record and recently completed cards.
+2. Draft a 200-500 character replacement that captures current state, recent decisions, and active direction.
+3. Patch the project brief through the kanban project API:
+
+```sh
+curl -s -X PATCH "$BASE_URL/api/projects/FoodLog" \
+  -H 'Content-Type: application/json' \
+  -d '{"brief":"<updated brief>"}'
+```
+
+If the API is unreachable or the patch fails, do not mark the card done as if the brief was refreshed. Add a card note with the attempted brief and the failure so the next agent can retry.
+
+4. Add a card note saying whether the brief was updated or why it was left alone.
+
 ## Multi-Review Guard
 
 For implementation review fallback, do not rely on one replacement reviewer. Prefer the three-way guard used by the kanban Shield step:
