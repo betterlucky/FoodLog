@@ -76,4 +76,33 @@ class LabelShortcutBuilderTest {
         assertEquals("ml", shortcut.itemSizeUnit)
         assertEquals(225.0, shortcut.caloriesPerUnit, 0.001)
     }
+
+    @Test
+    fun servingCaloriesAndServingWeightCreateItemBackedShortcutWhenItemIsKnown() {
+        val facts = LabelNutritionFacts(
+            rawText = "",
+            kcalPerServing = 95.0,
+            servingUnit = "pot",
+            servingAmount = 1.0,
+            servingItemUnit = "pot",
+            servingSizeGrams = 125.0,
+        )
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.ITEMS, "0.5")
+
+        val shortcut = LabelShortcutBuilder.build(
+            facts = facts,
+            inputMode = LabelInputMode.ITEMS,
+            resolvedPortion = resolved,
+            calories = 47.5,
+        )
+
+        assertEquals(ShortcutPortionMode.ITEM, shortcut.portionMode)
+        assertEquals("pot", shortcut.unit)
+        assertEquals("pot", shortcut.itemUnit)
+        assertEquals(0.5, shortcut.defaultAmount ?: 0.0, 0.001)
+        assertEquals(125.0, shortcut.itemSizeAmount ?: 0.0, 0.001)
+        assertEquals("g", shortcut.itemSizeUnit)
+        assertEquals(95.0, shortcut.caloriesPerUnit, 0.001)
+        assertEquals(76.0, shortcut.kcalPer100g ?: 0.0, 0.001)
+    }
 }

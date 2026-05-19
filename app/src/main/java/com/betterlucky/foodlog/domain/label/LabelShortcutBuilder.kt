@@ -28,7 +28,9 @@ object LabelShortcutBuilder {
         userProvidedItemSize: LabelShortcutItemSize? = null,
     ): LabelShortcutDraft {
         val itemSize = userProvidedItemSize ?: itemSizeFor(facts, inputMode, resolvedPortion)
-        val mode = shortcutMode(inputMode, itemSize, facts)
+        val kcalPer100g = effectiveKcalPer100g(facts)
+        val kcalPer100ml = facts.kcalPer100ml
+        val mode = shortcutMode(inputMode, itemSize, kcalPer100g, kcalPer100ml)
         val defaultAmount = defaultAmount(mode, resolvedPortion, itemSize)
         val resolvedItemUnit = LabelPortionResolver.itemUnit(facts)
         return LabelShortcutDraft(
@@ -37,7 +39,8 @@ object LabelShortcutBuilder {
                 resolvedPortion = resolvedPortion,
                 calories = calories,
                 itemSize = itemSize,
-                facts = facts,
+                kcalPer100g = kcalPer100g,
+                kcalPer100ml = kcalPer100ml,
             ),
             unit = unit(mode, resolvedPortion.unit, itemSize?.unit, resolvedItemUnit),
             defaultAmount = defaultAmount,
@@ -45,8 +48,8 @@ object LabelShortcutBuilder {
             itemUnit = resolvedItemUnit.takeIf { mode == ShortcutPortionMode.ITEM },
             itemSizeAmount = itemSize?.amount,
             itemSizeUnit = itemSize?.unit,
-            kcalPer100g = facts.kcalPer100g,
-            kcalPer100ml = facts.kcalPer100ml,
+            kcalPer100g = kcalPer100g,
+            kcalPer100ml = kcalPer100ml,
         )
     }
 
@@ -60,10 +63,11 @@ object LabelShortcutBuilder {
     private fun shortcutMode(
         inputMode: LabelInputMode,
         itemSize: LabelShortcutItemSize?,
-        facts: LabelNutritionFacts,
+        kcalPer100g: Double?,
+        kcalPer100ml: Double?,
     ): ShortcutPortionMode =
         when {
-            itemSize != null && (facts.kcalPer100g != null || facts.kcalPer100ml != null) -> ShortcutPortionMode.ITEM
+            itemSize != null && (kcalPer100g != null || kcalPer100ml != null) -> ShortcutPortionMode.ITEM
             inputMode == LabelInputMode.MEASURE -> ShortcutPortionMode.MEASURE
             else -> ShortcutPortionMode.PLAIN
         }
@@ -91,14 +95,15 @@ object LabelShortcutBuilder {
         resolvedPortion: LabelPortionResolution,
         calories: Double,
         itemSize: LabelShortcutItemSize?,
-        facts: LabelNutritionFacts,
+        kcalPer100g: Double?,
+        kcalPer100ml: Double?,
     ): Double =
         when (mode) {
             ShortcutPortionMode.ITEM -> {
                 val size = itemSize
                 when {
-                    size?.unit == "g" && facts.kcalPer100g != null -> facts.kcalPer100g * size.amount / 100.0
-                    size?.unit == "ml" && facts.kcalPer100ml != null -> facts.kcalPer100ml * size.amount / 100.0
+                    size?.unit == "g" && kcalPer100g != null -> kcalPer100g * size.amount / 100.0
+                    size?.unit == "ml" && kcalPer100ml != null -> kcalPer100ml * size.amount / 100.0
                     else -> resolvedPortion.amount?.takeIf { it > 0.0 }?.let { calories / it } ?: calories
                 }
             }
@@ -159,4 +164,12 @@ object LabelShortcutBuilder {
         }
         return null
     }
+
+    private fun effectiveKcalPer100g(facts: LabelNutritionFacts): Double? =
+        facts.kcalPer100g
+            ?: facts.servingSizeGrams
+                ?.takeIf { it > 0.0 }
+                ?.let { servingGrams ->
+                    facts.kcalPerServing?.let { it * 100.0 / servingGrams }
+                }
 }
