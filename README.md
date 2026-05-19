@@ -20,12 +20,13 @@ This repository contains the first Phase 1 implementation slice:
 - local on-device OCR label scan flow
 - daily weight and daily close/export status
 - local CSV export
+- full-history live journal CSV export with optional weight rows
 - no backend and no OpenAI calls in Phase 1
 - barcode logging was tried and is dropped for now
 
 ## Current Direction
 
-Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, then a longer-form append-log export. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though append-log fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
+Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, then the live journal export and local history suggestions. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though journal fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
 
 ## Kanban Workflow
 
