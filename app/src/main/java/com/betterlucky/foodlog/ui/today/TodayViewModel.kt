@@ -112,6 +112,7 @@ data class LoggingWizardPartDraft(
     val shortcutItemSizeAmount: String = "",
     val shortcutItemSizeUnit: String = "",
     val deferred: Boolean = false,
+    val historySuggestions: List<HistorySuggestionDraft> = emptyList(),
 ) {
     val hasPositiveCalories: Boolean
         get() = calories.toDoubleOrNull()?.let { it > 0.0 } == true
@@ -122,6 +123,15 @@ data class LoggingWizardPartDraft(
     val needsInput: Boolean
         get() = !isComplete && !deferred
 }
+
+data class HistorySuggestionDraft(
+    val name: String,
+    val amount: String,
+    val unit: String,
+    val calories: String,
+    val notes: String,
+    val lastUsedDate: LocalDate,
+)
 
 private fun Double.formatForMessage(): String =
     if (this % 1.0 == 0.0) {
@@ -1492,8 +1502,19 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toLoggingWizardPart
         unit = resolvedUnit.orEmpty(),
         calories = resolvedCalories?.formatDraftAmount().orEmpty(),
         notes = resolvedNotes,
+        historySuggestions = historySuggestions.map { it.toHistorySuggestionDraft() },
     )
 }
+
+private fun FoodLogRepository.HistorySuggestion.toHistorySuggestionDraft(): HistorySuggestionDraft =
+    HistorySuggestionDraft(
+        name = name,
+        amount = amount?.formatDraftAmount().orEmpty(),
+        unit = unit.orEmpty(),
+        calories = calories.formatDraftAmount(),
+        notes = notes.orEmpty(),
+        lastUsedDate = lastUsedDate,
+    )
 
 private fun LabelNutritionFacts.toLabelLoggingWizardSession(
     logDate: LocalDate,

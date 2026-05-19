@@ -689,6 +689,32 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingResolutionPreviewSuggestsRecentMatchingFoodHistory() = runTest {
+        repository.addFoodItemManually(
+            logDate = today.minusDays(3),
+            name = "Toast",
+            amount = 2.0,
+            unit = "slices",
+            calories = 180.0,
+            consumedTime = LocalTime.parse("08:15"),
+            notes = "with butter",
+            saveAsDefault = false,
+        )
+
+        val pendingResult = repository.submitText("toast") as FoodLogRepository.SubmitResult.Pending
+        val preview = repository.previewPendingEntryResolution(pendingResult.rawEntryId)
+            as FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart
+
+        val suggestion = checkNotNull(preview.part).historySuggestions.single()
+        assertEquals("Toast", suggestion.name)
+        assertEquals(2.0, suggestion.amount ?: 0.0, 0.001)
+        assertEquals("slices", suggestion.unit)
+        assertEquals(180.0, suggestion.calories, 0.001)
+        assertEquals("with butter", suggestion.notes)
+        assertEquals(today.minusDays(3), suggestion.lastUsedDate)
+    }
+
+    @Test
     fun resolvedPendingEntryCanBeSavedAsShortcutForFutureSubmissions() = runTest {
         repository.seedDefaults()
 

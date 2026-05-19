@@ -1567,6 +1567,20 @@ private fun WizardStepContent(
     onInputModeChanged: (LabelInputMode) -> Unit,
     onPortionModeChanged: (Int, LabelInputMode, LoggingWizardPartDraft) -> Unit,
 ) {
+    if (
+        currentPart != null &&
+        !currentPart.resolvedByDefault &&
+        !currentPart.isComplete &&
+        currentPart.historySuggestions.isNotEmpty() &&
+        step != LoggingWizardStep.Review
+    ) {
+        HistorySuggestionOptions(
+            currentIndex = currentIndex,
+            currentPart = currentPart,
+            onPartChanged = onPartChanged,
+        )
+    }
+
     when (step) {
         LoggingWizardStep.Product -> WizardProductStep(currentIndex, currentPart, onPartChanged)
         LoggingWizardStep.Portion -> {
@@ -1606,6 +1620,58 @@ private fun WizardProductStep(
         singleLine = true,
         label = { Text("Item") },
     )
+}
+
+@Composable
+private fun HistorySuggestionOptions(
+    currentIndex: Int,
+    currentPart: LoggingWizardPartDraft,
+    onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
+) {
+    Text(
+        text = "Recent matches",
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.SemiBold,
+    )
+    currentPart.historySuggestions.forEach { suggestion ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = suggestion.historySummary(),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Last used ${suggestion.lastUsedDate}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    onPartChanged(
+                        currentIndex,
+                        currentPart.copy(
+                            name = suggestion.name,
+                            amount = suggestion.amount,
+                            unit = suggestion.unit,
+                            calories = suggestion.calories,
+                            notes = suggestion.notes,
+                            saveAsShortcut = false,
+                            deferred = false,
+                        ),
+                    )
+                },
+            ) {
+                Text("Use")
+            }
+        }
+    }
 }
 
 @Composable
@@ -2581,6 +2647,14 @@ private inline fun <T> List<T>.indexOfFirstIndexed(predicate: (Int, T) -> Boolea
 
 internal fun Double.formatAmount(): String =
     if (rem(1.0) == 0.0) toInt().toString() else toString()
+
+private fun HistorySuggestionDraft.historySummary(): String {
+    val quantity = listOf(amount, unit)
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .ifBlank { null }
+    return listOfNotNull(name, quantity, "${calories} kcal").joinToString(" - ")
+}
 
 private fun Double.formatLabelNumber(): String =
     if (rem(1.0) == 0.0) {

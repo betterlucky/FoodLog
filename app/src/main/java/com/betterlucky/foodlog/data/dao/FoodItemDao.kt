@@ -54,6 +54,19 @@ interface FoodItemDao {
 
     @Query(
         """
+        SELECT * FROM food_items
+        WHERE voided = 0 AND LOWER(TRIM(name)) = LOWER(TRIM(:name))
+        ORDER BY logDate DESC, consumedTime DESC, createdAt DESC
+        LIMIT :limit
+        """,
+    )
+    suspend fun findRecentActiveFoodItemsByName(
+        name: String,
+        limit: Int,
+    ): List<FoodItemEntity>
+
+    @Query(
+        """
         SELECT COALESCE(SUM(calories), 0)
         FROM food_items
         WHERE logDate = :date AND voided = 0

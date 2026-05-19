@@ -1400,7 +1400,44 @@ class FoodLogRepository(
             resolvedUnit = resolved?.unit ?: quantityUnit.orEmpty(),
             resolvedCalories = resolved?.calories,
             resolvedNotes = default?.notes.orEmpty(),
+            historySuggestions = if (default == null) {
+                historySuggestionsForFoodText(normalizedFoodText)
+            } else {
+                emptyList()
+            },
         )
+    }
+
+    private suspend fun historySuggestionsForFoodText(foodText: String): List<HistorySuggestion> {
+        val trimmedFoodText = foodText.trim()
+        if (trimmedFoodText.isBlank()) {
+            return emptyList()
+        }
+
+        return foodItemDao.findRecentActiveFoodItemsByName(trimmedFoodText, HISTORY_SUGGESTION_QUERY_LIMIT)
+            .asSequence()
+            .filter { it.calories > 0.0 }
+            .distinctBy {
+                listOf(
+                    it.name.trim().lowercase(),
+                    it.amount?.toString().orEmpty(),
+                    it.unit?.trim()?.lowercase().orEmpty(),
+                    it.calories.toString(),
+                    it.notes?.trim()?.lowercase().orEmpty(),
+                )
+            }
+            .take(HISTORY_SUGGESTION_LIMIT)
+            .map { item ->
+                HistorySuggestion(
+                    name = item.name,
+                    amount = item.amount,
+                    unit = item.unit,
+                    calories = item.calories,
+                    notes = item.notes,
+                    lastUsedDate = item.logDate,
+                )
+            }
+            .toList()
     }
 
     private suspend fun shortcutUpdateCandidateForFoodItem(existing: FoodItemEntity): ShortcutUpdateCandidate? {
@@ -1612,6 +1649,16 @@ class FoodLogRepository(
         val resolvedUnit: String?,
         val resolvedCalories: Double?,
         val resolvedNotes: String,
+        val historySuggestions: List<HistorySuggestion> = emptyList(),
+    )
+
+    data class HistorySuggestion(
+        val name: String,
+        val amount: Double?,
+        val unit: String?,
+        val calories: Double,
+        val notes: String?,
+        val lastUsedDate: LocalDate,
     )
 
     data class FoodItemEditReplacementPart(
@@ -1744,6 +1791,8 @@ class FoodLogRepository(
             "foodlog_journal_${startDate}_to_${endDate}.csv"
 
         const val JOURNAL_FILE_NAME = "foodlog_journal.csv"
+        private const val HISTORY_SUGGESTION_LIMIT = 3
+        private const val HISTORY_SUGGESTION_QUERY_LIMIT = 12
 
         val DEFAULT_TEA = UserDefaultEntity(
             lookupKey = "tea",
