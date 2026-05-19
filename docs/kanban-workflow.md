@@ -152,6 +152,16 @@ scripts/stale-work-audit.sh --fetch
 
 The audit reports open PRs, remote `codex/*` branches for the selected remote, local branches whose upstream is gone, worktree paths and dirty status, and kanban cards still outside `done`. It does not delete or move anything; even `--fetch` avoids pruning refs. That means `--fetch` updates new and changed refs, but it will not remove local tracking refs for branches deleted on the remote. If you need exact gone-upstream detection, decide deliberately whether to run a separate `git fetch --prune` first. Treat the audit output as a triage list: verify whether each item is merged, intentionally parked, or still active before running any cleanup command.
 
+## Safe Work Cleanup
+
+After auditing stale work, use the cleanup helper in dry-run mode first:
+
+```sh
+scripts/safe-work-cleanup.sh
+```
+
+It reports clean ancestry-merged worktrees, local gone-upstream branches, and ancestry-merged remote `codex/*` branch candidates. Destructive local cleanup requires `--apply --yes`; remote branch deletion additionally requires `--delete-remote`. The helper refuses the primary worktree, dirty worktrees, the current branch, branches checked out in worktrees, and branches that are not ancestors of the configured `<remote>/main` ref or the `--main-ref` override. Squash-merged branches usually are not ancestors of `main`, so the helper keeps them for manual verification instead of guessing.
+
 ## Local Config
 
 Keep local board config and generated board files out of git:
