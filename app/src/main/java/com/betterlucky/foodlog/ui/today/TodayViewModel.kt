@@ -51,6 +51,17 @@ data class LoggedFoodEditResolutionPart(
     val notes: String,
 )
 
+data class LoggedFoodHistorySuggestion(
+    val name: String,
+    val amount: Double?,
+    val unit: String?,
+    val calories: Double,
+    val source: FoodItemSource,
+    val lastUsedDate: LocalDate,
+    val rawText: String,
+    val notes: String?,
+)
+
 data class LoggedFoodEditResolvedPartInput(
     val inputText: String,
     val lookupKey: String?,
@@ -111,6 +122,7 @@ data class LoggingWizardPartDraft(
     val saveAsShortcut: Boolean = false,
     val shortcutItemSizeAmount: String = "",
     val shortcutItemSizeUnit: String = "",
+    val historySuggestions: List<LoggedFoodHistorySuggestion> = emptyList(),
     val deferred: Boolean = false,
 ) {
     val hasPositiveCalories: Boolean
@@ -1523,8 +1535,21 @@ private fun FoodLogRepository.FoodItemDefaultEditPreviewPart.toLoggingWizardPart
         unit = resolvedUnit.orEmpty(),
         calories = resolvedCalories?.formatDraftAmount().orEmpty(),
         notes = resolvedNotes,
+        historySuggestions = historySuggestions.map { it.toLoggedFoodHistorySuggestion() },
     )
 }
+
+private fun FoodLogRepository.FoodHistorySuggestion.toLoggedFoodHistorySuggestion(): LoggedFoodHistorySuggestion =
+    LoggedFoodHistorySuggestion(
+        name = name,
+        amount = amount,
+        unit = unit,
+        calories = calories,
+        source = source,
+        lastUsedDate = lastUsedDate,
+        rawText = rawText,
+        notes = notes,
+    )
 
 private fun LabelNutritionFacts.toLabelLoggingWizardSession(
     logDate: LocalDate,

@@ -13,6 +13,7 @@ Implemented local core:
 - Today screen as the main daily working surface.
 - Shortcut picker with search, immediate logging, add/edit/forget actions, and shortcut-backed compound logging.
 - Pending and logged-item resolver flows that can stage recognised shortcut parts and ask only for unresolved parts.
+- Room-backed history suggestions for repeated ambiguous pending foods, shown as reviewable candidates rather than silent auto-logs.
 - Local on-device OCR label scan flow using ML Kit text recognition, conservative nutrition parsing, and a user-confirmed logging wizard.
 - Full-history live journal CSV export from Room rows, with a chosen output file that is rewritten from current state and optional weight rows.
 
@@ -34,11 +35,11 @@ Current priorities:
 2. Label/manual shortcut polish: make scanned and manually entered foods reliable, understandable, and quick to repeat through shortcuts.
 3. Daily close/export polish: make the Lodestone handoff obvious, current, and trustworthy.
 4. Live journal export: keep the longer-form Room-backed journal stable for standalone review and analysis, with clean replacement of stale entries.
-5. History-assisted suggestions: use confirmed historical Room rows to prefill or suggest resolutions for repeated ambiguous foods, without silently auto-logging.
+5. History-assisted suggestions: keep confirmed historical Room row suggestions explainable, reviewable, and easy to promote into shortcuts when useful.
 
 ## Next Horizon
 
-After shortcut polish, daily close trust, and live journal export stay dependable, add a local history suggestion layer before reaching for AI. AI may still become useful as a chat client for user-initiated questions and as a final fallback where deterministic parsing, shortcuts, label/manual flows, and historical suggestions cannot provide a good reviewed candidate.
+After shortcut polish, daily close trust, live journal export, and local history suggestions stay dependable, consider AI as a chat client for user-initiated questions and as a final fallback where deterministic parsing, shortcuts, label/manual flows, and historical suggestions cannot provide a good reviewed candidate.
 
 History-assisted suggestions:
 
@@ -261,7 +262,7 @@ Active:
 - Improve repeat logging for OCR/manual foods through shortcuts with user-confirmed portion memory and optional "update shortcut" behavior.
 - Keep daily close/export status easy to trust after edits, removals, pending resolution, and weight changes.
 - Keep the standalone live journal export stable now that the Lodestone close path is solid.
-- Add Room-backed history suggestions for repeated manual or ambiguous foods before introducing AI capture fallback.
+- Improve Room-backed history suggestions for repeated manual or ambiguous foods before introducing AI capture fallback.
 - Expand focused tests only where the behavior is active and risky.
 
 Soon:

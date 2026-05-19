@@ -819,6 +819,46 @@ class FoodLogRepositoryInstrumentedTest {
     }
 
     @Test
+    fun pendingPreviewSuggestsMatchingHistoricalFoodRowsWithoutResolvingAutomatically() = runTest {
+        repository.seedDefaults()
+        val firstPending = repository.submitText("apple")
+        repository.resolvePendingEntryManually(
+            rawEntryId = firstPending.rawEntryId,
+            name = "Apple",
+            amount = 1.0,
+            unit = "medium",
+            calories = 95.0,
+            notes = "User estimate",
+            saveAsDefault = false,
+        )
+        database.foodItemDao().insert(
+            foodItem(
+                rawEntryId = firstPending.rawEntryId,
+                name = "Old apple",
+                calories = 120.0,
+                voided = true,
+            ),
+        )
+
+        dateTimeProvider.now = Instant.parse("2026-04-24T14:00:00Z")
+        val repeatedPending = repository.submitText("apple")
+        val preview = repository.previewPendingEntryResolution(
+            rawEntryId = repeatedPending.rawEntryId,
+        ) as FoodLogRepository.PendingEntryResolutionPreviewResult.SinglePart
+        val suggestion = preview.part?.historySuggestions?.single()
+
+        assertEquals(null, preview.part?.default)
+        assertEquals(listOf("Apple"), preview.part?.historySuggestions?.map { it.name })
+        assertEquals("Apple", suggestion?.name)
+        assertEquals(95.0, suggestion?.calories ?: 0.0, 0.001)
+        assertEquals(1.0, suggestion?.amount ?: 0.0, 0.001)
+        assertEquals("medium", suggestion?.unit)
+        assertEquals(FoodItemSource.MANUAL_OVERRIDE, suggestion?.source)
+        assertEquals(today, suggestion?.lastUsedDate)
+        assertEquals(listOf("apple"), repository.observePendingEntriesForDate(today).first().map { it.rawText })
+    }
+
+    @Test
     fun manualPendingResolutionCanOverrideParsedTime() = runTest {
         repository.seedDefaults()
 

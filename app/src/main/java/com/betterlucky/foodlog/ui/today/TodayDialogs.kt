@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.betterlucky.foodlog.data.entities.DailyWeightEntity
+import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.RawEntryEntity
 import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
@@ -1597,15 +1598,77 @@ private fun WizardProductStep(
     currentPart: LoggingWizardPartDraft?,
     onPartChanged: (Int, LoggingWizardPartDraft) -> Unit,
 ) {
-    OutlinedTextField(
-        value = currentPart?.name.orEmpty(),
-        onValueChange = { value ->
-            currentPart?.let { onPartChanged(currentIndex, it.copy(name = value, deferred = false)) }
-        },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        label = { Text("Item") },
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = currentPart?.name.orEmpty(),
+            onValueChange = { value ->
+                currentPart?.let { onPartChanged(currentIndex, it.copy(name = value, deferred = false)) }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Item") },
+        )
+        if (currentPart != null && currentPart.historySuggestions.isNotEmpty()) {
+            HistorySuggestionPicker(
+                suggestions = currentPart.historySuggestions,
+                onSelect = { suggestion ->
+                    onPartChanged(
+                        currentIndex,
+                        currentPart.copy(
+                            name = suggestion.name,
+                            amount = suggestion.amount?.formatAmount().orEmpty(),
+                            unit = suggestion.unit.orEmpty(),
+                            calories = suggestion.calories.formatAmount(),
+                            notes = suggestion.notes.orEmpty(),
+                            saveAsShortcut = false,
+                            deferred = false,
+                        ),
+                    )
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistorySuggestionPicker(
+    suggestions: List<LoggedFoodHistorySuggestion>,
+    onSelect: (LoggedFoodHistorySuggestion) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = "Recent matches",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        suggestions.forEach { suggestion ->
+            OutlinedButton(
+                onClick = { onSelect(suggestion) },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    Text(
+                        text = "${suggestion.name} - ${suggestion.calories.formatAmount()} kcal",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = listOfNotNull(
+                            suggestion.quantityText(),
+                            suggestion.source.displayName(),
+                            "last ${suggestion.lastUsedDate}",
+                        ).joinToString(" - "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2581,6 +2644,21 @@ private inline fun <T> List<T>.indexOfFirstIndexed(predicate: (Int, T) -> Boolea
 
 internal fun Double.formatAmount(): String =
     if (rem(1.0) == 0.0) toInt().toString() else toString()
+
+private fun LoggedFoodHistorySuggestion.quantityText(): String? =
+    listOfNotNull(amount?.formatAmount(), unit)
+        .joinToString(" ")
+        .ifBlank { null }
+
+private fun FoodItemSource.displayName(): String =
+    when (this) {
+        FoodItemSource.SAVED_LABEL -> "label scan"
+        FoodItemSource.ACTIVE_LEFTOVER -> "leftover"
+        FoodItemSource.RECENT_PRODUCT -> "product"
+        FoodItemSource.USER_DEFAULT -> "shortcut"
+        FoodItemSource.MANUAL_OVERRIDE -> "manual"
+        FoodItemSource.ESTIMATE -> "estimate"
+    }
 
 private fun Double.formatLabelNumber(): String =
     if (rem(1.0) == 0.0) {

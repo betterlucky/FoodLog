@@ -5,15 +5,15 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 ## Current Product State
 
 - Phase 1 is local-only Kotlin/Compose/Room.
-- Deterministic parsing, shortcuts/defaults, pending resolution, logged-item editing/removal, daily weight, daily close status, and Lodestone CSV export are implemented.
+- Deterministic parsing, shortcuts/defaults, pending resolution, logged-item editing/removal, daily weight, daily close status, Lodestone CSV export, and reviewable history suggestions are implemented.
 - Local on-device OCR label scanning, the logging wizard, and Room-backed live journal export are implemented.
 - Barcode logging was tried and is dropped for now. Do not add barcode/cache fields or Open Food Facts work unless the plan is explicitly reopened.
-- OpenAI/backend features, leftovers, corrections, fuzzy matching, and conversational summaries are out of scope for the current local core.
+- OpenAI/backend features, leftovers, corrections, fuzzy matching beyond simple Room-backed history suggestions, and conversational summaries are out of scope for the current local core.
 
 ## Product Direction
 
 - Near-term work should make the existing daily workflow more dependable before adding new capture modes.
-- Prefer shortcut/product polish, label/manual product polish, daily close/export polish, live journal stability, then local history suggestions before AI integration.
+- Prefer shortcut/product polish, label/manual product polish, daily close/export polish, live journal stability, then history suggestion quality before AI integration.
 - Shortcuts should be portion-first for users. Save a repeatable user-facing portion with the shortcut where possible; use gram/ml math internally only when needed, and offer a non-intrusive "update shortcut" toggle when a logged edit should become the new default.
 - Treat barcode lookup as a parked experiment, not a missing required feature.
 - Keep the Lodestone CSV export as the daily handoff contract. Lodestone still imports from the historical `Downloads/FoodLogData` folder for now.
