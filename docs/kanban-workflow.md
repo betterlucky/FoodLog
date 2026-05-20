@@ -24,6 +24,23 @@ Use the board columns as the current state of the task:
 
 For FoodLog's usual L2/L3 cards, prefer a lightweight written plan before implementation. L1 docs or housekeeping cards may move directly to implementation when the task is clear.
 
+## Triage Attention
+
+Brain-dump and triage-source cards may use attention tags and `ATTENTION:` notes from `docs/brain-dump-triage.md` to show what kind of user or agent attention is needed without adding board columns. The attention tag is metadata; `plan_review` is the board-column enforcement point for triage-source cards that need user/reviewer attention.
+
+Use these states with the normal lifecycle:
+
+- `needs-context`: ask the narrowest blocking question and keep the card out of implementation until answered.
+- `needs-grill-me`: move to `plan_review` when adversarial review or user judgment is the next useful step.
+- `ready-to-read`: move to `plan_review` when a report, research result, or triage output is ready for the user to inspect.
+- `ready-to-convert`: move to `plan_review`; keep generated tasks as drafts until approved, unless the direct-creation rules in `docs/brain-dump-triage.md` apply.
+- `converted`: note the generated task ids, verify back-references on those cards, then move the source card to `done` when no source-card follow-up remains.
+- `abandoned`: record the reason and no-follow-up decision, then move the source card to `done`; do not hard-delete unless explicitly requested.
+
+These attention tags do not make a card implementation-ready by themselves. If a dump produces real product or workflow work, create separate bounded cards or explicitly approve conversion before moving that work through `impl`.
+
+Every `needs-context`, `needs-grill-me`, `ready-to-read`, `ready-to-convert`, `converted`, and `abandoned` tag requires a current `ATTENTION:` note. For `triage-source` cards, move `needs-context`, `needs-grill-me`, `ready-to-read`, and `ready-to-convert` states to `plan_review`; do not continue along the normal implementation lifecycle until the attention state is resolved or converted into separate cards. If the attention tag and board column conflict, fix the note or move the card before starting implementation.
+
 ## Documentation
 
 Update docs in the same card when the change affects product direction, data contracts, user workflow, review process, verification commands, or operational safety. Avoid duplicating the task board in `PLAN.md`; record durable direction there and keep short-lived status on the board.
