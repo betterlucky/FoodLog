@@ -22,9 +22,10 @@ import com.betterlucky.foodlog.util.CsvShareHelper
 import java.io.File
 
 class MainActivity : ComponentActivity() {
-    private val labelOcrReader: LabelOcrReader by lazy {
+    private val labelOcrReaderHolder = lazy {
         LabelOcrReader(this)
     }
+    private val labelOcrReader: LabelOcrReader by labelOcrReaderHolder
     private val viewModel: TodayViewModel by viewModels {
         TodayViewModelFactory((application as FoodLogApplication).repository, labelOcrReader)
     }
@@ -67,6 +68,13 @@ class MainActivity : ComponentActivity() {
         } else {
             Toast.makeText(this, "No journal file was selected.", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    override fun onDestroy() {
+        if (labelOcrReaderHolder.isInitialized()) {
+            labelOcrReader.close()
+        }
+        super.onDestroy()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

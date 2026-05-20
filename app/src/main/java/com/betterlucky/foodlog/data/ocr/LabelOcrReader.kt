@@ -8,16 +8,21 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+
+interface LabelImageReader {
+    suspend fun read(uri: Uri): LabelOcrResult
+}
 
 class LabelOcrReader(
     private val context: Context,
     private val parser: LabelNutritionParser = LabelNutritionParser(),
-) {
+) : LabelImageReader, AutoCloseable {
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-    suspend fun read(uri: Uri): LabelOcrResult =
+    override suspend fun read(uri: Uri): LabelOcrResult =
         withContext(Dispatchers.IO) {
             try {
                 val image = InputImage.fromFilePath(context, uri)
@@ -27,10 +32,16 @@ class LabelOcrReader(
                 } else {
                     LabelOcrResult.Read(parser.parse(text))
                 }
+            } catch (exception: CancellationException) {
+                throw exception
             } catch (exception: Exception) {
                 LabelOcrResult.Failed(exception.message ?: "Label text could not be read.")
             }
         }
+
+    override fun close() {
+        recognizer.close()
+    }
 }
 
 sealed interface LabelOcrResult {
