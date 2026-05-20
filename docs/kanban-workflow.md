@@ -34,6 +34,7 @@ Useful anchors:
 - `AGENTS.md`: agent working rules and project-specific safety notes.
 - `README.md`: short repo orientation and links for humans.
 - `docs/`: workflow checklists or deeper operational notes.
+- `docs/brain-dump-triage.md`: workflow for turning rough dumps into reviewable task candidates.
 
 ## Branch, PR, Review, Merge
 
