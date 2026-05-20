@@ -46,9 +46,41 @@ Do not require those headings before accepting a dump. If the input is messy, pr
    - `research`: needs exploration before implementation.
    - `parking_lot`: worth keeping, not current work.
    - `context`: useful background, not a task.
-6. Assign level, priority, tags, dependencies, and a suggested next status.
+6. Assign level, priority, attention tags, dependencies, and a suggested next status.
 7. Review for duplicates against the existing board and recently completed cards.
 8. Add approved tasks or return a triage report.
+
+## Attention States
+
+Use tags and notes for triage attention state before adding new kanban columns. A triage-source card can move through these states while the actual implementation candidates remain draft material until they are approved or created as separate cards.
+
+Core tags:
+
+- `triage-source`: raw dump has been captured and should not be treated as implementation-ready.
+- `needs-context`: triage is blocked on missing facts, links, device/account state, or a user preference.
+- `needs-grill-me`: the idea is too half-formed or risky to convert; run adversarial questions before task creation.
+- `ready-to-read`: research, analysis, or a triage report is ready for the user to review.
+- `ready-to-convert`: candidate cards are drafted and can be created after user approval or an explicit direct-creation rule.
+- `converted`: approved follow-up cards were created; keep source references on the generated cards.
+- `abandoned`: the dump or candidate was intentionally parked with no expected follow-up.
+
+`ATTENTION:` notes are the user-facing signal. Every `needs-context`, `needs-grill-me`, `ready-to-read`, `ready-to-convert`, `converted`, and `abandoned` state must have a current `ATTENTION:` note. The tag is the machine/filter signal; the note explains the state for the user and next agent. Update the tag and latest note in the same turn. If they disagree, pause implementation and fix the card state first.
+
+```md
+ATTENTION: <tag>
+Blocks: <yes|no>
+Ask: <specific question or review request>
+Ready to read: <summary/report/card ids, if applicable>
+Next agent action: <what to do if the user does not respond yet>
+```
+
+Use `Blocks: yes` when implementation or task creation cannot proceed without the requested user/reviewer action. Use `Blocks: no` when the note is informational, such as a ready-to-read report that does not block unrelated work or a converted/abandoned final state.
+
+Keep the ask narrow. `needs-context` should name the smallest missing input needed to continue and avoid bundled questions; split broad uncertainty into a `needs-grill-me` review instead. `ready-to-read` should point to the report or result and say whether it blocks implementation. `ready-to-convert` should list the candidate task titles or draft ids and wait for approval unless direct board creation is allowed by the Review Policy below: explicit user approval to add tasks, delegated low-risk workflow/tooling triage within the allowed tags, or purely administrative work. Low-risk direct creation means small docs, cleanup, or workflow/tooling follow-ups that do not change product behavior, data contracts, privacy rules, review policy, or the triage gates themselves. To avoid stale ghost tasks, the next agent should either create the approved cards, move the source back to `needs-context` with a narrow ask, or record why the candidates are being abandoned. `converted` should list generated task ids and confirm those cards link back to the source dump. `abandoned` should record the reason, no-follow-up decision, and whether deletion was explicitly requested.
+
+Moving a triage-source card to `plan_review` is appropriate when the next step is user or reviewer judgment rather than implementation, especially for `needs-grill-me`, `ready-to-read`, `ready-to-convert`, and blocked `needs-context` states. If the card is still in `todo` or `plan` when a blocking attention state is discovered, update the tag, add the `ATTENTION:` note, and move it to `plan_review` before asking for review or context so the board column and attention tag tell the same story. Do not move a triage-source card to `impl` merely because it contains plausible tasks; create or approve implementation cards first.
+
+An agent assigned a `triage-source` card is assigned triage, not implementation. If the dump contains a ready-looking checklist, the next action is still `ready-to-convert`, `converted`, `needs-context`, `needs-grill-me`, or `abandoned`, not direct product/code work on the source card.
 
 ## Model Roles
 
@@ -126,6 +158,7 @@ Mark a candidate as duplicate when it has the same intended outcome as an existi
 A triage report should include:
 
 - Raw dump reference.
+- Attention state and latest `ATTENTION:` note.
 - Summary of interpreted intent.
 - Candidate tasks.
 - Decisions needing user review.
@@ -135,6 +168,8 @@ A triage report should include:
 - Recommended next action.
 
 If tasks are added directly, the report should list the new task ids and any items held back for review.
+
+When a triage-source card is marked `converted`, verify both directions of traceability: the source card lists every generated task id, and each generated task references the source dump or source card id. Record that manual verification in the source card note. Direct-created tasks follow the same traceability rule.
 
 ## Candidate Follow-Up Tasks
 
