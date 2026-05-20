@@ -1653,15 +1653,11 @@ private fun HistorySuggestionPicker(
                     horizontalAlignment = Alignment.Start,
                 ) {
                     Text(
-                        text = "${suggestion.name} - ${suggestion.calories.formatAmount()} kcal",
+                        text = suggestion.promptText(),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(
-                        text = listOfNotNull(
-                            suggestion.quantityText(),
-                            suggestion.source.displayName(),
-                            "last ${suggestion.lastUsedDate}",
-                        ).joinToString(" - "),
+                        text = suggestion.contextText(),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -2649,6 +2645,22 @@ private fun LoggedFoodHistorySuggestion.quantityText(): String? =
     listOfNotNull(amount?.formatAmount(), unit)
         .joinToString(" ")
         .ifBlank { null }
+
+private fun LoggedFoodHistorySuggestion.promptText(): String {
+    val itemText = listOfNotNull(name, quantityText())
+        .joinToString(", ")
+        .ifBlank { name }
+    return "Did you mean: $itemText for ${calories.formatAmount()} kcal"
+}
+
+private fun LoggedFoodHistorySuggestion.contextText(): String =
+    listOfNotNull(
+        source.displayName(),
+        "last $lastUsedDate",
+        rawText.trim()
+            .takeIf { it.isNotEmpty() && !it.equals(name, ignoreCase = true) }
+            ?.let { "typed: $it" },
+    ).joinToString(" - ")
 
 private fun FoodItemSource.displayName(): String =
     when (this) {
