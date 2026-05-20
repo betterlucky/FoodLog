@@ -31,3 +31,6 @@ kanban-board/
 # Local device test artifacts
 device-backups/
 device-screenshots/
+
+# Local real-world label photos may contain EXIF/GPS metadata and personal shopping context.
+assets/labels/

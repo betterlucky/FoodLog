@@ -8,7 +8,7 @@ import com.betterlucky.foodlog.data.entities.AppSettingsEntity
 import com.betterlucky.foodlog.data.entities.ConfidenceLevel
 import com.betterlucky.foodlog.data.entities.FoodItemSource
 import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
-import com.betterlucky.foodlog.data.ocr.LabelOcrReader
+import com.betterlucky.foodlog.data.ocr.LabelImageReader
 import com.betterlucky.foodlog.data.ocr.LabelOcrResult
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.export.JournalExportOptions
@@ -20,6 +20,8 @@ import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.label.LabelShortcutBuilder
 import com.betterlucky.foodlog.domain.label.LabelShortcutItemSize
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +30,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
@@ -146,7 +147,7 @@ private fun Double.formatForMessage(): String =
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TodayViewModel(
     private val repository: FoodLogRepository,
-    private val labelOcrReader: LabelOcrReader? = null,
+    private val labelOcrReader: LabelImageReader? = null,
 ) : ViewModel() {
     private var currentLabelOcrJob: Job? = null
     private var labelOcrRequestId: Long = 0
@@ -259,8 +260,13 @@ class TodayViewModel(
         val requestId = ++labelOcrRequestId
         currentLabelOcrJob = viewModelScope.launch {
             _labelReview.value = LabelReviewState(facts = LabelNutritionFacts(rawText = ""), isProcessing = true)
-            val result = runCatching { reader.read(uri) }
-                .getOrElse { LabelOcrResult.Failed("Could not read label.") }
+            val result = try {
+                reader.read(uri)
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (_: Exception) {
+                LabelOcrResult.Failed("Could not read label.")
+            }
             if (!isActive || requestId != labelOcrRequestId || _labelReview.value == null) return@launch
             currentLabelOcrJob = null
             when (result) {
@@ -1700,7 +1706,7 @@ private fun Double.formatDraftAmount(): String =
 
 class TodayViewModelFactory(
     private val repository: FoodLogRepository,
-    private val labelOcrReader: LabelOcrReader? = null,
+    private val labelOcrReader: LabelImageReader? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
