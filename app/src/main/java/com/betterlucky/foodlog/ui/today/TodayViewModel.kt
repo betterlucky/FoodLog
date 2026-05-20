@@ -118,6 +118,7 @@ data class LoggingWizardPartDraft(
     val amount: String,
     val unit: String,
     val calories: String,
+    val caloriesEditedByUser: Boolean = false,
     val notes: String = "",
     val saveAsShortcut: Boolean = false,
     val shortcutItemSizeAmount: String = "",

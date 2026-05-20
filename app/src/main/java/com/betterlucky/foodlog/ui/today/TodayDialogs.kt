@@ -71,6 +71,7 @@ import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.data.repository.FoodLogRepository
 import com.betterlucky.foodlog.domain.export.JournalExportOptions
 import com.betterlucky.foodlog.domain.label.LabelInputMode
+import com.betterlucky.foodlog.domain.label.LabelPortionResolution
 import com.betterlucky.foodlog.domain.label.LabelPortionResolver
 import com.betterlucky.foodlog.domain.parser.TimeTextParser
 import java.time.Instant
@@ -1690,11 +1691,10 @@ private fun WizardPortionStep(
                 onPortionModeChanged(
                     currentIndex,
                     mode,
-                    currentPart.copy(
+                    currentPart.withResolvedLabelPortion(
                         amount = amountText,
                         unit = resolved.unit ?: currentPart.unit,
-                        calories = resolved.calories?.formatLabelNumber() ?: currentPart.calories,
-                        deferred = false,
+                        resolvedPortion = resolved,
                     ),
                 )
             },
@@ -1743,7 +1743,12 @@ private fun WizardCaloriesStep(
     OutlinedTextField(
         value = currentPart?.calories.orEmpty(),
         onValueChange = { value ->
-            currentPart?.let { onPartChanged(currentIndex, it.copy(calories = value, deferred = false)) }
+            currentPart?.let {
+                onPartChanged(
+                    currentIndex,
+                    it.copy(calories = value, caloriesEditedByUser = true, deferred = false),
+                )
+            }
         },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
@@ -2048,11 +2053,10 @@ private fun LabelWizardPortionStep(
                 val snapped = rawValue.snapToTenth()
                 val resolved = LabelPortionResolver.resolve(facts, inputMode, snapped.toDouble().formatLabelNumber())
                 onPartChanged(
-                    part.copy(
+                    part.withResolvedLabelPortion(
                         amount = snapped.toDouble().formatLabelNumber(),
                         unit = resolved.unit ?: itemUnit,
-                        calories = resolved.calories?.formatLabelNumber() ?: part.calories,
-                        deferred = false,
+                        resolvedPortion = resolved,
                     ),
                 )
             },
@@ -2064,11 +2068,10 @@ private fun LabelWizardPortionStep(
             onAmountChange = { value ->
                 val resolved = LabelPortionResolver.resolve(facts, inputMode, value)
                 onPartChanged(
-                    part.copy(
+                    part.withResolvedLabelPortion(
                         amount = value,
                         unit = resolved.unit ?: itemUnit,
-                        calories = resolved.calories?.formatLabelNumber() ?: part.calories,
-                        deferred = false,
+                        resolvedPortion = resolved,
                     ),
                 )
             },
@@ -2092,11 +2095,10 @@ private fun LabelWizardPortionStep(
                     val amountText = "${snapped.formatLabelNumber()}${range.unit}"
                     val resolved = LabelPortionResolver.resolve(facts, inputMode, amountText)
                     onPartChanged(
-                        part.copy(
+                        part.withResolvedLabelPortion(
                             amount = amountText,
                             unit = resolved.unit ?: range.unit,
-                            calories = resolved.calories?.formatLabelNumber() ?: part.calories,
-                            deferred = false,
+                            resolvedPortion = resolved,
                         ),
                     )
                 },
@@ -2111,11 +2113,10 @@ private fun LabelWizardPortionStep(
                 val amountText = measureAmountText(value, measureSliderRange?.unit ?: part.unit)
                 val resolved = LabelPortionResolver.resolve(facts, inputMode, amountText)
                 onPartChanged(
-                    part.copy(
+                    part.withResolvedLabelPortion(
                         amount = amountText,
                         unit = resolved.unit ?: part.unit,
-                        calories = resolved.calories?.formatLabelNumber() ?: part.calories,
-                        deferred = false,
+                        resolvedPortion = resolved,
                     ),
                 )
             },
@@ -2672,7 +2673,26 @@ private fun FoodItemSource.displayName(): String =
         FoodItemSource.ESTIMATE -> "estimate"
     }
 
-private fun Double.formatLabelNumber(): String =
+internal fun LoggingWizardPartDraft.withResolvedLabelPortion(
+    amount: String,
+    unit: String,
+    resolvedPortion: LabelPortionResolution,
+): LoggingWizardPartDraft {
+    val derivedCalories = resolvedPortion.calories?.formatLabelNumber()
+    return copy(
+        amount = amount,
+        unit = unit,
+        calories = when {
+            caloriesEditedByUser -> calories
+            derivedCalories != null -> derivedCalories
+            else -> ""
+        },
+        caloriesEditedByUser = caloriesEditedByUser,
+        deferred = false,
+    )
+}
+
+internal fun Double.formatLabelNumber(): String =
     if (rem(1.0) == 0.0) {
         toInt().toString()
     } else {
