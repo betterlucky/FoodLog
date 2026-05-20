@@ -59,7 +59,7 @@ After each completed board item:
 
 1. Commit the finished change on a `codex/` branch.
 2. Push the branch and open a PR.
-3. Decide whether CodeRabbit is required for this PR. CodeRabbit auto-review is disabled in `.coderabbit.yaml`; request it manually with `@coderabbitai review`, or `@coderabbitai full review` when a complete fresh pass is needed. If a requested CodeRabbit review does not respond within 15 minutes or reports quota/unavailability, treat it as unavailable and run the guard.
+3. Decide whether CodeRabbit is required for this PR. CodeRabbit auto-review is disabled in `.coderabbit.yaml`; request it manually with `@coderabbitai review`, or `@coderabbitai full review` when a complete fresh pass is needed. Skipped-review status comments and commit statuses are also disabled to avoid notification email noise, so silence from CodeRabbit is expected unless it was explicitly requested. If a requested CodeRabbit review does not respond within 15 minutes or reports quota/unavailability, treat it as unavailable and run the guard.
 4. If CodeRabbit is not requested, unavailable, or quota-limited and waiting would block progress, run the multi-review guard before merge. A deliberate no-CR decision or quota/unavailable response is enough to start the guard; do not wait indefinitely for CodeRabbit. Use all three reviewers where available because they catch different subsets of issues.
 5. Merge and deduplicate review findings, resolve valid comments, rerun the relevant verification, merge the PR, and only then move on to the next card.
 

@@ -1,7 +1,20 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
 reviews:
+  # Keep CodeRabbit manual-only because review quota/rate limits are tight.
+  # Trigger intentionally on a PR with:
+  #   @coderabbitai review
+  # or, when a fresh full pass is required:
+  #   @coderabbitai full review
+  # Suppress skipped-review walkthrough/status comments, which otherwise create
+  # GitHub email noise even when no review quota is spent.
+  review_status: false
+  commit_status: false
   auto_review:
     enabled: false
     auto_incremental_review: false
     drafts: false
+    # Empty opt-in filters mean labels/PR description text will not spend
+    # review quota; use the manual commands above instead.
     labels: []
     description_keyword: ""
