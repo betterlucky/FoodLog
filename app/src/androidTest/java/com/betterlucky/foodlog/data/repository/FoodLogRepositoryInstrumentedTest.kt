@@ -18,6 +18,7 @@ import com.betterlucky.foodlog.data.entities.ShortcutPortionMode
 import com.betterlucky.foodlog.data.entities.UserDefaultEntity
 import com.betterlucky.foodlog.domain.dailyclose.DailyCloseReadiness
 import com.betterlucky.foodlog.domain.dailyclose.dailyCloseReadiness
+import com.betterlucky.foodlog.domain.export.JournalExportOptions
 import com.betterlucky.foodlog.domain.intent.DeterministicIntentClassifier
 import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.util.DateTimeProvider
@@ -2509,6 +2510,45 @@ class FoodLogRepositoryInstrumentedTest {
                 hasDailyWeight = false,
             ),
         )
+    }
+
+    @Test
+    fun fullJournalExportReflectsCurrentRoomStateOnEachBuild() = runTest {
+        repository.seedDefaults()
+        val parsedResult = repository.submitText("tea") as FoodLogRepository.SubmitResult.Parsed
+        val rawEntryId = database.rawEntryDao().insert(
+            RawEntryEntity(
+                createdAt = now,
+                logDate = today,
+                consumedTime = localTime,
+                rawText = "old snack",
+                entryKind = EntryKind.TEXT,
+                status = RawEntryStatus.PARSED,
+            ),
+        )
+        database.foodItemDao().insert(foodItem(rawEntryId = rawEntryId, name = "Old snack", voided = true))
+        repository.upsertDailyWeight(
+            logDate = today,
+            weightKg = 82.6,
+            measuredTime = LocalTime.parse("07:15"),
+        )
+
+        val foodOnly = repository.buildFullJournalCsv(JournalExportOptions(includeWeight = false)).csv
+        val withWeight = repository.buildFullJournalCsv(JournalExportOptions(includeWeight = true)).csv
+
+        assertTrue(foodOnly.contains(",food,Tea,1 cup,25"))
+        assertTrue(!foodOnly.contains(",weight,weight"))
+        assertTrue(!foodOnly.contains("Old snack"))
+        assertTrue(withWeight.contains(",food,Tea,1 cup,25"))
+        assertTrue(withWeight.contains(",weight,weight,,,82.6,Recorded weight"))
+        assertTrue(!withWeight.contains("Old snack"))
+
+        repository.removeFoodItem(parsedResult.foodItemId)
+        val rebuilt = repository.buildFullJournalCsv(JournalExportOptions(includeWeight = true)).csv
+
+        assertTrue(!rebuilt.contains(",food,Tea,1 cup,25"))
+        assertTrue(!rebuilt.contains("Old snack"))
+        assertTrue(rebuilt.contains(",weight,weight,,,82.6,Recorded weight"))
     }
 
     private fun foodItem(
