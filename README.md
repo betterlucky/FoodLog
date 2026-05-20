@@ -2,7 +2,7 @@
 
 Private, local-first Android food logging app.
 
-The canonical implementation plan is in [PLAN.md](PLAN.md). Agent-specific working notes are in [AGENTS.md](AGENTS.md). The retained CSV file is sample fixture data and documents the legacy Health Monitor export format now imported by Lodestone.
+The canonical implementation plan is in [PLAN.md](PLAN.md). Agent-specific working notes are in [AGENTS.md](AGENTS.md). Historical Codex context is preserved in [docs/codex-handover.md](docs/codex-handover.md). The retained CSV file is sample fixture data and documents the legacy Health Monitor export format now imported by Lodestone.
 
 ## Data Hygiene
 

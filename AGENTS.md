@@ -21,6 +21,7 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 ## Working Rules
 
 - Read `PLAN.md` before making product changes; it is the canonical plan.
+- Read `docs/codex-handover.md` when starting from a fresh Codex project or when old thread context is missing.
 - Use the `FoodLog` kanban board for tracked work. Follow `docs/kanban-workflow.md` for next-card selection, lifecycle/status updates, review waits, and docs-update expectations.
 - Check whether a task is already implemented before changing code, and update docs when product direction, workflow, or verification expectations change.
 - Do not move a card to `done` until the done checklist in `docs/kanban-workflow.md` is complete.
