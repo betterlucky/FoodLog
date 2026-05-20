@@ -89,6 +89,71 @@ class LabelPortionResolverTest {
     }
 
     @Test
+    fun itemModeDoesNotTreatGenericServingCaloriesAsOneItem() {
+        val facts = LabelNutritionFacts(
+            rawText = "",
+            kcalPerServing = 135.0,
+            servingUnit = "serving",
+            servingAmount = 1.0,
+            servingItemUnit = "serving",
+        )
+
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.ITEMS, "1")
+
+        assertTrue(resolved.isValidAmount)
+        assertEquals("serving", resolved.unit)
+        assertEquals(null, resolved.calories)
+    }
+
+    @Test
+    fun parsedGenericServingCaloriesDoNotPrefillItemCalories() {
+        val facts = LabelNutritionParser().parse("Energy 135 kcal per serving")
+
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.ITEMS, "1")
+
+        assertTrue(facts.isPartial)
+        assertTrue(resolved.isValidAmount)
+        assertEquals("serving", resolved.unit)
+        assertEquals(null, resolved.calories)
+    }
+
+    @Test
+    fun itemModeDoesNotTreatGenericPortionCaloriesAsOneItem() {
+        val facts = LabelNutritionFacts(
+            rawText = "",
+            kcalPerServing = 135.0,
+            servingUnit = "2 portions",
+            servingAmount = 2.0,
+            servingItemUnit = "Portions",
+        )
+
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.ITEMS, "1")
+
+        assertTrue(resolved.isValidAmount)
+        assertEquals("Portions", resolved.unit)
+        assertEquals(null, resolved.calories)
+    }
+
+    @Test
+    fun itemModeCanUseGenericServingCaloriesWhenServingWeightIsKnown() {
+        val facts = LabelNutritionFacts(
+            rawText = "",
+            kcalPerServing = 135.0,
+            servingUnit = "serving",
+            servingAmount = 1.0,
+            servingItemUnit = "serving",
+            servingSizeGrams = 30.0,
+        )
+
+        val resolved = LabelPortionResolver.resolve(facts, LabelInputMode.ITEMS, "1")
+
+        assertTrue(resolved.isValidAmount)
+        assertEquals("serving", resolved.unit)
+        assertEquals(30.0, resolved.grams ?: 0.0, 0.001)
+        assertEquals(135.0, resolved.calories ?: 0.0, 0.001)
+    }
+
+    @Test
     fun drinkMeasureResolvesOnlyFromPer100ml() {
         val facts = LabelNutritionFacts(rawText = "", kcalPer100ml = 45.0, kcalPer100g = 100.0)
 

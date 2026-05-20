@@ -47,6 +47,18 @@ class LabelNutritionParserTest {
     }
 
     @Test
+    fun genericServingCaloriesWithoutWeightRemainPartial() {
+        val facts = parser.parse("Energy 95 kcal per serving")
+
+        assertEquals(95.0, facts.kcalPerServing ?: 0.0, 0.001)
+        assertEquals("serving", facts.servingUnit)
+        assertEquals(1.0, facts.servingAmount ?: 0.0, 0.001)
+        assertEquals("serving", facts.servingItemUnit)
+        assertEquals(null, facts.servingSizeGrams)
+        assertTrue(facts.isPartial)
+    }
+
+    @Test
     fun halfCanLabelExtractsServingCaloriesAndSize() {
         val facts = parser.parse(
             """

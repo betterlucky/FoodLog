@@ -145,7 +145,9 @@ object LabelPortionResolver {
         milliliters: Double?,
     ): Double? {
         val servingAmount = facts.servingAmount?.takeIf { it > 0.0 }
-        if (servingAmount != null && facts.kcalPerServing != null && facts.servingItemUnit != null) {
+        val concreteServing = facts.servingSizeGrams != null ||
+            facts.servingItemUnit?.let { !isGenericServingUnit(it) } == true
+        if (servingAmount != null && facts.kcalPerServing != null && concreteServing) {
             return amount / servingAmount * facts.kcalPerServing
         }
 
