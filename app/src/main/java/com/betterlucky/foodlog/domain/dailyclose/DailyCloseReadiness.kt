@@ -29,7 +29,7 @@ fun dailyCloseReadiness(
 fun DailyCloseReadiness.closePromptText(): String =
     when (this) {
         DailyCloseReadiness.NoFoodLogged -> "No export needed yet."
-        DailyCloseReadiness.ResolvePending -> "Resolve pending entries before the daily report."
+        DailyCloseReadiness.ResolvePending -> "Resolve pending entries before the Lodestone CSV."
         DailyCloseReadiness.ReadyToExport -> "Export the latest Lodestone CSV before closing this day."
         DailyCloseReadiness.AlreadyExported -> "Lodestone CSV is current."
     }
@@ -46,9 +46,9 @@ fun DailyStatusEntity?.legacyExportStatusText(): String {
 
 fun DailyStatusEntity?.legacyExportActionText(): String =
     if (this?.legacyExportedAt == null) {
-        "Export daily report"
+        "Export Lodestone CSV"
     } else {
-        "Re-export daily report"
+        "Re-export Lodestone CSV"
     }
 
 fun DailyStatusEntity?.legacyExportAuditText(): String? {

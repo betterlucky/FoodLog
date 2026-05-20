@@ -132,7 +132,7 @@ class DailyCloseReadinessTest {
 
         assertEquals("No export needed yet.", DailyCloseReadiness.NoFoodLogged.closePromptText())
         assertEquals(
-            "Resolve pending entries before the daily report.",
+            "Resolve pending entries before the Lodestone CSV.",
             DailyCloseReadiness.ResolvePending.closePromptText(),
         )
         assertEquals(
@@ -163,8 +163,8 @@ class DailyCloseReadinessTest {
 
     @Test
     fun exportActionTextDistinguishesFirstExportFromReExport() {
-        assertEquals("Export daily report", null.legacyExportActionText())
-        assertEquals("Re-export daily report", exportedStatus().legacyExportActionText())
+        assertEquals("Export Lodestone CSV", null.legacyExportActionText())
+        assertEquals("Re-export Lodestone CSV", exportedStatus().legacyExportActionText())
     }
 
     @Test

@@ -521,7 +521,7 @@ private fun TodayStatusSummary(
             }
             if (readiness != DailyCloseReadiness.NoFoodLogged) {
                 Text(
-                    text = "Daily report: ${dailyStatus.legacyExportStatusText()}",
+                    text = "Lodestone CSV: ${dailyStatus.legacyExportStatusText()}",
                     color = color,
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -696,7 +696,7 @@ internal fun DailyClosePrompt(
             if (readiness != DailyCloseReadiness.NoFoodLogged) {
                 val auditText = dailyStatus.legacyExportAuditText()
                 Text(
-                    text = "Daily report: ${dailyStatus.legacyExportStatusText()}",
+                    text = "Lodestone CSV: ${dailyStatus.legacyExportStatusText()}",
                     color = when (readiness) {
                         DailyCloseReadiness.ResolvePending -> MaterialTheme.colorScheme.onErrorContainer
                         DailyCloseReadiness.ReadyToExport -> MaterialTheme.colorScheme.onPrimaryContainer
