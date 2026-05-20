@@ -978,6 +978,7 @@ class FoodLogRepositoryInstrumentedTest {
         assertEquals(95.0, suggestion?.calories ?: 0.0, 0.001)
         assertEquals(1.0, suggestion?.amount ?: 0.0, 0.001)
         assertEquals("medium", suggestion?.unit)
+        assertEquals("apple", suggestion?.rawText)
         assertEquals(FoodItemSource.MANUAL_OVERRIDE, suggestion?.source)
         assertEquals(today, suggestion?.lastUsedDate)
         assertEquals(listOf("apple"), repository.observePendingEntriesForDate(today).first().map { it.rawText })
