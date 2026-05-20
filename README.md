@@ -33,7 +33,7 @@ Near-term work should polish the existing local daily workflow in this order: sh
 
 The active task board is `FoodLog` in the shared kanban service. Use `PLAN.md` as the source for product direction, then keep the board aligned as work is planned, implemented, reviewed, tested, and completed.
 
-See [docs/kanban-workflow.md](docs/kanban-workflow.md) for the repo workflow: how to choose the next card, when to update docs, how to handle review waits, and how local config stays out of git.
+See [docs/kanban-workflow.md](docs/kanban-workflow.md) for the repo workflow: how to choose the next card, when to update docs, how to handle review waits, and how local config stays out of git. See [docs/brain-dump-triage.md](docs/brain-dump-triage.md) for turning rough notes and tangled ideas into reviewable kanban tasks that feed back into the standard board lifecycle.
 
 Local kanban config lives in ignored files:
 
