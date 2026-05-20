@@ -469,13 +469,18 @@ class TodayViewModel(
                     _loggingWizard.value = null
                     _labelReview.value = null
                     clearInputDraft(session.logDate)
-                    when {
+                    val baseMessage = when {
                         result.foodItemIds.isNotEmpty() && result.pendingRawEntryId != null ->
                             "Logged ${result.foodItemIds.size} item(s); kept ${pendingParts.size} pending."
                         result.foodItemIds.isNotEmpty() -> "Logged ${result.foodItemIds.size} item(s)."
                         result.pendingRawEntryId != null -> "Kept pending."
                         else -> null
                     }
+                    val skippedShortcutMessage = result.skippedDefaultLookupKeys
+                        .distinct()
+                        .takeIf { it.isNotEmpty() }
+                        ?.joinToString(prefix = " Shortcut already existed: ", postfix = ".")
+                    listOfNotNull(baseMessage, skippedShortcutMessage).joinToString("").ifBlank { null }
                 }
                 FoodLogRepository.WizardSubmissionResult.InvalidInput -> "Add item names and calories before saving."
                 FoodLogRepository.WizardSubmissionResult.NotFound -> "That pending entry no longer exists."
@@ -1165,16 +1170,18 @@ class TodayViewModel(
             val resultMessage = when (result) {
                 is FoodLogRepository.ManualAddResult.Added -> {
                     onAdded()
-                    if (result.savedDefaultLookupKey == null) {
-                        "Logged item for ${result.logDate}"
-                    } else {
-                        "Logged item and saved shortcut '${name.trim()}'"
+                    when {
+                        result.savedDefaultLookupKey != null ->
+                            "Logged item and saved shortcut '${name.trim()}'"
+                        result.skippedDefaultLookupKey != null ->
+                            "Logged item for ${result.logDate}. Shortcut '${result.skippedDefaultLookupKey}' already existed and was left unchanged."
+                        else -> "Logged item for ${result.logDate}"
                     }
                 }
                 FoodLogRepository.ManualAddResult.InvalidInput -> "Add an item name and calories to log the item."
             }
             message.value = resultMessage
-            if (result == FoodLogRepository.ManualAddResult.InvalidInput) {
+            if (result !is FoodLogRepository.ManualAddResult.Added) {
                 onError(resultMessage)
             }
         }
@@ -1259,10 +1266,12 @@ class TodayViewModel(
             message.value = when (result) {
                 is FoodLogRepository.ManualResolveResult.Resolved -> {
                     onResolved()
-                    if (result.savedDefaultLookupKey == null) {
-                        "Resolved pending entry for ${result.logDate}"
-                    } else {
-                        "Resolved and saved shortcut '${name.trim()}'"
+                    when {
+                        result.savedDefaultLookupKey != null ->
+                            "Resolved and saved shortcut '${name.trim()}'"
+                        result.skippedDefaultLookupKey != null ->
+                            "Resolved pending entry for ${result.logDate}. Shortcut '${result.skippedDefaultLookupKey}' already existed and was left unchanged."
+                        else -> "Resolved pending entry for ${result.logDate}"
                     }
                 }
                 FoodLogRepository.ManualResolveResult.InvalidInput -> "Add an item name and calories to resolve the pending entry."
