@@ -30,6 +30,8 @@ import com.betterlucky.foodlog.domain.parser.DeterministicParser
 import com.betterlucky.foodlog.domain.parser.ParsedFoodPart
 import com.betterlucky.foodlog.util.DateTimeProvider
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -50,6 +52,7 @@ class FoodLogRepository(
     private val userDefaultDao = database.userDefaultDao()
     private val dailyStatusDao = database.dailyStatusDao()
     private val dailyWeightDao = database.dailyWeightDao()
+    private val defaultSaveMutex = Mutex()
 
     suspend fun seedDefaults() {
         if (appSettingsDao.getById() == null) {
@@ -672,6 +675,32 @@ class FoodLogRepository(
         return shortcutUpdateCandidateForFoodItem(existing)
     }
 
+    private suspend fun saveDefaultIfAbsent(default: UserDefaultEntity): Boolean = defaultSaveMutex.withLock {
+        if (userDefaultDao.insertIfMissing(default) != -1L) {
+            return@withLock true
+        }
+        if (userDefaultDao.getActiveDefault(default.lookupKey) != null) {
+            return@withLock false
+        }
+        return@withLock userDefaultDao.reactivateInactive(
+            lookupKey = default.lookupKey,
+            name = default.name,
+            calories = default.calories,
+            unit = default.unit,
+            notes = default.notes,
+            source = default.source,
+            confidence = default.confidence,
+            defaultAmount = default.defaultAmount,
+            portionMode = default.portionMode,
+            itemUnit = default.itemUnit,
+            itemSizeAmount = default.itemSizeAmount,
+            itemSizeUnit = default.itemSizeUnit,
+            kcalPer100g = default.kcalPer100g,
+            kcalPer100ml = default.kcalPer100ml,
+            nutritionBasisName = default.nutritionBasisName,
+        ) > 0
+    }
+
     suspend fun previewFoodItemDefaultEdit(
         id: Long,
         name: String,
@@ -738,7 +767,7 @@ class FoodLogRepository(
                     ?.trim()
                     ?.takeIf { it.isNotBlank() }
                     ?.also { trigger ->
-                        userDefaultDao.upsert(
+                        saveDefaultIfAbsent(
                             UserDefaultEntity(
                                 lookupKey = trigger.shortcutTrigger(),
                                 name = part.name.trim(),
@@ -939,7 +968,7 @@ class FoodLogRepository(
                     ?.trim()
                     ?.takeIf { it.isNotBlank() }
                     ?.also { trigger ->
-                        userDefaultDao.upsert(
+                        saveDefaultIfAbsent(
                             UserDefaultEntity(
                                 lookupKey = trigger.shortcutTrigger(),
                                 name = part.name.trim(),
@@ -1024,8 +1053,8 @@ class FoodLogRepository(
                 null
             }
 
-            val foodItemIds = if (parsedRawEntryId != null) {
-                val ids = insertReplacementParts(
+            val insertedParts = if (parsedRawEntryId != null) {
+                val inserted = insertReplacementParts(
                     rawEntryId = parsedRawEntryId,
                     logDate = logDate,
                     consumedTime = resolvedTime,
@@ -1034,9 +1063,9 @@ class FoodLogRepository(
                 )
                 rawEntryDao.updateStatus(parsedRawEntryId, RawEntryStatus.PARSED)
                 markFoodChanged(logDate)
-                ids
+                inserted
             } else {
-                emptyList()
+                InsertedReplacementParts()
             }
 
             val pendingRawEntryId = when {
@@ -1072,9 +1101,10 @@ class FoodLogRepository(
             }
 
             WizardSubmissionResult.Saved(
-                foodItemIds = foodItemIds,
+                foodItemIds = insertedParts.foodItemIds,
                 pendingRawEntryId = pendingRawEntryId,
                 logDate = logDate,
+                skippedDefaultLookupKeys = insertedParts.skippedDefaultLookupKeys,
             )
         }
 
@@ -1105,6 +1135,13 @@ class FoodLogRepository(
                 return@withTransaction ManualResolveResult.NotPending
             }
 
+            val defaultLookupKey = if (saveAsDefault) {
+                val parsed = parser.parse(rawEntry.rawText, rawEntry.logDate)
+                parsed.shortcutTrigger
+                    ?.takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
             val resolvedTime = consumedTime ?: rawEntry.consumedTime
             val foodItemId = foodItemDao.insert(
                 FoodItemEntity(
@@ -1131,30 +1168,26 @@ class FoodLogRepository(
             rawEntryDao.updateStatus(rawEntry.id, RawEntryStatus.PARSED)
             markFoodChanged(rawEntry.logDate)
 
-            val savedDefaultLookupKey = if (saveAsDefault) {
-                val parsed = parser.parse(rawEntry.rawText, rawEntry.logDate)
-                parsed.shortcutTrigger
-                    ?.takeIf { it.isNotBlank() }
-                    ?.also { trigger ->
-                        userDefaultDao.upsert(
-                            UserDefaultEntity(
-                                lookupKey = trigger,
-                                name = trimmedName,
-                                calories = calories,
-                                unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
-                                notes = normalizedNotes,
-                                defaultAmount = normalizedAmount,
-                            ),
-                        )
-                    }
-            } else {
-                null
+            val savedDefaultLookupKey = defaultLookupKey?.let { trigger ->
+                val saved = saveDefaultIfAbsent(
+                    UserDefaultEntity(
+                        lookupKey = trigger,
+                        name = trimmedName,
+                        calories = calories,
+                        unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
+                        notes = normalizedNotes,
+                        defaultAmount = normalizedAmount,
+                    ),
+                )
+                trigger.takeIf { saved }
             }
+            val skippedDefaultLookupKey = defaultLookupKey.takeIf { it != null && savedDefaultLookupKey == null }
 
             ManualResolveResult.Resolved(
                 foodItemId = foodItemId,
                 logDate = rawEntry.logDate,
                 savedDefaultLookupKey = savedDefaultLookupKey,
+                skippedDefaultLookupKey = skippedDefaultLookupKey,
             )
         }
 
@@ -1180,6 +1213,12 @@ class FoodLogRepository(
                 return@withTransaction ManualAddResult.InvalidInput
             }
 
+            val defaultLookupKey = if (saveAsDefault) {
+                trimmedName.shortcutTrigger()
+                    .takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
             val rawEntryId = rawEntryDao.insert(
                 RawEntryEntity(
                     createdAt = createdAt,
@@ -1208,30 +1247,27 @@ class FoodLogRepository(
             )
             markFoodChanged(logDate)
 
-            val savedDefaultLookupKey = if (saveAsDefault) {
-                trimmedName.shortcutTrigger()
-                    .takeIf { it.isNotBlank() }
-                    ?.also { trigger ->
-                        userDefaultDao.upsert(
-                            UserDefaultEntity(
-                                lookupKey = trigger,
-                                name = trimmedName,
-                                calories = calories,
-                                unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
-                                notes = normalizedNotes,
-                                defaultAmount = normalizedAmount,
-                            ),
-                        )
-                    }
-            } else {
-                null
+            val savedDefaultLookupKey = defaultLookupKey?.let { trigger ->
+                val saved = saveDefaultIfAbsent(
+                    UserDefaultEntity(
+                        lookupKey = trigger,
+                        name = trimmedName,
+                        calories = calories,
+                        unit = normalizedUnit ?: DEFAULT_PORTION_UNIT,
+                        notes = normalizedNotes,
+                        defaultAmount = normalizedAmount,
+                    ),
+                )
+                trigger.takeIf { saved }
             }
+            val skippedDefaultLookupKey = defaultLookupKey.takeIf { it != null && savedDefaultLookupKey == null }
 
             ManualAddResult.Added(
                 rawEntryId = rawEntryId,
                 foodItemId = foodItemId,
                 logDate = logDate,
                 savedDefaultLookupKey = savedDefaultLookupKey,
+                skippedDefaultLookupKey = skippedDefaultLookupKey,
             )
         }
 
@@ -1462,8 +1498,10 @@ class FoodLogRepository(
         consumedTime: LocalTime?,
         createdAt: java.time.Instant,
         parts: List<FoodItemEditReplacementPart>,
-    ): List<Long> =
-        parts.map { part ->
+    ): InsertedReplacementParts {
+        val createdDefaultLookupKeys = mutableSetOf<String>()
+        val skippedDefaultLookupKeys = mutableListOf<String>()
+        val foodItemIds = parts.map { part ->
             val foodItemId = foodItemDao.insert(
                 FoodItemEntity(
                     rawEntryId = rawEntryId,
@@ -1483,7 +1521,12 @@ class FoodLogRepository(
                 ?.shortcutTrigger()
                 ?.takeIf { it.isNotBlank() }
                 ?.also { trigger ->
-                    userDefaultDao.upsert(
+                    // A duplicate key in the same wizard save is already handled by
+                    // the first created shortcut; warn only for pre-existing shortcuts.
+                    if (trigger in createdDefaultLookupKeys) {
+                        return@also
+                    }
+                    val saved = saveDefaultIfAbsent(
                         UserDefaultEntity(
                             lookupKey = trigger,
                             name = part.name.trim(),
@@ -1493,9 +1536,19 @@ class FoodLogRepository(
                             defaultAmount = part.amount?.takeIf { it > 0.0 },
                         ),
                     )
+                    if (saved) {
+                        createdDefaultLookupKeys += trigger
+                    } else {
+                        skippedDefaultLookupKeys += trigger
+                    }
                 }
             foodItemId
         }
+        return InsertedReplacementParts(
+            foodItemIds = foodItemIds,
+            skippedDefaultLookupKeys = skippedDefaultLookupKeys,
+        )
+    }
 
     sealed interface SubmitResult {
         val rawEntryId: Long
@@ -1576,6 +1629,7 @@ class FoodLogRepository(
             val foodItemIds: List<Long>,
             val pendingRawEntryId: Long?,
             val logDate: LocalDate,
+            val skippedDefaultLookupKeys: List<String> = emptyList(),
         ) : WizardSubmissionResult
 
         data object InvalidInput : WizardSubmissionResult
@@ -1588,6 +1642,7 @@ class FoodLogRepository(
             val foodItemId: Long,
             val logDate: LocalDate,
             val savedDefaultLookupKey: String?,
+            val skippedDefaultLookupKey: String? = null,
         ) : ManualResolveResult
 
         data object InvalidInput : ManualResolveResult
@@ -1601,6 +1656,7 @@ class FoodLogRepository(
             val foodItemId: Long,
             val logDate: LocalDate,
             val savedDefaultLookupKey: String?,
+            val skippedDefaultLookupKey: String? = null,
         ) : ManualAddResult
 
         data object InvalidInput : ManualAddResult
@@ -1668,6 +1724,11 @@ class FoodLogRepository(
         val confidence: ConfidenceLevel,
         val notes: String?,
         val saveDefaultLookupKey: String? = null,
+    )
+
+    private data class InsertedReplacementParts(
+        val foodItemIds: List<Long> = emptyList(),
+        val skippedDefaultLookupKeys: List<String> = emptyList(),
     )
 
     data class ShortcutUpdateCandidate(
