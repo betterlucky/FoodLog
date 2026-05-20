@@ -22,7 +22,12 @@ data class LabelNutritionFacts(
     val prepared: Boolean = false,
 ) {
     val hasRequiredCalories: Boolean = kcalPer100g != null || kcalPer100ml != null || kcalPerServing != null
-    val isPartial: Boolean = !hasRequiredCalories || (kcalPerServing != null && servingUnit == null)
+    val isPartial: Boolean = !hasRequiredCalories ||
+        (
+            kcalPerServing != null &&
+                servingSizeGrams == null &&
+                servingItemUnit?.let(::isGenericServingUnit) != false
+            )
 }
 
 class LabelNutritionParser {
@@ -230,6 +235,9 @@ private data class ServingDescriptor(
     val unit: String,
     val label: String,
 )
+
+internal fun isGenericServingUnit(unit: String): Boolean =
+    unit.trim().lowercase().removeSuffix("s") in setOf("serving", "portion")
 
 private data class PackageQuantity(
     val grams: Double?,
