@@ -12,13 +12,32 @@ The output is planning material and draftable tasks. It must not override `PLAN.
 - Let different reviewers catch different failure modes without turning triage into a long ceremony.
 - Keep user review focused on product direction and ambiguous tradeoffs, not mechanical task formatting.
 
-## Intake Shape
+## Explicit Intake
+
+Ordinary kanban-linked chat is context, not automatic intake. Do not harvest rough ideas, testing notes, or tangents from normal conversation unless the user explicitly says the message is a brain dump, submits it through the board's Brain dump new-card mode, or attaches it to an existing `triage-source` card.
+
+If normal conversation starts to look like a separate dump but is not explicit, ask a short confirmation such as "Should I treat that as a brain dump?" when triage would create or park new work. Useful signals include multi-topic notes that are not a direct answer to the current task, testing feedback mixed with unrelated future ideas, phrases like "dump", "notes", "while I remember", or a message whose likely output would be several candidate cards. If the notes are clearly just context for the current active task, use them as task context and do not create a triage-source card.
+
+Explicit intake sources:
+
+- Web board Brain dump mode in the new-card dialog.
+- A card already tagged `triage-source`.
+- A direct user request such as "treat this as a brain dump" or "triage this dump".
+
+When intake is explicit, preserve the raw text before interpretation. The source card is not implementation-ready; it is a triage container that can later become `needs-context`, `needs-grill-me`, `ready-to-read`, `ready-to-convert`, `converted`, or `abandoned`.
+
+Do not rewrite the `Raw dump` field when inferring structure. Put interpretation, clusters, decisions, and proposed tasks in the triage report so the raw source remains auditable.
+
+## Source Template
 
 A dump can arrive as a chat message, a kanban note, or a dedicated triage card. Keep the raw dump attached to the triage record or referenced in the card notes.
 
-Useful optional headings:
+Use this source-card shape when creating a triage-source card:
 
 ```md
+Brain dump source:
+<short label or generated title>
+
 Raw dump:
 <unstructured text>
 
@@ -30,6 +49,11 @@ Nice to have:
 
 Known context:
 <links, files, prior task ids, PRs>
+
+Intake notes:
+- Source: <web board | chat | existing card/note>
+- Created by: <human name/handle or agent name>
+- Initial tags: `triage-source`, `brain-dump`, `triage`
 ```
 
 Do not require those headings before accepting a dump. If the input is messy, preserve it and infer structure later.
@@ -72,6 +96,9 @@ Blocks: <yes|no>
 Ask: <specific question or review request>
 Ready to read: <summary/report/card ids, if applicable>
 Next agent action: <what to do if the user does not respond yet>
+
+Ambiguity level:
+<low | medium | high, with one sentence explaining why>
 ```
 
 Use `Blocks: yes` when implementation or task creation cannot proceed without the requested user/reviewer action. Use `Blocks: no` when the note is informational, such as a ready-to-read report that does not block unrelated work or a converted/abandoned final state.
@@ -170,6 +197,54 @@ A triage report should include:
 If tasks are added directly, the report should list the new task ids and any items held back for review.
 
 When a triage-source card is marked `converted`, verify both directions of traceability: the source card lists every generated task id, and each generated task references the source dump or source card id. Record that manual verification in the source card note. Direct-created tasks follow the same traceability rule.
+
+## Triage Report Template
+
+```md
+Triage report for:
+<source card id/title>
+
+Attention state:
+<needs-context | needs-grill-me | ready-to-read | ready-to-convert | converted | abandoned>
+
+Card tags/status:
+<machine-readable tags to set and board status to use>
+
+ATTENTION:
+Blocks: <yes|no>
+Ask: <specific question or review request>
+Ready to read: <summary/report/card ids, if applicable>
+Next agent action: <what to do if the user does not respond yet>
+
+Interpreted intent:
+<short summary of what the dump seems to be about>
+
+Proposed candidate tasks (drafts, not created cards):
+- <draft title> — <goal, scope, level/priority, acceptance sketch, source reference>
+
+Accepted/generated tasks:
+- <task id/title after formal conversion, or "none yet">
+
+Decisions needing user review:
+- <decision or tradeoff, preferably phrased as yes/no or a short set of choices>
+
+Research or grill-me items:
+- <question, objection, assumption, invalidation path, or exploration need>
+
+Parking lot:
+- <idea worth keeping but not acting on now>
+
+Context only:
+- <background that should not become work>
+
+Duplicates or already done:
+- <existing card/doc/plan reference and decision>
+
+Recommended next action:
+<convert, ask for context, grill, read result, abandon, or park>
+```
+
+Candidate tasks in a triage report are user-facing proposals, not implementation work. They must not trigger downstream automation, implementation, or task assignment until direct board creation is allowed by the Review Policy or the user/reviewer approves conversion and separate task cards are created. If the report recommends `abandoned`, verify that the source card records the reason, no-follow-up decision, and whether any partial drafts or references should be deleted, retained as context, or left parked.
 
 ## Candidate Follow-Up Tasks
 
