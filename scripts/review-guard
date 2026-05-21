@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-RUNNER="${REVIEW_GUARD_RUNNER:-/Users/daveharris/dev/Kanban/skills/review-guard/scripts/review_guard.py}"
+if [ -n "${REVIEW_GUARD_RUNNER:-}" ]; then
+  RUNNER="$REVIEW_GUARD_RUNNER"
+elif [ -f "$HOME/.codex/skills/review-guard/scripts/review_guard.py" ]; then
+  RUNNER="$HOME/.codex/skills/review-guard/scripts/review_guard.py"
+elif [ -f "$HOME/.claude/skills/review-guard/scripts/review_guard.py" ]; then
+  RUNNER="$HOME/.claude/skills/review-guard/scripts/review_guard.py"
+else
+  RUNNER="/Users/daveharris/dev/Kanban/skills/review-guard/scripts/review_guard.py"
+fi
 
 usage() {
   cat <<'USAGE'
