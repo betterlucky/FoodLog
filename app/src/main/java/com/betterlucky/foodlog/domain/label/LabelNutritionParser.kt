@@ -31,16 +31,19 @@ data class LabelNutritionFacts(
 }
 
 class LabelNutritionParser {
-    private val servingUnitPattern = """cup|serving|sachet|slice|item|bar|portion|can|bag|pack|bottle|pot|tub"""
+    private val servingUnitPattern = """cup|serving|sachet|slice|item|bar|portion|can|bag|pack|bottle|pot|tub|fillet|finger|sausage"""
     private val servingAmountPattern = """(?:\d+(?:[.,]\d+)?|\d+\s*/\s*\d+|[ilt]\s*/\s*\d+|[½⅓⅔¼¾])"""
+    private val per100gPattern = Regex("""\bper\s*100\s*[gqao](?=\b|per|:)""")
+    private val per100mlPattern = Regex("""\bper\s*100\s*m[l1i](?=\b|per|:)""")
 
     fun parse(rawText: String): LabelNutritionFacts {
         val normalized = rawText
             .replace('\u00A0', ' ')
+            .normalizeOcrUnitCharacters()
             .replace(Regex("""[ \t]+"""), " ")
             .trim()
         val lower = normalized.lowercase()
-        val kcalPattern = Regex("""(\d+(?:[.,]\d+)?)\s*kcal""", RegexOption.IGNORE_CASE)
+        val kcalPattern = Regex("""(\d+(?:[.,]\d+)?)\s*k[ce]al""", RegexOption.IGNORE_CASE)
         val kcalValues = extractKcalValues(normalized, lower, kcalPattern)
         val serving = extractServing(lower)
         val servingSizeGrams = extractServingSizeGrams(lower)
@@ -80,7 +83,7 @@ class LabelNutritionParser {
         val lines = normalized.lines()
         val lineWith100UnitKcal = lines.firstOrNull { line ->
             val ll = line.lowercase()
-            (Regex("""100\s*g\b""").containsMatchIn(ll) || Regex("""100\s*ml\b""").containsMatchIn(ll)) &&
+            (per100gPattern.containsMatchIn(ll) || per100mlPattern.containsMatchIn(ll)) &&
                 kcalPattern.containsMatchIn(line)
         }
 
@@ -91,15 +94,17 @@ class LabelNutritionParser {
             val servingLine = lines.firstOrNull { line ->
                 if (line === lineWith100UnitKcal) return@firstOrNull false
                 val ll = line.lowercase()
-                !Regex("""100\s*(?:g|ml)\b""").containsMatchIn(ll) && kcalPattern.containsMatchIn(line)
+                !per100gPattern.containsMatchIn(ll) &&
+                    !per100mlPattern.containsMatchIn(ll) &&
+                    nonReferenceKcalValues(line, kcalPattern).isNotEmpty()
             }
-            val perServing = servingLine?.let { kcalPattern.find(it)?.groupValues?.get(1)?.toDoubleValue() }
+            val perServing = servingLine?.let { nonReferenceKcalValues(it, kcalPattern).firstOrNull() }
                 ?: run {
                     // Both values may be on the same 100g line (e.g. "450kcal 135kcal per 100g per serving")
-                    kcalPattern.findAll(lineWith100UnitKcal).mapNotNull { it.groupValues[1].toDoubleValue() }.drop(1).firstOrNull()
+                    nonReferenceKcalValues(lineWith100UnitKcal, kcalPattern).drop(1).firstOrNull()
                 }
-            val has100g = Regex("""100\s*g\b""").containsMatchIn(lineLower)
-            return if (!has100g && Regex("""100\s*ml\b""").containsMatchIn(lineLower)) {
+            val has100g = per100gPattern.containsMatchIn(lineLower)
+            return if (!has100g && per100mlPattern.containsMatchIn(lineLower)) {
                 KcalValues(per100ml = per100, perServing = perServing)
             } else {
                 KcalValues(per100g = per100, perServing = perServing)
@@ -107,9 +112,10 @@ class LabelNutritionParser {
         }
 
         // Fallback: positional approach \u2014 first kcal is per 100g if the document mentions it
-        val allKcal = kcalPattern.findAll(normalized).mapNotNull { it.groupValues[1].toDoubleValue() }.toList()
-        val has100gContext = Regex("""\bper\s*100\s*g\b""").containsMatchIn(lower)
-        val has100mlContext = Regex("""\bper\s*100\s*ml\b""").containsMatchIn(lower)
+        val allKcal = lines
+            .flatMap { line -> nonReferenceKcalValues(line, kcalPattern) }
+        val has100gContext = per100gPattern.containsMatchIn(lower)
+        val has100mlContext = per100mlPattern.containsMatchIn(lower)
         return when {
             has100mlContext -> KcalValues(per100ml = allKcal.getOrNull(0), perServing = allKcal.getOrNull(1))
             has100gContext -> KcalValues(per100g = allKcal.getOrNull(0), perServing = allKcal.getOrNull(1))
@@ -135,10 +141,20 @@ class LabelNutritionParser {
             }
         if (explicitServing != null) return explicitServing
 
-        return Regex("""\bper\s+(cup|slice|item|bar|can|pack|bottle|pot|tub|serving|portion)\b""")
+        Regex("""\bper\s+(cup|slice|item|bar|can|pack|bottle|pot|tub|serving|portion)\b""")
             .find(lower)
             ?.groupValues?.get(1)
-            ?.let { ServingDescriptor(amount = 1.0, unit = it, label = it) }
+            ?.let { return ServingDescriptor(amount = 1.0, unit = it, label = it) }
+
+        Regex("""\b(\d+(?:[.,]\d+)?)\s+(fingers?|fillets?|sausages?)\s*=\s*1\s*serving\b""")
+            .find(lower)
+            ?.let { match ->
+                val amount = match.groupValues[1].toDoubleValue() ?: return@let null
+                val unit = match.groupValues[2].singularItemUnit() ?: return@let null
+                return ServingDescriptor(amount = amount, unit = unit, label = formatServingUnit(amount, unit))
+            }
+
+        return null
     }
 
     private fun extractServingSizeGrams(lower: String): Double? {
@@ -156,6 +172,12 @@ class LabelNutritionParser {
             .find(lower)?.groupValues?.get(1)?.toDoubleValue()?.let { return it }
         // "per 30g serving" / "per 30 g serving"
         Regex("""\bper\s+(\d+(?:[.,]\d+)?)\s*g\s+(?:serving|portion)\b""")
+            .find(lower)?.groupValues?.get(1)?.toDoubleValue()?.let { return it }
+        // "per serving 30g" / "per slice approx. 9g" / "per slice (approx. 9g)"
+        Regex("""\bper\s+(?:$servingUnitPattern)\s*\(?\s*(?:approx\.?\s*)?(\d+(?:[.,]\d+)?)\s*g\)?""")
+            .find(lower)?.groupValues?.get(1)?.toDoubleValue()?.let { return it }
+        // "per serving 30g"
+        Regex("""\bper\s+serving\s+(\d+(?:[.,]\d+)?)\s*g\b""")
             .find(lower)?.groupValues?.get(1)?.toDoubleValue()?.let { return it }
         return null
     }
@@ -175,8 +197,15 @@ class LabelNutritionParser {
     }
 
     private fun parsePackageQuantity(lower: String): PackageQuantity {
+        val lines = lower.lines()
+        val nutritionStart = lines.indexOfFirst { line -> isNutritionSectionStart(line) }
+            .takeUnless { it == -1 }
+            ?: lines.size
+        val packageLines = lines.filterIndexed { index, line ->
+            index < nutritionStart || hasExplicitPackageQuantityCue(line)
+        }
         val multiplier = Regex("""(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l)\b\s*(bags?|packs?|bars?|bottles?|pots?|cans?)?""")
-            .find(lower)
+            .find(packageLines.joinToString("\n"))
         if (multiplier != null) {
             val count = multiplier.groupValues[1].toDoubleValue()
             val itemAmount = multiplier.groupValues[2].toDoubleValue()
@@ -192,36 +221,115 @@ class LabelNutritionParser {
             )
         }
 
-        val countWithUnit = Regex("""\b(\d+(?:[.,]\d+)?)\s*(bags?|packs?|bars?|bottles?|pots?|cans?)\b""")
-            .find(lower)
-        val nutrientLinePattern = Regex(
-            """^\s*(?:of\s+which\s+)?(saturates?|salt|sugars?|fat|protein|fibre|fiber|carbohydrate|carbs|energy)\b""",
-        )
+        val packageItemCount = extractPackageItemCount(packageLines)
         return PackageQuantity(
-            grams = lower.lineSequence()
+            grams = packageLines.asSequence()
                 .firstNotNullOfOrNull { line ->
-                    if (Regex("""per\s*100\s*g""").containsMatchIn(line) || nutrientLinePattern.containsMatchIn(line)) {
+                    if (per100gPattern.containsMatchIn(line) || (isNutritionTableLine(line) && !hasExplicitPackageQuantityCue(line))) {
                         null
                     } else {
-                        Regex("""\b(\d+(?:[.,]\d+)?)\s*(kg|g)\b""")
-                            .find(line)
-                            ?.let { it.groupValues[1].toDoubleValue()?.toGrams(it.groupValues[2]) }
+                        extractPackageWeightGrams(line)
                     }
                 },
-            milliliters = lower.lineSequence()
+            milliliters = packageLines.asSequence()
                 .firstNotNullOfOrNull { line ->
-                    if (Regex("""per\s*100\s*ml""").containsMatchIn(line) || nutrientLinePattern.containsMatchIn(line)) {
+                    if (per100mlPattern.containsMatchIn(line) || (isNutritionTableLine(line) && !hasExplicitPackageQuantityCue(line))) {
                         null
                     } else {
-                        Regex("""\b(\d+(?:[.,]\d+)?)\s*(ml|l)\b""")
-                            .find(line)
-                            ?.let { it.groupValues[1].toDoubleValue()?.toMilliliters(it.groupValues[2]) }
+                        extractPackageVolumeMilliliters(line)
                     }
                 },
-            itemCount = countWithUnit?.groupValues?.get(1)?.toDoubleValue(),
-            itemUnit = countWithUnit?.groupValues?.get(2)?.singularItemUnit(),
+            itemCount = packageItemCount?.first,
+            itemUnit = packageItemCount?.second,
         )
     }
+
+    private fun extractPackageItemCount(lines: List<String>): Pair<Double, String?>? =
+        lines.firstNotNullOfOrNull { line ->
+            if (isNutritionTableLine(line)) {
+                null
+            } else {
+                Regex("""\bcontains\s+(\d+(?:[.,]\d+)?)\s*(bags?|packs?|bars?|bottles?|pots?|cans?)\b""")
+                    .find(line)
+                    ?.let { match -> match.groupValues[1].toDoubleValue()?.let { it to match.groupValues[2].singularItemUnit() } }
+            }
+        }
+
+    private fun extractPackageWeightGrams(line: String): Double? {
+        Regex("""\b(?:net\s*(?:weight|wt)?|weight|contents?)[:\s]*(\d+(?:[.,]\d+)?)\s*(kg|g)\b""")
+            .find(line)
+            ?.let { return it.groupValues[1].toDoubleValue()?.toGrams(it.groupValues[2]) }
+        Regex("""^\s*(\d{2,4}(?:[.,]\d+)?)\s*(kg|g)\s*e\s*$""")
+            .find(line)
+            ?.let { return it.groupValues[1].toDoubleValue()?.toGrams(it.groupValues[2]) }
+        return Regex("""^\s*(\d{2,4}(?:[.,]\d+)?)\s*(kg|g)\s*(?:pack|pouch|bag|bottle|pot|tub|can|tray|box)\b""")
+            .find(line)
+            ?.let { it.groupValues[1].toDoubleValue()?.toGrams(it.groupValues[2]) }
+    }
+
+    private fun extractPackageVolumeMilliliters(line: String): Double? {
+        Regex("""\b(?:net\s*(?:volume|vol)?|volume|contents?)[:\s]*(\d+(?:[.,]\d+)?)\s*(ml|l)\b""")
+            .find(line)
+            ?.let { return it.groupValues[1].toDoubleValue()?.toMilliliters(it.groupValues[2]) }
+        Regex("""\b(\d{2,4}(?:[.,]\d+)?)\s*(ml|l)\s*(?:bottle|carton|can|pot|tub)\b""")
+            .find(line)
+            ?.let { return it.groupValues[1].toDoubleValue()?.toMilliliters(it.groupValues[2]) }
+        return Regex("""^\s*(\d{2,4}(?:[.,]\d+)?)\s*(ml|l)\s*e?\s*$""")
+            .find(line)
+            ?.let { it.groupValues[1].toDoubleValue()?.toMilliliters(it.groupValues[2]) }
+    }
+
+    private fun isNutritionTableLine(line: String): Boolean {
+        val trimmed = line.trim()
+        val nutrientLinePattern = Regex(
+            """^(?:of\s+)?(?:which\s+)?(?:saturates?|salt|sugars?|fat|protein|fibre|fiber|carbohydrate|carbs|energy)\b""",
+        )
+        return nutrientLinePattern.containsMatchIn(trimmed) ||
+            Regex("""^\d+(?:[.,]\d+)?\s*(?:g|kcal|kj)\b""").containsMatchIn(trimmed) ||
+            trimmed.contains("reference intake") ||
+            trimmed.contains("your ri")
+    }
+
+    private fun isNutritionSectionStart(line: String): Boolean =
+        line.contains("nutrition") ||
+            line.contains("nutition") ||
+            line.contains("typical values") ||
+            line.contains("okal values") ||
+            per100gPattern.containsMatchIn(line) ||
+            per100mlPattern.containsMatchIn(line)
+
+    private fun hasExplicitPackageQuantityCue(line: String): Boolean =
+        Regex("""\b(?:net|weight|contents?|pack|pouch|bag|bottle|pot|tub|can|tray|box|carton)\b""")
+            .containsMatchIn(line)
+
+    private fun nonReferenceKcalValues(
+        line: String,
+        kcalPattern: Regex,
+    ): List<Double> {
+        val lowerLine = line.lowercase()
+        return kcalPattern.findAll(line)
+            .mapNotNull { match ->
+                val value = match.groupValues[1].toDoubleValue() ?: return@mapNotNull null
+                value.takeUnless { isReferenceIntakeKcal(lowerLine, it) }
+            }
+            .toList()
+    }
+
+    private fun isReferenceIntakeKcal(
+        line: String,
+        value: Double,
+    ): Boolean =
+        line.contains("adults need") ||
+            (
+                value == 2000.0 &&
+                    (
+                        line.contains("reference intake") ||
+                            line.contains("average adult") ||
+                            line.contains("your ri") ||
+                            line.contains("%ri") ||
+                            Regex("""\b8400\s*k[j3]\b""").containsMatchIn(line)
+                        )
+                )
 }
 
 private data class KcalValues(
@@ -288,6 +396,12 @@ private fun String.toServingAmount(): Double? =
                     }
                 }
             }
+        }
+
+private fun String.normalizeOcrUnitCharacters(): String =
+    Regex("""\b(\d[\dOo]*)\s*(g|ml|k[ce]al)\b""", RegexOption.IGNORE_CASE)
+        .replace(this) { match ->
+            match.groupValues[1].replace('O', '0').replace('o', '0') + match.groupValues[2]
         }
 
 private fun String.toDoubleValue(): Double? =
