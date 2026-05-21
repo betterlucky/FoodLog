@@ -8,7 +8,7 @@ elif [ -f "$HOME/.codex/skills/review-guard/scripts/review_guard.py" ]; then
 elif [ -f "$HOME/.claude/skills/review-guard/scripts/review_guard.py" ]; then
   RUNNER="$HOME/.claude/skills/review-guard/scripts/review_guard.py"
 else
-  RUNNER="/Users/daveharris/dev/Kanban/skills/review-guard/scripts/review_guard.py"
+  RUNNER=""
 fi
 
 usage() {
@@ -27,8 +27,8 @@ USAGE
 }
 
 if [ ! -f "$RUNNER" ]; then
-  echo "review-guard runner not found: $RUNNER" >&2
-  echo "Set REVIEW_GUARD_RUNNER or install the Kanban review-guard skill." >&2
+  echo "review-guard runner not found." >&2
+  echo "Set REVIEW_GUARD_RUNNER or install the Kanban review-guard skill for Codex or Claude." >&2
   exit 1
 fi
 

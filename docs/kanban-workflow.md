@@ -120,7 +120,7 @@ Use the repo wrapper for normal guard runs:
 scripts/review-guard review --context "Short description of the change"
 ```
 
-`scripts/review-guard review` delegates to the shared Kanban review-guard backend. Use `scripts/review-guard doctor` to validate the project policy in `.codex/review-guard.json`, and `scripts/review-guard run --dry-run` to inspect configured local verification commands.
+`scripts/review-guard review` delegates to the shared Kanban review-guard backend. Use `scripts/review-guard doctor` to validate the project policy in `.codex/review-guard.json`, and `scripts/review-guard run --dry-run` to inspect configured local verification commands. The configured Gradle commands assume `JAVA_HOME` is already exported in the shell when this machine requires a specific JDK.
 
 The review backend captures raw reviewer output in a private `mktemp` directory under the system temp path, writes a merged JSON summary, and prints deduplicated findings. Include new files in the reviewed diff before running it; for untracked files, stage them or use `git add -N` so reviewers do not see docs without the implementation. The Gemini leg is called directly in sandboxed plan mode with its own timeout and `GEMINI_CLI_TRUST_WORKSPACE=true` for headless execution; do not use broad auto-approval, YOLO, or command-execution approval modes for automated guard review.
 
