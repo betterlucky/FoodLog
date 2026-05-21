@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUNNER="${REVIEW_GUARD_RUNNER:-/Users/daveharris/dev/Kanban/skills/review-guard/scripts/review_guard.py}"
+LEGACY_GUARD="${FOODLOG_LEGACY_GUARD:-scripts/guard-review.sh}"
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/review-guard <command> [options]
+
+Commands:
+  doctor              Validate .codex/review-guard.json
+  run [--dry-run]     Run configured local verification commands
+  review [options]    Run the FoodLog multi-review guard backend
+
+Compatibility:
+  Passing legacy guard options directly, such as --context or --lock-status,
+  is treated as `review <options>`.
+USAGE
+}
+
+if [ ! -f "$RUNNER" ]; then
+  echo "review-guard runner not found: $RUNNER" >&2
+  echo "Set REVIEW_GUARD_RUNNER or install the Kanban review-guard skill." >&2
+  exit 1
+fi
+
+if [ "$#" -eq 0 ]; then
+  usage
+  exit 0
+fi
+
+case "$1" in
+  -h|--help)
+    usage
+    ;;
+  doctor|run)
+    exec python3 "$RUNNER" "$@"
+    ;;
+  review)
+    shift
+    exec "$LEGACY_GUARD" "$@"
+    ;;
+  --range|--staged|--unstaged|--context|--output-dir|--settle-seconds|--lock-timeout|--review-timeout|--gemini-timeout|--max-chars|--lock-status|--clear-stale-lock|--skip-local|--skip-gemini)
+    exec "$LEGACY_GUARD" "$@"
+    ;;
+  *)
+    echo "unknown review-guard command: $1" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

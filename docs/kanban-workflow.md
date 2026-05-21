@@ -117,22 +117,24 @@ For implementation review fallback, do not rely on one replacement reviewer. Pre
 Use the repo wrapper for normal guard runs:
 
 ```sh
-scripts/guard-review.sh --context "Short description of the change"
+scripts/review-guard review --context "Short description of the change"
 ```
 
-The wrapper captures raw reviewer output in a private `mktemp` directory under the system temp path, writes a merged JSON summary, and prints deduplicated findings. Include new files in the reviewed diff before running it; for untracked files, stage them or use `git add -N` so reviewers do not see docs without the implementation. The Gemini leg is called directly in sandboxed plan mode with its own timeout and `GEMINI_CLI_TRUST_WORKSPACE=true` for headless execution; do not use broad auto-approval, YOLO, or command-execution approval modes for automated guard review.
+During the migration to the shared Kanban review-guard mechanism, `scripts/review-guard review` delegates to the local FoodLog backend in `scripts/guard-review.sh`. Use `scripts/review-guard doctor` to validate the project policy in `.codex/review-guard.json`, and `scripts/review-guard run --dry-run` to inspect configured local verification commands.
 
-Run the guard sequentially. oMLX model load/unload calls are shared machine state, so guard runs should take an interprocess lock such as `/tmp/omlx-guard.lock.d` before loading a local model. Do not assume concurrent sessions will queue safely at the API layer. Hold the lock through load, settle, review inference, unload, and cleanup; `scripts/guard-review.sh` uses `OMLX_LOCK_DIR` as a portable lock directory, records holder metadata, reclaims locks whose holder pid is dead, and releases the lock when the guarded block exits. Linux `flock` is not required for the repo wrapper, so fresh macOS agents do not need an extra Homebrew package to participate.
+The review backend captures raw reviewer output in a private `mktemp` directory under the system temp path, writes a merged JSON summary, and prints deduplicated findings. Include new files in the reviewed diff before running it; for untracked files, stage them or use `git add -N` so reviewers do not see docs without the implementation. The Gemini leg is called directly in sandboxed plan mode with its own timeout and `GEMINI_CLI_TRUST_WORKSPACE=true` for headless execution; do not use broad auto-approval, YOLO, or command-execution approval modes for automated guard review.
+
+Run the guard sequentially. oMLX model load/unload calls are shared machine state, so guard runs should take an interprocess lock such as `/tmp/omlx-guard.lock.d` before loading a local model. Do not assume concurrent sessions will queue safely at the API layer. Hold the lock through load, settle, review inference, unload, and cleanup; the FoodLog review backend uses `OMLX_LOCK_DIR` as a portable lock directory, records holder metadata, reclaims locks whose holder pid is dead, and releases the lock when the guarded block exits. Linux `flock` is not required for the repo wrapper, so fresh macOS agents do not need an extra Homebrew package to participate.
 
 To inspect another session's local-model guard run without taking the lock:
 
 ```sh
-scripts/guard-review.sh --lock-status
+scripts/review-guard --lock-status
 ```
 
 The status output includes the lock path, holder pid and liveness, reviewer source, model, reviewed diff label, acquisition time, age, missing metadata fields, process command, and raw holder metadata. While waiting for a busy lock, the wrapper prints this same holder summary about every 10 seconds. If the holder pid is dead, the next guard run will reclaim the lock automatically.
 
-For manual recovery, first run `scripts/guard-review.sh --lock-status`, then inspect any reported live pid with:
+For manual recovery, first run `scripts/review-guard --lock-status`, then inspect any reported live pid with:
 
 ```sh
 ps -p <pid> -o pid,ppid,command
@@ -141,7 +143,7 @@ ps -p <pid> -o pid,ppid,command
 Wait if the pid is alive and the command belongs to an active guard run. If the holder pid is dead, prefer the guarded cleanup command:
 
 ```sh
-scripts/guard-review.sh --clear-stale-lock
+scripts/review-guard --clear-stale-lock
 ```
 
 The cleanup command refuses unsafe lock paths, live pids, and holder metadata without a dead numeric pid. If the lock directory exists with no holder metadata, the command only clears it after the orphan-lock grace period, which defaults to 30 seconds and can be tuned with `GUARD_ORPHAN_LOCK_SECONDS`. If the holder metadata is corrupt, inspect running guard processes before any manual cleanup:
