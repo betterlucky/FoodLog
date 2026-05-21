@@ -120,11 +120,11 @@ Use the repo wrapper for normal guard runs:
 scripts/review-guard review --context "Short description of the change"
 ```
 
-During the migration to the shared Kanban review-guard mechanism, `scripts/review-guard review` delegates to the local FoodLog backend in `scripts/guard-review.sh`. Use `scripts/review-guard doctor` to validate the project policy in `.codex/review-guard.json`, and `scripts/review-guard run --dry-run` to inspect configured local verification commands.
+`scripts/review-guard review` delegates to the shared Kanban review-guard backend. Use `scripts/review-guard doctor` to validate the project policy in `.codex/review-guard.json`, and `scripts/review-guard run --dry-run` to inspect configured local verification commands.
 
 The review backend captures raw reviewer output in a private `mktemp` directory under the system temp path, writes a merged JSON summary, and prints deduplicated findings. Include new files in the reviewed diff before running it; for untracked files, stage them or use `git add -N` so reviewers do not see docs without the implementation. The Gemini leg is called directly in sandboxed plan mode with its own timeout and `GEMINI_CLI_TRUST_WORKSPACE=true` for headless execution; do not use broad auto-approval, YOLO, or command-execution approval modes for automated guard review.
 
-Run the guard sequentially. oMLX model load/unload calls are shared machine state, so guard runs should take an interprocess lock such as `/tmp/omlx-guard.lock.d` before loading a local model. Do not assume concurrent sessions will queue safely at the API layer. Hold the lock through load, settle, review inference, unload, and cleanup; the FoodLog review backend uses `OMLX_LOCK_DIR` as a portable lock directory, records holder metadata, reclaims locks whose holder pid is dead, and releases the lock when the guarded block exits. Linux `flock` is not required for the repo wrapper, so fresh macOS agents do not need an extra Homebrew package to participate.
+Run the guard sequentially. oMLX model load/unload calls are shared machine state, so guard runs should take an interprocess lock such as `/tmp/omlx-guard.lock.d` before loading a local model. Do not assume concurrent sessions will queue safely at the API layer. Hold the lock through load, settle, review inference, unload, and cleanup; the shared Kanban review backend uses `OMLX_LOCK_DIR` as a portable lock directory, records holder metadata, reclaims locks whose holder pid is dead, and releases the lock when the guarded block exits. Linux `flock` is not required for the repo wrapper, so fresh macOS agents do not need an extra Homebrew package to participate.
 
 To inspect another session's local-model guard run without taking the lock:
 
