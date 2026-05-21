@@ -181,6 +181,11 @@ class LabelNutritionParserTest {
             parser.parse("Energy 135kcal per 30g serving").servingSizeGrams ?: 0.0,
             0.001,
         )
+        assertEquals(
+            9.0,
+            parser.parse("Energy 112kcal per 100g\nper slice (approx. 9g)\n10kcal").servingSizeGrams ?: 0.0,
+            0.001,
+        )
     }
 
     @Test
@@ -190,5 +195,113 @@ class LabelNutritionParserTest {
         assertEquals(null, facts.kcalPer100g)
         assertEquals(null, facts.kcalPerServing)
         assertTrue(!facts.hasRequiredCalories)
+    }
+
+    @Test
+    fun referenceIntakeCaloriesAreIgnoredAsServingCalories() {
+        val facts = parser.parse(
+            """
+            Nutrition
+            per 100g
+            482kcal
+            per 40g portion %RI
+            193kcal
+            Reference intake of an average adult (8400kJ/2000kcal)
+            """.trimIndent(),
+        )
+
+        assertEquals(482.0, facts.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(193.0, facts.kcalPerServing ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun highCalorieServingIsPreserved() {
+        val facts = parser.parse(
+            """
+            Per 100g 262kcal
+            Per pack (400g) 1050kcal
+            """.trimIndent(),
+        )
+
+        assertEquals(262.0, facts.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(1050.0, facts.kcalPerServing ?: 0.0, 0.001)
+        assertEquals(400.0, facts.servingSizeGrams ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun packageSizeIgnoresNutritionTableGrams() {
+        val facts = parser.parse(
+            """
+            Typical values per 100g per 1/2 can
+            Energy 567kJ
+            135kcal 265kcal
+            Fat 6.7g 13.1g
+            of which saturates 1.9g 3.6g
+            Carbohydrate 3.2g 6.3g
+            """.trimIndent(),
+        )
+
+        assertEquals(null, facts.packageSizeGrams)
+        assertEquals(null, facts.packageItemCount)
+    }
+
+    @Test
+    fun ocrConfusedHundredAndCaloriesAreNormalized() {
+        val facts = parser.parse("Per 10Og: 1060kJ /25Okcal.")
+
+        assertEquals(250.0, facts.kcalPer100g ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun repeatedOcrOCharactersInAmountsAreNormalized() {
+        val weightFacts = parser.parse("Per 1OOg: 1883kJ / 450kcal.")
+        val volumeFacts = parser.parse("Per 10Oml: 190kJ / 45kcal.")
+
+        assertEquals(450.0, weightFacts.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(45.0, volumeFacts.kcalPer100ml ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun ocrKealTypoIsAcceptedAsKcal() {
+        val facts = parser.parse(
+            """
+            per 100g
+            310kcal
+            per serving
+            30g
+            93keal
+            """.trimIndent(),
+        )
+
+        assertEquals(310.0, facts.kcalPer100g ?: 0.0, 0.001)
+        assertEquals(93.0, facts.kcalPerServing ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun visiblePackWeightIsStillExtracted() {
+        val facts = parser.parse(
+            """
+            6 Pork & Bramley Apple Sausages
+            400ge
+            Nutrition Typical values per 100g Energy 978kJ 235kcal
+            """.trimIndent(),
+        )
+
+        assertEquals(400.0, facts.packageSizeGrams ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun packageWeightCanAppearAfterReorderedNutrientLine() {
+        val facts = parser.parse(
+            """
+            Fat 5g
+            400g pack
+            Nutrition
+            Typical values per 100g
+            Energy 978kJ 235kcal
+            """.trimIndent(),
+        )
+
+        assertEquals(400.0, facts.packageSizeGrams ?: 0.0, 0.001)
     }
 }
