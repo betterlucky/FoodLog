@@ -1,0 +1,17 @@
+name = "foodlog-ai"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Routes are ordered fallback lists of `provider:model`. The models below are placeholders:
+# pick your own. Providers: `anthropic`, `openai`, and `compat-<name>` (see README).
+[vars]
+ESTIMATE_ROUTE = "anthropic:claude-opus-5-5,openai:gpt-5.1"
+LABEL_ROUTE = "anthropic:claude-opus-5-5,openai:gpt-5.1"
+# COMPARE = "1"   # evaluation only: call every route entry and log a comparison line
+
+# Secrets (never put these in this file). Set each with `npx wrangler@4.165.0 secret put <NAME>`:
+#   APP_TOKEN            bearer token the iPhone app sends (rotate to revoke)
+#   ANTHROPIC_API_KEY    for `anthropic:` routes
+#   OPENAI_API_KEY       for `openai:` routes (optional OPENAI_BASE_URL overrides the endpoint)
+#   COMPAT_<NAME>_API_KEY / COMPAT_<NAME>_BASE_URL   for each `compat-<name>:` route
+# For local dev, put the same names in worker/.dev.vars (gitignored).
