@@ -131,3 +131,22 @@ final class FoodLogAIUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'estimate'")).firstMatch.exists)
     }
 }
+
+final class FoodLogBackfillUITests: XCTestCase {
+    func testFillInAddsProteinFromOneEstimatePerFood() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestInMemory", "-uiTestAIStub"]
+        app.launch()
+
+        let field = app.textFields["entryField"]
+        field.tap()
+        field.typeText("2 tea")
+        app.buttons["submitEntry"].tap()
+        XCTAssertTrue(app.buttons["fillNutrients"].waitForExistence(timeout: 3))
+        app.buttons["fillNutrients"].tap()
+        // The stub estimates 32 g protein for 420 kcal; two teas are 50 kcal.
+        XCTAssertTrue(app.staticTexts["3.8 g protein"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["fillNutrients"].exists)
+    }
+}

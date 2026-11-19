@@ -21,6 +21,20 @@ final class AppModel {
     /// The Worker client, or nil until an address and token are saved. AI is always optional.
     private(set) var aiClient: AIClient? = AISettings.client()
     var aiAvailable: Bool { aiClient != nil }
+    /// Logged rows (all days) still missing protein or fibre.
+    private(set) var rowsMissingNutrients = 0
+    /// Progress of a running "fill in protein and fibre" pass, or its last result.
+    private(set) var backfill: BackfillState?
+    private var backfillTask: Task<Void, Never>?
+
+    struct BackfillState: Equatable {
+        var done = 0
+        var total = 0
+        var rowsFilled = 0
+        var failed = 0
+        var running = true
+        var message: String?
+    }
 
     /// A short confirmation with an optional undo, shown after a one-tap log.
     var toast: Toast?
@@ -74,6 +88,7 @@ final class AppModel {
             shortcuts = try store.activeShortcuts()
             settings = try store.settings()
             canImportAndroidData = try !store.hasUserData
+            rowsMissingNutrients = try logging.rowsMissingNutrients()
         }
     }
 
@@ -242,6 +257,80 @@ final class AppModel {
     func readLabel(_ image: AIImage) async throws -> LabelReadResponse {
         guard let aiClient else { throw AIError.notConfigured }
         return try await aiClient.readLabel(image: image)
+    }
+
+    // MARK: Nutrient backfill
+
+    var backfillRunning: Bool { backfill?.running == true }
+
+    /// Fills protein and fibre from labels and shortcuts, then one AI estimate per remaining food.
+    /// Each food is saved as it completes, so stopping or failing part-way keeps what was done.
+    func startBackfill() {
+        guard backfillTask == nil else { return }
+        backfillTask = Task {
+            await runBackfill()
+            backfillTask = nil
+        }
+    }
+
+    func stopBackfill() { backfillTask?.cancel() }
+
+    private func runBackfill() async {
+        var plan = BackfillPlan.empty
+        perform { plan = try logging.backfillNutrientsLocally() }
+        var state = BackfillState(total: aiClient == nil ? 0 : plan.targets.count, rowsFilled: plan.filledLocally)
+        backfill = state
+        refresh()
+        var consecutiveFailures = 0
+        var stopReason: String?
+        var remaining = aiClient == nil ? [] : plan.targets[...]
+        while !remaining.isEmpty, stopReason == nil, !Task.isCancelled {
+            let batch = Array(remaining.prefix(2))
+            remaining = remaining.dropFirst(batch.count)
+            let results = await withTaskGroup(of: (BackfillTarget, Result<EstimateResponse, Error>).self) { group in
+                for target in batch {
+                    group.addTask { [self] in
+                        do { return (target, .success(try await estimate(text: target.description, image: nil, hints: nil))) }
+                        catch { return (target, .failure(error)) }
+                    }
+                }
+                return await group.reduce(into: []) { $0.append($1) }
+            }
+            for (target, result) in results {
+                state.done += 1
+                switch result {
+                case .success(let response):
+                    consecutiveFailures = 0
+                    let items: [EstimatedItem] = response.items
+                    let protein = items.allSatisfy { $0.proteinG != nil } ? items.compactMap { $0.proteinG }.reduce(0, +) : nil
+                    let fibre = items.allSatisfy { $0.fibreG != nil } ? items.compactMap { $0.fibreG }.reduce(0, +) : nil
+                    perform {
+                        state.rowsFilled += try logging.applyNutrientEstimate(
+                            target, proteinG: protein, fibreG: fibre, forKcal: items.map { $0.kcal }.reduce(0, +))
+                    }
+                case .failure(let error):
+                    state.failed += 1
+                    consecutiveFailures += 1
+                    if case AIError.unauthorized = error { stopReason = error.localizedDescription }
+                    if case AIError.network = error { stopReason = error.localizedDescription }
+                    if consecutiveFailures >= 4 { stopReason = "The AI service kept failing. Try again later." }
+                }
+            }
+            backfill = state
+            refresh()
+        }
+        state.running = false
+        if let stopReason {
+            state.message = "\(stopReason) Filled \(state.rowsFilled) items; the rest can be filled later."
+        } else if Task.isCancelled {
+            state.message = "Stopped. Filled \(state.rowsFilled) items; the rest can be filled later."
+        } else if aiClient == nil {
+            state.message = "Filled \(state.rowsFilled) items from labels and shortcuts. Set up AI estimates to fill the rest."
+        } else {
+            state.message = "Filled \(state.rowsFilled) items" + (state.failed > 0 ? "; \(state.failed) foods couldn't be estimated." : ".")
+        }
+        backfill = state
+        refresh()
     }
 
     // MARK: Import and export

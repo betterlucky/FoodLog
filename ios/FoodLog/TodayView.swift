@@ -75,11 +75,22 @@ struct TodayView: View {
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                if model.totals.itemCount > 0, model.totals.proteinG != nil,
-                   model.totals.itemsWithProtein < model.totals.itemCount {
-                    Text("Protein known for \(model.totals.itemsWithProtein) of \(model.totals.itemCount) items")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                if let backfill = model.backfill, backfill.running {
+                    ProgressView(value: Double(backfill.done), total: Double(max(backfill.total, 1))) {
+                        Text("Filling in protein and fibre… \(backfill.done) of \(backfill.total)").font(.caption)
+                    }
+                } else if model.totals.itemCount > 0, model.totals.itemsWithProtein < model.totals.itemCount,
+                          model.aiAvailable || model.totals.proteinG != nil {
+                    HStack {
+                        Text("Protein known for \(model.totals.itemsWithProtein) of \(model.totals.itemCount) items")
+                            .foregroundStyle(.tertiary)
+                        if model.aiAvailable {
+                            Button("Fill in") { model.startBackfill() }
+                                .buttonStyle(.borderless)
+                                .accessibilityIdentifier("fillNutrients")
+                        }
+                    }
+                    .font(.caption)
                 }
             }
             .padding(.vertical, 4)

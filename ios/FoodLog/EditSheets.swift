@@ -268,6 +268,30 @@ struct SettingsSheet: View {
                          + "Every estimate is a draft you check before it's logged.")
                 }
 
+                Section {
+                    if let backfill = model.backfill, backfill.running {
+                        ProgressView(value: Double(backfill.done), total: Double(max(backfill.total, 1))) {
+                            Text("Estimating \(backfill.done) of \(backfill.total) foods…")
+                        }
+                        Button("Stop", role: .destructive) { model.stopBackfill() }
+                    } else {
+                        Text(model.rowsMissingNutrients == 0
+                             ? "Every logged item has protein and fibre."
+                             : "\(model.rowsMissingNutrients) logged items have no protein or fibre yet.")
+                        Button("Fill in protein and fibre") { model.startBackfill() }
+                    }
+                    if let message = model.backfill?.message, model.backfill?.running == false {
+                        Text(message).font(.footnote)
+                    }
+                } header: {
+                    Text("Protein and fibre")
+                } footer: {
+                    Text(model.aiAvailable
+                         ? "Uses labels and shortcuts first, then one AI estimate per food, scaled to the calories you logged. "
+                           + "Calories never change, estimates are marked, and shortcuts learn the values for next time."
+                         : "Without AI estimates, only foods with label or shortcut data can be filled.")
+                }
+
                 Section("Journal export") {
                     Toggle("Include weight", isOn: Binding(
                         get: { model.settings.journalIncludeWeight },

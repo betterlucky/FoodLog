@@ -161,7 +161,7 @@ public final class LoggingService {
     public init(store: FoodLogStore) { self.store = store }
 
     private var clock: Clock { store.clock }
-    private var connection: SQLiteConnection { store.connection }
+    var connection: SQLiteConnection { store.connection }
 
     // MARK: Text submission
 
