@@ -12,7 +12,7 @@ Goal: prove the main daily handoff works from Room-backed app state, not from re
 
 1. Open today in FoodLog after the smoke script launches the app.
 2. Tap **Scan label**.
-3. Use **Take photo** or **Choose image** with a nutrition label that the local OCR reader can parse. If OCR is not available on the device, record that as the smoke blocker on the kanban task or PR rather than substituting a plain manual food row.
+3. Use **Take photo** or **Choose image** with a nutrition label that the local OCR reader can parse. If OCR is not available on the device, record that as the smoke blocker in the task notes or PR rather than substituting a plain manual food row.
 4. Complete **Log from label** with a clear product name, a valid portion, and calories.
 5. Confirm the food row appears in today's list and the day summary total includes it.
 6. Add one daily weight from the weight control.

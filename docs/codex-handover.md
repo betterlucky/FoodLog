@@ -1,6 +1,6 @@
 # Codex Handover
 
-This note preserves useful context from older Codex project threads that may stay attached to the previous `Documents/FoodLog` project entry. It is not the source of truth. Prefer current code, `PLAN.md`, `AGENTS.md`, the kanban board, and explicit user instructions when they disagree.
+This note preserves useful context from older Codex project threads that may stay attached to the previous `Documents/FoodLog` project entry. It is not the source of truth. Prefer current code, `PLAN.md`, `AGENTS.md`, and explicit user instructions when they disagree.
 
 ## Current Product Understanding
 
@@ -27,7 +27,7 @@ This note preserves useful context from older Codex project threads that may sta
 - The Android smoke script was made data-safety aware. Do not replace it with plain `adb uninstall`; preserve app data unless the user explicitly accepts data loss.
 - OCR label scanning is local/on-device via ML Kit and should remain conservative. Partial label success is better than guessed nutrition.
 - Room-backed history suggestions and live journal export are implemented and should be kept stable while quality improves.
-- Kanban workflow and review-guard workflow were added after the original implementation threads; they are now the active work management pattern.
+- ReviewGuard is available as optional standalone quality tooling.
 
 ## Parked Or Later Ideas
 
@@ -49,9 +49,7 @@ This note preserves useful context from older Codex project threads that may sta
 
 - Read `AGENTS.md` first for working rules.
 - Read `PLAN.md` for product direction and data contracts.
-- Use `docs/kanban-workflow.md` for board lifecycle, review waits, and done criteria.
 - Use `docs/android-smoke-scenario.md` after running `scripts/android-smoke.sh`.
-- Use `docs/brain-dump-triage.md` when turning rough user ideas into board tasks.
 
 ## Old Codex Thread Index
 
@@ -67,5 +65,4 @@ These old threads are useful background if they remain visible under the previou
 - Daily close/export trust.
 - Append-log/live journal export.
 - Launch flicker between today/tomorrow.
-- Kanban and fallback review setup.
-
+- Historical fallback review setup.

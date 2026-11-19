@@ -255,7 +255,7 @@ Prefer local unit tests for parser, export, totals, daily close, day-boundary, l
 
 ## Working Backlog
 
-The kanban board is the source of truth for active implementation tasks. Keep this section as product direction and backlog shape rather than a second task tracker. When adding, completing, or parking work, update the board first and adjust this plan only when product direction, scope, or verification expectations change.
+Kanban has been retired. Keep this section as product direction and backlog shape, and update it when product direction, scope, or verification expectations change.
 
 Recently completed local polish:
 
@@ -268,7 +268,7 @@ Recently completed local polish:
 Active themes:
 
 - Keep focused tests only where the behavior is active and risky.
-- Use the next kanban card to decide the immediate work, after checking whether the behavior is already implemented.
+- Use the current user request and repository state to decide immediate work, after checking whether the behavior is already implemented.
 
 Soon:
 

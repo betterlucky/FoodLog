@@ -28,7 +28,7 @@ USAGE
 
 if [ ! -f "$RUNNER" ]; then
   echo "review-guard runner not found." >&2
-  echo "Set REVIEW_GUARD_RUNNER or install the Kanban review-guard skill for Codex or Claude." >&2
+  echo "Set REVIEW_GUARD_RUNNER or install the standalone review-guard skill for Codex or Claude." >&2
   exit 1
 fi
 
@@ -44,7 +44,7 @@ case "$1" in
   doctor|run|review)
     exec python3 "$RUNNER" "$@"
     ;;
-  --range|--staged|--unstaged|--context|--output-dir|--settle-seconds|--lock-timeout|--review-timeout|--gemini-timeout|--max-chars|--lock-status|--clear-stale-lock|--skip-local|--skip-gemini)
+  --range|--staged|--unstaged|--context|--output-dir|--settle-seconds|--lock-timeout|--review-timeout|--antigravity-timeout|--max-chars|--lock-status|--clear-stale-lock|--skip-local|--skip-antigravity)
     exec python3 "$RUNNER" review "$@"
     ;;
   *)

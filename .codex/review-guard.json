@@ -35,7 +35,6 @@
       ".env",
       ".vercel/**",
       ".claude/**",
-      ".codex/kanban.json",
       "device-backups/**",
       "device-screenshots/**",
       "assets/labels/**"
@@ -44,7 +43,7 @@
   "models": {
     "primary": "codex",
     "fallback": [
-      "gemini",
+      "antigravity",
       "local-qwen"
     ]
   }

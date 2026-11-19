@@ -29,18 +29,9 @@ This repository contains the first Phase 1 implementation slice:
 
 Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, live journal export, and local history suggestion quality. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though journal fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
 
-## Kanban Workflow
+## Work Tracking
 
-The active task board is `FoodLog` in the shared kanban service. Use `PLAN.md` as the source for product direction, then keep the board aligned as work is planned, implemented, reviewed, tested, and completed.
-
-See [docs/kanban-workflow.md](docs/kanban-workflow.md) for the repo workflow: how to choose the next card, when to update docs, how to handle review waits, and how local config stays out of git. See [docs/brain-dump-triage.md](docs/brain-dump-triage.md) for turning rough notes and tangled ideas into reviewable kanban tasks that feed back into the standard board lifecycle.
-
-Local kanban config lives in ignored files:
-
-- `.codex/kanban.json`
-- `.claude/kanban.json`
-
-Global board auth and URL live outside the repo in `~/.claude/kanban-auth`.
+Kanban has been retired. Use the current user request, repository state, and `PLAN.md` for product direction and work selection. ReviewGuard remains available as optional standalone quality tooling.
 
 ## Local Development
 
