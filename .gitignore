@@ -30,3 +30,11 @@ device-screenshots/
 
 # Local real-world label photos may contain EXIF/GPS metadata and personal shopping context.
 assets/labels/
+
+# Swift/Xcode build output
+ios/**/.build/
+ios/**/.swiftpm/
+ios/build/
+ios/local/
+*.xcuserstate
+xcuserdata/
