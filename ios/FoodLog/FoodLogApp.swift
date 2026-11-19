@@ -24,6 +24,15 @@ struct FoodLogApp: App {
                 guard model == nil, startupError == nil else { return }
                 do {
                     model = try AppModel.live()
+                    #if DEBUG
+                    // UI tests run the Log food intent's real perform() to check it reaches the open app.
+                    if let index = CommandLine.arguments.firstIndex(of: "-uiTestIntentText"),
+                       index + 1 < CommandLine.arguments.count {
+                        var intent = LogFoodIntent()
+                        intent.text = CommandLine.arguments[index + 1]
+                        _ = try await intent.perform()
+                    }
+                    #endif
                 } catch {
                     startupError = String(describing: error)
                 }

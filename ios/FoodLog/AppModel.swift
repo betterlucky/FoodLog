@@ -51,23 +51,16 @@ final class AppModel {
         self.logging = LoggingService(store: store)
         self.selectedDate = (try? store.currentFoodDate()) ?? store.clock.today
         refresh()
+        // Siri, Shortcuts or the Action Button may log while the app is open.
+        NotificationCenter.default.addObserver(forName: .foodLogDataChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
     }
 
     typealias ResolveRequest = ResolutionContext
 
     static func live() throws -> AppModel {
-        #if DEBUG
-        if CommandLine.arguments.contains("-uiTestInMemory") {
-            let store = try FoodLogStore.inMemory()
-            try store.seedDefaults()
-            return AppModel(store: store)
-        }
-        #endif
-        let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask,
-                                                    appropriateFor: nil, create: true)
-        let store = try FoodLogStore(path: documents.appendingPathComponent("foodlog.sqlite").path)
-        try store.seedDefaults()
-        let model = AppModel(store: store)
+        let model = AppModel(store: try FoodLogServices.shared().store)
         #if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "-openDate"), index + 1 < CommandLine.arguments.count,
            let date = LocalDate(iso: CommandLine.arguments[index + 1]) {
@@ -85,7 +78,11 @@ final class AppModel {
             pending = try store.pendingEntries(for: selectedDate)
             totals = try store.dayTotals(for: selectedDate)
             weight = try store.dailyWeight(for: selectedDate)
-            shortcuts = try store.activeShortcuts()
+            let latest = try store.activeShortcuts()
+            if latest.map(\.lookupKey) != shortcuts.map(\.lookupKey) || latest.map(\.name) != shortcuts.map(\.name) {
+                FoodLogAppShortcuts.updateAppShortcutParameters()
+            }
+            shortcuts = latest
             settings = try store.settings()
             canImportAndroidData = try !store.hasUserData
             rowsMissingNutrients = try logging.rowsMissingNutrients()

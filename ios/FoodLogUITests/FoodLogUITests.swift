@@ -150,3 +150,13 @@ final class FoodLogBackfillUITests: XCTestCase {
         XCTAssertFalse(app.buttons["fillNutrients"].exists)
     }
 }
+
+final class FoodLogIntentUITests: XCTestCase {
+    func testLogFoodIntentUpdatesTheOpenApp() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestInMemory", "-uiTestIntentText", "2 tea"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Tea"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["dayTotal"].label, "50 kcal")
+    }
+}
