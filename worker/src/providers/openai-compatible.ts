@@ -52,7 +52,7 @@ export function createOpenAICompatibleAdapter(config: CompatConfig): ProviderAda
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(45_000),
+          signal: AbortSignal.timeout(30_000),
         });
       } catch (err) {
         if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {

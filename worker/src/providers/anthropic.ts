@@ -17,7 +17,7 @@ export function createAnthropicAdapter(options: { fetch?: FetchLike } = {}): Pro
       const client = new Anthropic({
         apiKey,
         maxRetries: 0,
-        timeout: 45_000,
+        timeout: 30_000,
         ...(options.fetch ? { fetch: options.fetch as unknown as typeof fetch } : {}),
       });
 

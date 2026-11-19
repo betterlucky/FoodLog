@@ -5,9 +5,11 @@ compatibility_date = "2026-10-01"
 # Routes are ordered fallback lists of `provider:model`. The models below are placeholders:
 # pick your own. Providers: `anthropic`, `openai`, and `compat-<name>` (see README).
 [vars]
-# Gemini via Google's OpenAI-compatible endpoint; the alias is a fallback if a pinned id is retired.
-ESTIMATE_ROUTE = "compat-gemini:gemini-3.6-flash,compat-gemini:gemini-flash-latest"
-LABEL_ROUTE = "compat-gemini:gemini-3.6-flash,compat-gemini:gemini-flash-latest"
+# Gemini via Google's OpenAI-compatible endpoint (compared 2026-11-19 on real meals and labels):
+# 4 Hydrogen gave the closest estimates but was often overloaded; 3.5 Flash-Lite was always up,
+# fast and exact on labels, but estimates ran ~20% high. Each attempt times out after 30 s.
+ESTIMATE_ROUTE = "compat-gemini:gemini-4-hydrogen,compat-gemini:gemini-3.5-flash-lite"
+LABEL_ROUTE = "compat-gemini:gemini-3.5-flash-lite,compat-gemini:gemini-4-hydrogen"
 COMPAT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 # COMPARE = "1"   # evaluation only: call every route entry and log a comparison line
 
