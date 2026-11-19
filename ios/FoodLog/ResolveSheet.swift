@@ -16,8 +16,8 @@ struct PartForm: Identifiable {
     var amount = ""
     var unit = ""
     var calories = ""
-    var protein = ""
-    var fibre = ""
+    /// Text per tracked nutrient; blank means unknown.
+    var nutrients: [Nutrient: String] = [:]
     var notes = ""
     var saveAsShortcut = false
     var suggestions: [FoodHistorySuggestion] = []
@@ -40,8 +40,7 @@ struct PartForm: Identifiable {
         amount = draft.amount.map(Format.number) ?? ""
         unit = draft.unit ?? ""
         calories = draft.calories > 0 ? Format.number(draft.calories) : ""
-        protein = draft.proteinG.map(Format.number) ?? ""
-        fibre = draft.fibreG.map(Format.number) ?? ""
+        for nutrient in Nutrient.allCases { nutrients[nutrient] = draft[nutrient].map(Format.number) ?? "" }
         notes = draft.notes ?? ""
     }
 
@@ -83,19 +82,19 @@ struct PartForm: Identifiable {
             draft.unit = unit
             if draft.amount != estimate.amount || unit != (estimate.unit ?? "") { draft.grams = nil }
             draft.calories = Format.parseNumber(calories) ?? 0
-            draft.proteinG = Format.parseNumber(protein)
-            draft.fibreG = Format.parseNumber(fibre)
-            if draft.proteinG != estimate.proteinG || draft.fibreG != estimate.fibreG { draft.nutrientSource = nil }
+            applyNutrients(to: &draft)
+            if Nutrient.allCases.contains(where: { draft[$0] != estimate[$0] }) { draft.nutrientSource = nil }
             draft.notes = notes
             return draft
         }
         var draft = fromShortcut ?? FoodDraft()
-        let edited = FoodDraft(
+        var edited = FoodDraft(
             name: name, amount: Format.parseNumber(amount), unit: unit, calories: Format.parseNumber(calories) ?? 0,
-            proteinG: Format.parseNumber(protein), fibreG: Format.parseNumber(fibre), notes: notes)
+            notes: notes)
+        applyNutrients(to: &edited)
         if let original = fromShortcut,
            original.name == edited.name, original.amount == edited.amount, (original.unit ?? "") == unit,
-           original.calories == edited.calories, original.proteinG == edited.proteinG, original.fibreG == edited.fibreG {
+           original.calories == edited.calories, Nutrient.allCases.allSatisfy({ original[$0] == edited[$0] }) {
             draft.notes = edited.notes
             return draft
         }
@@ -105,12 +104,16 @@ struct PartForm: Identifiable {
         draft.grams = nil
         draft.milliliters = nil
         draft.calories = edited.calories
-        draft.proteinG = edited.proteinG
-        draft.fibreG = edited.fibreG
+        draft.copyNutrients(from: edited, \.draft)
         draft.notes = edited.notes
         draft.nutrientSource = nil
         if fromShortcut != nil { draft.source = .manualOverride }
         return draft
+    }
+
+    /// Writes the typed nutrient values (blank as unknown) into a draft.
+    func applyNutrients(to draft: inout FoodDraft) {
+        for nutrient in Nutrient.allCases { draft[nutrient] = Format.parseNumber(nutrients[nutrient] ?? "") }
     }
 
     var isValid: Bool {
@@ -170,7 +173,7 @@ struct ResolveSheet: View {
                             model.removePending(pendingId)
                             dismiss()
                         } label: {
-                            Label("Discard entry", systemImage: "trash").labelStyle(.titleAndIcon)
+                            Text("Discard entry")
                         }
                         .tint(.red)
                     }
@@ -331,27 +334,17 @@ private struct PartSection: View {
                 }
             }
         }
-        TextField("Name", text: $form.name)
+        TextRow(label: "Name", text: $form.name)
             .onChange(of: form.name) { _, name in
                 if isManual, form.suggestions.isEmpty || name.count > 2 {
                     form.suggestions = model.suggestions(for: name)
                 }
             }
-        HStack {
-            TextField("Amount", text: $form.amount).keyboardType(.decimalPad)
-            TextField("Unit (g, slice, bowl…)", text: $form.unit)
-        }
-        HStack {
-            TextField("Calories", text: $form.calories).keyboardType(.decimalPad)
-            Text("kcal").foregroundStyle(.secondary)
-        }
-        DisclosureGroup("Protein, fibre and notes", isExpanded: $showNutrients) {
-            HStack {
-                TextField("Protein", text: $form.protein).keyboardType(.decimalPad)
-                Text("g").foregroundStyle(.secondary)
-                TextField("Fibre", text: $form.fibre).keyboardType(.decimalPad)
-                Text("g").foregroundStyle(.secondary)
-            }
+        TextRow(label: "Amount", text: $form.amount, numeric: true)
+        TextRow(label: "Unit", text: $form.unit, placeholder: "g, slice, bowl…")
+        NumberField(label: "Calories", text: $form.calories, unit: "kcal")
+        DisclosureGroup(Nutrient.listName(adding: ["notes"]), isExpanded: $showNutrients) {
+            NutrientFields(values: $form.nutrients)
             TextField("Notes", text: $form.notes, axis: .vertical)
         }
         if form.fromShortcut == nil {

@@ -29,21 +29,11 @@ struct EditFoodSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $form.name)
-                    HStack {
-                        TextField("Amount", text: $form.amount).keyboardType(.decimalPad)
-                        TextField("Unit", text: $form.unit)
-                    }
-                    HStack {
-                        TextField("Calories", text: $form.calories).keyboardType(.decimalPad)
-                        Text("kcal").foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        TextField("Protein", text: $form.protein).keyboardType(.decimalPad)
-                        Text("g").foregroundStyle(.secondary)
-                        TextField("Fibre", text: $form.fibre).keyboardType(.decimalPad)
-                        Text("g").foregroundStyle(.secondary)
-                    }
+                    TextRow(label: "Name", text: $form.name)
+                    TextRow(label: "Amount", text: $form.amount, numeric: true)
+                    TextRow(label: "Unit", text: $form.unit, placeholder: "g, slice, bowl…")
+                    NumberField(label: "Calories", text: $form.calories, unit: "kcal")
+                    NutrientFields(values: $form.nutrients)
                     TextField("Notes", text: $form.notes, axis: .vertical)
                 }
                 Section {
@@ -74,14 +64,14 @@ struct EditFoodSheet: View {
                         model.removeItem(item.id)
                         dismiss()
                     } label: {
-                        Label("Delete", systemImage: "trash").labelStyle(.titleAndIcon)
+                        Text("Delete")
                     }
                     .tint(.red)
                 }
                 if let onLogAgain {
                     ToolbarItem(placement: .bottomBar) {
                         Button(action: onLogAgain) {
-                            Label("Log again", systemImage: "arrow.uturn.forward").labelStyle(.titleAndIcon)
+                            Text("Log again")
                         }
                     }
                 }
@@ -102,11 +92,8 @@ struct EditFoodSheet: View {
         draft.amount = Format.parseNumber(form.amount)
         draft.unit = form.unit
         draft.calories = Format.parseNumber(form.calories) ?? 0
-        let protein = Format.parseNumber(form.protein)
-        let fibre = Format.parseNumber(form.fibre)
-        if protein != item.proteinG || fibre != item.fibreG { draft.nutrientSource = nil }
-        draft.proteinG = protein
-        draft.fibreG = fibre
+        form.applyNutrients(to: &draft)
+        if Nutrient.allCases.contains(where: { draft[$0] != item[$0] }) { draft.nutrientSource = nil }
         draft.notes = form.notes
         let consumed = hasTime ? LocalTime(dateValue: time).truncatedToMinutes : nil
         if model.update(item, with: draft, time: consumed, updateShortcut: updateShortcut) { dismiss() }
@@ -118,8 +105,7 @@ struct ShortcutSheet: View {
     @State var shortcut: Shortcut
     @State private var calories: String
     @State private var amount: String
-    @State private var protein: String
-    @State private var fibre: String
+    @State private var nutrients: [Nutrient: String] = [:]
     @Environment(\.dismiss) private var dismiss
 
     init(model: AppModel, shortcut: Shortcut) {
@@ -127,31 +113,22 @@ struct ShortcutSheet: View {
         _shortcut = State(initialValue: shortcut)
         _calories = State(initialValue: Format.number(shortcut.calories))
         _amount = State(initialValue: shortcut.defaultAmount.map(Format.number) ?? "")
-        _protein = State(initialValue: shortcut.proteinPerPortion.map(Format.number) ?? "")
-        _fibre = State(initialValue: shortcut.fibrePerPortion.map(Format.number) ?? "")
+        _nutrients = State(initialValue: Dictionary(uniqueKeysWithValues: Nutrient.allCases.map {
+            ($0, shortcut[keyPath: $0.shortcutPerPortion].map(Format.number) ?? "")
+        }))
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $shortcut.name)
-                    HStack {
-                        TextField("Amount", text: $amount).keyboardType(.decimalPad)
-                        TextField("Unit", text: $shortcut.unit)
-                    }
-                    HStack {
-                        TextField("Calories", text: $calories).keyboardType(.decimalPad)
-                        Text(shortcut.portionMode == .plain ? "kcal" : "kcal per \(shortcut.unit)")
-                            .foregroundStyle(.secondary)
-                    }
+                    TextRow(label: "Name", text: $shortcut.name)
+                    TextRow(label: "Amount", text: $amount, numeric: true)
+                    TextRow(label: "Unit", text: $shortcut.unit)
+                    NumberField(label: "Calories", text: $calories,
+                                unit: shortcut.portionMode == .plain ? "kcal" : "kcal per \(shortcut.unit)")
                     if shortcut.portionMode == .plain {
-                        HStack {
-                            TextField("Protein", text: $protein).keyboardType(.decimalPad)
-                            Text("g").foregroundStyle(.secondary)
-                            TextField("Fibre", text: $fibre).keyboardType(.decimalPad)
-                            Text("g").foregroundStyle(.secondary)
-                        }
+                        NutrientFields(values: $nutrients)
                     }
                     TextField("Notes", text: Binding($shortcut.notes, default: ""), axis: .vertical)
                 } footer: {
@@ -174,8 +151,9 @@ struct ShortcutSheet: View {
                         updated.calories = Format.parseNumber(calories) ?? 0
                         updated.defaultAmount = Format.parseNumber(amount)
                         if updated.portionMode == .plain {
-                            updated.proteinPerPortion = Format.parseNumber(protein)
-                            updated.fibrePerPortion = Format.parseNumber(fibre)
+                            for nutrient in Nutrient.allCases {
+                                updated[keyPath: nutrient.shortcutPerPortion] = Format.parseNumber(nutrients[nutrient] ?? "")
+                            }
                         }
                         if model.saveShortcut(updated) { dismiss() }
                     }
@@ -290,15 +268,15 @@ struct SettingsSheet: View {
                         Button("Stop", role: .destructive) { model.stopBackfill() }
                     } else {
                         Text(model.rowsMissingNutrients == 0
-                             ? "Every logged item has protein and fibre."
-                             : "\(model.rowsMissingNutrients) logged items have no protein or fibre yet.")
-                        Button("Fill in protein and fibre") { model.startBackfill() }
+                             ? "Every logged item has \(Nutrient.listName.lowercased())."
+                             : "\(model.rowsMissingNutrients) logged items are missing \(Nutrient.listName.lowercased()).")
+                        Button("Fill in \(Nutrient.listName.lowercased())") { model.startBackfill() }
                     }
                     if let message = model.backfill?.message, model.backfill?.running == false {
                         Text(message).font(.footnote)
                     }
                 } header: {
-                    Text("Protein and fibre")
+                    Text(Nutrient.listName)
                 } footer: {
                     Text(model.aiAvailable
                          ? "Uses labels and shortcuts first, then one AI estimate per food, scaled to the calories you logged. "

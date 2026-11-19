@@ -57,8 +57,11 @@ extension LoggingService {
         let totals = try store.dayTotals(for: day)
         let label = day == (try store.currentFoodDate()) ? "Today" : "That day"
         var parts = ["\(totals.calories.rounded().formatted(.number.grouping(.automatic))) kcal"]
-        if let protein = totals.proteinG { parts.append("\(Int(protein.rounded())) g protein") }
-        if let fibre = totals.fibreG { parts.append("\(Int(fibre.rounded())) g fibre") }
+        for nutrient in Nutrient.allCases {
+            if let value = totals[nutrient] {
+                parts.append("\(Int(value.rounded())) \(nutrient.unit) \(nutrient.name.lowercased())")
+            }
+        }
         return "\(label): \(parts.joined(separator: ", "))."
     }
 }

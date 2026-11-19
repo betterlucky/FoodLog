@@ -3,25 +3,45 @@ import Foundation
 /// Protein and fibre per kcal for a food. Logged calories stay authoritative: backfilled
 /// nutrients are scaled onto each row's own calories, so amounts and portions never need re-reading.
 public struct NutrientRatio: Hashable, Sendable {
-    public var proteinPerKcal: Double?
-    public var fibrePerKcal: Double?
+    public var perKcal: [Nutrient: Double]
 
-    public init(proteinPerKcal: Double?, fibrePerKcal: Double?) {
-        self.proteinPerKcal = proteinPerKcal
-        self.fibrePerKcal = fibrePerKcal
-    }
+    public init(perKcal: [Nutrient: Double]) { self.perKcal = perKcal }
 
     /// From nutrients measured for a known number of kcal. Nil when there is nothing to scale by.
-    public init?(proteinG: Double?, fibreG: Double?, forKcal kcal: Double?) {
-        guard proteinG != nil || fibreG != nil, let kcal else { return nil }
+    public init?(values: [Nutrient: Double], forKcal kcal: Double?) {
+        guard !values.isEmpty, let kcal else { return nil }
         if kcal < 1 {
             // Water, black coffee, diet drinks: only "none" is meaningful without calories to scale.
-            guard (proteinG ?? 0) < 0.5, (fibreG ?? 0) < 0.5 else { return nil }
-            self.init(proteinPerKcal: proteinG.map { _ in 0 }, fibrePerKcal: fibreG.map { _ in 0 })
+            guard values.values.allSatisfy({ $0 < 0.5 }) else { return nil }
+            self.init(perKcal: values.mapValues { _ in 0 })
             return
         }
-        self.init(proteinPerKcal: proteinG.map { $0 / kcal }, fibrePerKcal: fibreG.map { $0 / kcal })
+        self.init(perKcal: values.mapValues { $0 / kcal })
     }
+
+    /// Values read from any source through a per-nutrient key path.
+    public init?<Source>(_ source: Source, _ path: (Nutrient) -> KeyPath<Source, Double?>, forKcal kcal: Double?) {
+        var values: [Nutrient: Double] = [:]
+        for nutrient in Nutrient.allCases { values[nutrient] = source[keyPath: path(nutrient)] }
+        self.init(values: values, forKcal: kcal)
+    }
+
+    public init?(proteinG: Double?, fibreG: Double?, forKcal kcal: Double?) {
+        var values: [Nutrient: Double] = [:]
+        values[.protein] = proteinG
+        values[.fibre] = fibreG
+        self.init(values: values, forKcal: kcal)
+    }
+
+    public init(proteinPerKcal: Double?, fibrePerKcal: Double?) {
+        var perKcal: [Nutrient: Double] = [:]
+        perKcal[.protein] = proteinPerKcal
+        perKcal[.fibre] = fibrePerKcal
+        self.init(perKcal: perKcal)
+    }
+
+    public var proteinPerKcal: Double? { perKcal[.protein] }
+    public var fibrePerKcal: Double? { perKcal[.fibre] }
 
     static func rounded(_ value: Double) -> Double { (value * 10).rounded() / 10 }
 }
@@ -100,7 +120,16 @@ extension LoggingService {
     @discardableResult
     public func applyNutrientEstimate(_ target: BackfillTarget, proteinG: Double?, fibreG: Double?,
                                       forKcal kcal: Double) throws -> Int {
-        guard let ratio = NutrientRatio(proteinG: proteinG, fibreG: fibreG, forKcal: kcal) else { return 0 }
+        var values: [Nutrient: Double] = [:]
+        values[.protein] = proteinG
+        values[.fibre] = fibreG
+        return try applyNutrientEstimate(target, values: values, forKcal: kcal)
+    }
+
+    @discardableResult
+    public func applyNutrientEstimate(_ target: BackfillTarget, values: [Nutrient: Double],
+                                      forKcal kcal: Double) throws -> Int {
+        guard let ratio = NutrientRatio(values: values, forKcal: kcal) else { return 0 }
         return try connection.transaction {
             var changed = 0
             for id in target.itemIds {
@@ -109,14 +138,14 @@ extension LoggingService {
                 }
             }
             if let key = target.shortcutKey, var shortcut = try store.shortcut(lookupKey: key),
-               shortcut.proteinPer100 == nil, shortcut.fibrePer100 == nil,
-               shortcut.proteinPerPortion == nil, shortcut.fibrePerPortion == nil {
-                if let per100 = ShortcutResolver.toLabelFacts(shortcut).flatMap({ $0.kcalPer100g ?? $0.kcalPer100ml }) {
-                    shortcut.proteinPer100 = ratio.proteinPerKcal.map { NutrientRatio.rounded($0 * per100) }
-                    shortcut.fibrePer100 = ratio.fibrePerKcal.map { NutrientRatio.rounded($0 * per100) }
-                } else {
-                    shortcut.proteinPerPortion = ratio.proteinPerKcal.map { NutrientRatio.rounded($0 * shortcut.calories) }
-                    shortcut.fibrePerPortion = ratio.fibrePerKcal.map { NutrientRatio.rounded($0 * shortcut.calories) }
+               !shortcut.hasAnyNutrientData {
+                let per100 = ShortcutResolver.toLabelFacts(shortcut).flatMap { $0.kcalPer100g ?? $0.kcalPer100ml }
+                for (nutrient, perKcal) in ratio.perKcal {
+                    if let per100 {
+                        shortcut[keyPath: nutrient.shortcutPer100] = NutrientRatio.rounded(perKcal * per100)
+                    } else {
+                        shortcut[keyPath: nutrient.shortcutPerPortion] = NutrientRatio.rounded(perKcal * shortcut.calories)
+                    }
                 }
                 try store.upsertShortcut(shortcut)
             }
@@ -127,21 +156,18 @@ extension LoggingService {
     /// Fills only the missing values. Returns whether anything changed.
     private func fill(_ item: FoodItem, with ratio: NutrientRatio, source: NutrientSource) throws -> Bool {
         var updated = item
-        if updated.proteinG == nil, let perKcal = ratio.proteinPerKcal {
-            updated.proteinG = NutrientRatio.rounded(perKcal * item.calories)
-        }
-        if updated.fibreG == nil, let perKcal = ratio.fibrePerKcal {
-            updated.fibreG = NutrientRatio.rounded(perKcal * item.calories)
+        for (nutrient, perKcal) in ratio.perKcal where updated[nutrient] == nil {
+            updated[nutrient] = NutrientRatio.rounded(perKcal * item.calories)
         }
         guard updated != item else { return false }
-        if item.proteinG == nil && item.fibreG == nil { updated.nutrientSource = source }
+        if !item.hasAnyNutrient { updated.nutrientSource = source }
         try store.updateFoodItem(updated)
         return true
     }
 }
 
 extension FoodItem {
-    var missingNutrients: Bool { proteinG == nil || fibreG == nil }
+    var missingNutrients: Bool { isMissingAnyNutrient }
 
     var backfillDescription: String {
         let quantity = [amount.map(ShortcutResolver.formatPlainNumber), unit].compactMap { $0 }.joined(separator: " ")
@@ -152,12 +178,16 @@ extension FoodItem {
 }
 
 extension Shortcut {
+    var hasAnyNutrientData: Bool {
+        Nutrient.allCases.contains { self[keyPath: $0.shortcutPerPortion] != nil || self[keyPath: $0.shortcutPer100] != nil }
+    }
+
     var nutrientRatio: NutrientRatio? {
-        if proteinPerPortion != nil || fibrePerPortion != nil {
-            return NutrientRatio(proteinG: proteinPerPortion, fibreG: fibrePerPortion, forKcal: calories)
+        if Nutrient.allCases.contains(where: { self[keyPath: $0.shortcutPerPortion] != nil }) {
+            return NutrientRatio(self, \.shortcutPerPortion, forKcal: calories)
         }
         let per100 = ShortcutResolver.toLabelFacts(self).flatMap { $0.kcalPer100g ?? $0.kcalPer100ml }
-        return NutrientRatio(proteinG: proteinPer100, fibreG: fibrePer100, forKcal: per100)
+        return NutrientRatio(self, \.shortcutPer100, forKcal: per100)
     }
 
     var backfillDescription: String {
@@ -168,6 +198,6 @@ extension Shortcut {
 
 extension Product {
     var nutrientRatio: NutrientRatio? {
-        NutrientRatio(proteinG: proteinPer100g, fibreG: fiberPer100g, forKcal: kcalPer100g ?? kcalPer100ml)
+        NutrientRatio(self, \.productPer100, forKcal: kcalPer100g ?? kcalPer100ml)
     }
 }

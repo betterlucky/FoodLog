@@ -23,7 +23,8 @@ public struct JournalExportOptions: Hashable, Sendable {
 /// appends protein, fibre, and nutrient provenance.
 public struct JournalCsvExporter {
     public static let header =
-        "date,time_local,entry_type,item,quantity,calories_kcal,weight_kg,notes,source,food_item_id,product_id,created_at,protein_g,fibre_g,nutrient_source"
+        "date,time_local,entry_type,item,quantity,calories_kcal,weight_kg,notes,source,food_item_id,product_id,created_at,"
+        + Nutrient.allCases.map(\.csvColumn).joined(separator: ",") + ",nutrient_source"
 
     public init() {}
 
@@ -32,21 +33,26 @@ public struct JournalCsvExporter {
         struct Row { let date: LocalDate; let time: LocalTime?; let createdAt: Date; let values: [String?] }
 
         var rows: [Row] = items.filter { !$0.voided }.map { item in
-            Row(date: item.logDate, time: item.consumedTime, createdAt: item.createdAt, values: [
+            let base: [String?] = [
                 item.logDate.iso, item.consumedTime?.iso ?? "", "food", item.name, quantity(for: item),
                 formatPlain(item.calories), "", item.notes ?? "", item.source.journalName, String(item.id),
                 item.productId.map(String.init) ?? "", InstantFormat.string(from: item.createdAt),
-                item.proteinG.map(formatNutrient) ?? "", item.fibreG.map(formatNutrient) ?? "",
-                item.nutrientSource?.rawValue.lowercased() ?? "",
-            ])
+            ]
+            let nutrients: [String?] = Nutrient.allCases.map { item[$0].map(formatNutrient) ?? "" }
+            let provenance: [String?] = [item.nutrientSource?.rawValue.lowercased() ?? ""]
+            return Row(date: item.logDate, time: item.consumedTime, createdAt: item.createdAt,
+                       values: base + nutrients + provenance)
         }
         if options.includeWeight {
+            let emptyNutrients: [String?] = Nutrient.allCases.map { _ in "" }
             rows += dailyWeights.map { weight in
-                Row(date: weight.logDate, time: weight.measuredTime, createdAt: weight.createdAt, values: [
+                let base: [String?] = [
                     weight.logDate.iso, weight.measuredTime.iso, "weight", "weight", "", "",
                     String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), weight.weightKg),
-                    "Recorded weight", "daily weight", "", "", InstantFormat.string(from: weight.createdAt), "", "", "",
-                ])
+                    "Recorded weight", "daily weight", "", "", InstantFormat.string(from: weight.createdAt),
+                ]
+                return Row(date: weight.logDate, time: weight.measuredTime, createdAt: weight.createdAt,
+                           values: base + emptyNutrients + [""])
             }
         }
         // Kotlin compareBy puts null times first.

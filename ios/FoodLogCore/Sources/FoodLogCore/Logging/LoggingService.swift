@@ -42,10 +42,10 @@ public struct FoodDraft: Hashable, Sendable {
 
     public init(item: FoodItem) {
         self.init(name: item.name, amount: item.amount, unit: item.unit, grams: item.grams,
-                  milliliters: item.milliliters, calories: item.calories, proteinG: item.proteinG,
-                  fibreG: item.fibreG, notes: item.notes, shortcutKey: item.shortcutKey, productId: item.productId,
-                  source: item.source, confidence: item.confidence, nutrientSource: item.nutrientSource,
-                  aiProvenance: item.aiProvenance)
+                  milliliters: item.milliliters, calories: item.calories, notes: item.notes,
+                  shortcutKey: item.shortcutKey, productId: item.productId, source: item.source,
+                  confidence: item.confidence, nutrientSource: item.nutrientSource, aiProvenance: item.aiProvenance)
+        copyNutrients(from: item, \.item)
     }
 
     /// Trimmed, with blank text as nil and non-positive amounts dropped.
@@ -55,8 +55,8 @@ public struct FoodDraft: Hashable, Sendable {
         copy.unit = unit?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         copy.notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         copy.amount = amount.flatMap { $0 > 0 ? $0 : nil }
-        if copy.nutrientSource == nil, copy.proteinG != nil || copy.fibreG != nil { copy.nutrientSource = .manual }
-        if copy.proteinG == nil, copy.fibreG == nil { copy.nutrientSource = nil }
+        if copy.nutrientSource == nil, copy.hasAnyNutrient { copy.nutrientSource = .manual }
+        if !copy.hasAnyNutrient { copy.nutrientSource = nil }
         return copy
     }
 
@@ -64,10 +64,10 @@ public struct FoodDraft: Hashable, Sendable {
 
     init(resolved: ResolvedShortcutFood, shortcut: Shortcut) {
         self.init(name: resolved.name, amount: resolved.amount, unit: resolved.unit, grams: resolved.grams,
-                  milliliters: resolved.milliliters, calories: resolved.calories, proteinG: resolved.proteinG,
-                  fibreG: resolved.fibreG, notes: shortcut.notes, shortcutKey: shortcut.lookupKey,
-                  source: shortcut.source, confidence: shortcut.confidence,
-                  nutrientSource: resolved.proteinG != nil || resolved.fibreG != nil ? .shortcut : nil)
+                  milliliters: resolved.milliliters, calories: resolved.calories, notes: shortcut.notes,
+                  shortcutKey: shortcut.lookupKey, source: shortcut.source, confidence: shortcut.confidence)
+        copyNutrients(from: resolved, \.resolvedShortcut)
+        nutrientSource = hasAnyNutrient ? .shortcut : nil
     }
 }
 
@@ -323,8 +323,7 @@ public final class LoggingService {
                 item.milliliters = draft.unit == "ml" ? draft.amount : nil
             }
             item.calories = draft.calories
-            item.proteinG = draft.proteinG
-            item.fibreG = draft.fibreG
+            item.copyNutrients(from: draft, \.draft)
             item.nutrientSource = draft.nutrientSource
             item.notes = draft.notes
             item.consumedTime = consumedTime
@@ -402,15 +401,14 @@ public final class LoggingService {
                 rawText: "Label scan: \(name)", entryKind: .text, status: .parsed))
             let resolution = input.resolution
             let existingKey = try store.activeShortcut(lookupKey: ShortcutResolver.shortcutTrigger(name))?.lookupKey
-            let draft = FoodDraft(
+            var draft = FoodDraft(
                 name: name, amount: resolution.amount ?? resolution.grams ?? 1,
                 unit: resolution.unit ?? (resolution.grams != nil ? "g" : (facts.servingUnit ?? "serving")),
                 grams: resolution.grams, milliliters: resolution.milliliters, calories: input.calories,
-                proteinG: resolution.proteinG, fibreG: resolution.fibreG, notes: input.notes?.nilIfEmpty,
-                shortcutKey: savedKey ?? existingKey,
-                productId: productId, source: .savedLabel, confidence: .high,
-                nutrientSource: resolution.proteinG != nil || resolution.fibreG != nil ? .label : nil,
-                aiProvenance: input.aiProvenance)
+                notes: input.notes?.nilIfEmpty, shortcutKey: savedKey ?? existingKey,
+                productId: productId, source: .savedLabel, confidence: .high, aiProvenance: input.aiProvenance)
+            draft.copyNutrients(from: resolution, \.labelPortion)
+            draft.nutrientSource = draft.hasAnyNutrient ? .label : nil
             let id = try insert(draft, rawEntryId: rawEntryId, logDate: input.logDate,
                                 consumedTime: input.consumedTime ?? clock.localTime, createdAt: now)
             return (id, savedKey)
@@ -421,14 +419,15 @@ public final class LoggingService {
 
     private func insert(_ draft: FoodDraft, rawEntryId: Int64, logDate: LocalDate, consumedTime: LocalTime?,
                         createdAt: Date) throws -> Int64 {
-        try store.insertFoodItem(FoodItem(
+        var item = FoodItem(
             rawEntryId: rawEntryId, logDate: logDate, consumedTime: consumedTime, name: draft.name,
             productId: draft.productId, shortcutKey: draft.shortcutKey, amount: draft.amount, unit: draft.unit,
             grams: draft.grams ?? (draft.unit == "g" ? draft.amount : nil),
             milliliters: draft.milliliters ?? (draft.unit == "ml" ? draft.amount : nil),
-            calories: draft.calories, proteinG: draft.proteinG, fibreG: draft.fibreG,
-            nutrientSource: draft.nutrientSource, source: draft.source, confidence: draft.confidence,
-            notes: draft.notes, aiProvenance: draft.aiProvenance, createdAt: createdAt))
+            calories: draft.calories, nutrientSource: draft.nutrientSource, source: draft.source,
+            confidence: draft.confidence, notes: draft.notes, aiProvenance: draft.aiProvenance, createdAt: createdAt)
+        item.copyNutrients(from: draft, \.draft)
+        return try store.insertFoodItem(item)
     }
 
     private func partDraft(_ part: ParsedFoodPart, index: Int) throws -> PartDraft {
@@ -447,9 +446,10 @@ public final class LoggingService {
 
     /// A portion-first PLAIN shortcut: the calories for exactly the portion the user logged.
     private func plainShortcut(from draft: FoodDraft, lookupKey: String) -> Shortcut {
-        Shortcut(lookupKey: lookupKey, name: draft.name, calories: draft.calories, unit: draft.unit ?? "serving",
-                 notes: draft.notes, defaultAmount: draft.amount, proteinPerPortion: draft.proteinG,
-                 fibrePerPortion: draft.fibreG)
+        var shortcut = Shortcut(lookupKey: lookupKey, name: draft.name, calories: draft.calories,
+                                unit: draft.unit ?? "serving", notes: draft.notes, defaultAmount: draft.amount)
+        for nutrient in Nutrient.allCases { shortcut[keyPath: nutrient.shortcutPerPortion] = draft[nutrient] }
+        return shortcut
     }
 
     /// Never overwrites an active shortcut; a forgotten one with the same key is replaced.
@@ -467,8 +467,9 @@ public final class LoggingService {
         case .plain:
             updated.calories = draft.calories
             updated.unit = draft.unit ?? shortcut.unit
-            updated.proteinPerPortion = draft.proteinG ?? shortcut.proteinPerPortion
-            updated.fibrePerPortion = draft.fibreG ?? shortcut.fibrePerPortion
+            for nutrient in Nutrient.allCases {
+                updated[keyPath: nutrient.shortcutPerPortion] = draft[nutrient] ?? shortcut[keyPath: nutrient.shortcutPerPortion]
+            }
         case .item, .measure:
             updated.calories = ShortcutResolver.caloriesForUpdatedShortcut(shortcut, amount: draft.amount,
                                                                            calories: draft.calories)

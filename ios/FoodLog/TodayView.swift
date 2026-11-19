@@ -72,11 +72,10 @@ struct TodayView: View {
                     .contentTransition(.numericText())
                     .accessibilityIdentifier("dayTotal")
                 HStack(spacing: 14) {
-                    if let protein = model.totals.proteinG {
-                        Label("\(Format.grams(protein)) protein", systemImage: "p.circle")
-                    }
-                    if let fibre = model.totals.fibreG {
-                        Label("\(Format.grams(fibre)) fibre", systemImage: "leaf")
+                    ForEach(Nutrient.allCases) { nutrient in
+                        if let value = model.totals[nutrient] {
+                            Label("\(nutrient.format(value)) \(nutrient.name.lowercased())", systemImage: nutrient.systemImage)
+                        }
                     }
                     if let weight = model.weight {
                         Label(String(format: "%.1f kg", weight.weightKg), systemImage: "scalemass")
@@ -86,12 +85,12 @@ struct TodayView: View {
                 .foregroundStyle(.secondary)
                 if let backfill = model.backfill, backfill.running {
                     ProgressView(value: Double(backfill.done), total: Double(max(backfill.total, 1))) {
-                        Text("Filling in protein and fibre… \(backfill.done) of \(backfill.total)").font(.caption)
+                        Text("Filling in \(Nutrient.listName.lowercased())… \(backfill.done) of \(backfill.total)").font(.caption)
                     }
-                } else if model.totals.itemCount > 0, model.totals.itemsWithProtein < model.totals.itemCount,
-                          model.aiAvailable || model.totals.proteinG != nil {
+                } else if model.totals.itemCount > 0, model.totals.itemsWithAllNutrients < model.totals.itemCount,
+                          model.aiAvailable || !model.totals.nutrients.isEmpty {
                     HStack {
-                        Text("Protein known for \(model.totals.itemsWithProtein) of \(model.totals.itemCount) items")
+                        Text("\(Nutrient.listName) known for \(model.totals.itemsWithAllNutrients) of \(model.totals.itemCount) items")
                             .foregroundStyle(.tertiary)
                         if model.aiAvailable {
                             Button("Fill in") { model.startBackfill() }

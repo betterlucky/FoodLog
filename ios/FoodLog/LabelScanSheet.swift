@@ -174,8 +174,11 @@ struct LabelScanSheet: View {
                     if let value = facts.kcalPerServing {
                         LabeledContent("Per \(facts.servingUnit ?? "serving")", value: Format.kcal(value))
                     }
-                    if let value = facts.proteinPer100g { LabeledContent("Protein per 100", value: Format.grams(value)) }
-                    if let value = facts.fiberPer100g { LabeledContent("Fibre per 100", value: Format.grams(value)) }
+                    ForEach(Nutrient.allCases) { nutrient in
+                        if let value = facts[keyPath: nutrient.labelPer100] {
+                            LabeledContent("\(nutrient.name) per 100", value: nutrient.format(value))
+                        }
+                    }
                     if facts.isPartial {
                         Text("Some details were unclear. Check the portion and calories.")
                             .font(.footnote).foregroundStyle(.orange)
@@ -198,7 +201,7 @@ struct LabelScanSheet: View {
                         amountText = newMode == .measure ? "100" : "1"
                         caloriesEdited = false
                     }
-                    TextField("Amount", text: $amountText).keyboardType(.decimalPad)
+                    TextRow(label: "Amount", text: $amountText, numeric: true)
                     HStack {
                         TextField("Calories", text: Binding(
                             get: { caloriesEdited ? caloriesText : (resolution?.calories).map(Format.number) ?? "" },
@@ -210,11 +213,10 @@ struct LabelScanSheet: View {
                         Text("The label doesn't say enough to work this portion out. Enter the calories.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    if let protein = resolution?.proteinG {
-                        LabeledContent("Protein", value: Format.grams(protein))
-                    }
-                    if let fibre = resolution?.fibreG {
-                        LabeledContent("Fibre", value: Format.grams(fibre))
+                    ForEach(Nutrient.allCases) { nutrient in
+                        if let value = resolution?[keyPath: nutrient.labelPortion] {
+                            LabeledContent(nutrient.name, value: nutrient.format(value))
+                        }
                     }
                 }
                 Section {

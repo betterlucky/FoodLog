@@ -374,11 +374,15 @@ final class AppModel {
                 case .success(let response):
                     consecutiveFailures = 0
                     let items: [EstimatedItem] = response.items
-                    let protein = items.allSatisfy { $0.proteinG != nil } ? items.compactMap { $0.proteinG }.reduce(0, +) : nil
-                    let fibre = items.allSatisfy { $0.fibreG != nil } ? items.compactMap { $0.fibreG }.reduce(0, +) : nil
+                    // A nutrient counts only when every estimated item has it.
+                    var values: [Nutrient: Double] = [:]
+                    for nutrient in Nutrient.allCases {
+                        let known = items.compactMap { $0[keyPath: nutrient.estimated] }
+                        if known.count == items.count { values[nutrient] = known.reduce(0, +) }
+                    }
                     perform {
                         state.rowsFilled += try logging.applyNutrientEstimate(
-                            target, proteinG: protein, fibreG: fibre, forKcal: items.map { $0.kcal }.reduce(0, +))
+                            target, values: values, forKcal: items.map { $0.kcal }.reduce(0, +))
                     }
                 case .failure(let error):
                     state.failed += 1

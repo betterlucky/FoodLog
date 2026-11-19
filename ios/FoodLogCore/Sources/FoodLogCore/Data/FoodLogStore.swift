@@ -201,20 +201,21 @@ public final class FoodLogStore {
     }
 
     public func dayTotals(for date: LocalDate) throws -> DayTotals {
+        let nutrientColumns = Nutrient.allCases
+            .map { "SUM(\($0.column)) AS sum_\($0.rawValue), COUNT(\($0.column)) AS count_\($0.rawValue)" }
+            .joined(separator: ", ")
         let row = try connection.query(
             """
-            SELECT COALESCE(SUM(calories), 0) AS calories, SUM(proteinG) AS protein, SUM(fibreG) AS fibre,
-                COUNT(*) AS items, COUNT(proteinG) AS proteinItems, COUNT(fibreG) AS fibreItems
+            SELECT COALESCE(SUM(calories), 0) AS calories, COUNT(*) AS items, \(nutrientColumns)
             FROM food_items WHERE logDate = ? AND voided = 0
             """,
             [date]).first
-        return DayTotals(
-            calories: row?.double("calories") ?? 0,
-            proteinG: row?.double("protein"),
-            fibreG: row?.double("fibre"),
-            itemCount: row?.int("items") ?? 0,
-            itemsWithProtein: row?.int("proteinItems") ?? 0,
-            itemsWithFibre: row?.int("fibreItems") ?? 0)
+        var totals = DayTotals(calories: row?.double("calories") ?? 0, itemCount: row?.int("items") ?? 0)
+        for nutrient in Nutrient.allCases {
+            totals.nutrients[nutrient] = row?.double("sum_\(nutrient.rawValue)")
+            totals.itemsWith[nutrient] = row?.int("count_\(nutrient.rawValue)") ?? 0
+        }
+        return totals
     }
 
     /// Room-backed history candidates for an unresolved food part. Mirrors the Android query:
@@ -369,15 +370,27 @@ public final class FoodLogStore {
 
 public struct DayTotals: Hashable, Sendable {
     public var calories: Double
-    /// Sum over rows that have a value; nil when no row has one.
-    public var proteinG: Double?
-    public var fibreG: Double?
     public var itemCount: Int
-    public var itemsWithProtein: Int
-    public var itemsWithFibre: Int
+    /// Sum over rows that have a value; absent when no row has one.
+    public var nutrients: [Nutrient: Double] = [:]
+    /// How many rows have a value for each nutrient.
+    public var itemsWith: [Nutrient: Int] = [:]
 
-    public static let empty = DayTotals(calories: 0, proteinG: nil, fibreG: nil, itemCount: 0,
-                                        itemsWithProtein: 0, itemsWithFibre: 0)
+    public init(calories: Double, itemCount: Int) {
+        self.calories = calories
+        self.itemCount = itemCount
+    }
+
+    public subscript(nutrient: Nutrient) -> Double? { nutrients[nutrient] }
+
+    public var proteinG: Double? { nutrients[.protein] }
+    public var fibreG: Double? { nutrients[.fibre] }
+    public var itemsWithProtein: Int { itemsWith[.protein] ?? 0 }
+    public var itemsWithFibre: Int { itemsWith[.fibre] ?? 0 }
+    /// Rows with every tracked nutrient.
+    public var itemsWithAllNutrients: Int { Nutrient.allCases.map { itemsWith[$0] ?? 0 }.min() ?? itemCount }
+
+    public static let empty = DayTotals(calories: 0, itemCount: 0)
 }
 
 // MARK: Row mapping
