@@ -66,7 +66,7 @@ Principles:
 
 Priorities, in order:
 
-1. **Android data export.** A one-off, versioned JSON export of shortcuts, products, food rows, raw entries, and daily weight from Room, for import on iOS. Shortcuts matter most; history is optional. This is the last Android feature.
+1. **Android data export.** Done (2026-11-19): `scripts/export-android-data.py` turns a pulled Room database into a versioned JSON export of shortcuts, products, raw entries, food rows, and daily weight. See `docs/android-data-export.md`. The Android app needed no changes.
 2. **iOS port of the core.** SwiftUI app with the scope in Platform, the Kotlin unit tests ported as its spec, import of the Android export, nutrients and the shortcut link built into the data model, and installation through the renewal lane.
 3. **AI estimate capture.** A provider-neutral backend (see AI Architecture) and an "estimate this" entry point that takes text or a photo and returns a reviewed draft in the logging wizard, with `source = ESTIMATE`, a confidence level, and provenance. This covers home-made food (paste or photograph the ingredients and enter the cooked batch weight to get a per-100g shortcut), plates, restaurant meals, and vague text.
 4. **AI label reading.** Offer an AI label read alongside on-device OCR. Compare both on several real labels before choosing the default. Keep on-device OCR as the offline path.
