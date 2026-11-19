@@ -1,6 +1,6 @@
 # FoodLog Agent Notes
 
-FoodLog is a private, local-first Android app. Treat Room as the source of truth: raw entries, food rows, daily weight, daily status, shortcuts, and exports should flow from database state, not rendered UI text or CSV files.
+FoodLog is a private, local-first food logging app moving from Android to a native SwiftUI iPhone app; see `PLAN.md` "Platform". The Android app at the repository root is frozen as the reference implementation and data source. Treat the local database (Room on Android) as the source of truth: raw entries, food rows, daily weight, daily status, shortcuts, and exports should flow from database state, not rendered UI text or CSV files.
 
 ## Current Product State
 
@@ -9,6 +9,13 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 - Local on-device OCR label scanning, the logging wizard, and Room-backed live journal export are implemented.
 - Barcode logging was tried and is dropped for now. Do not add barcode/cache fields or Open Food Facts work unless the plan is explicitly reopened.
 - Leftovers, corrections, fuzzy matching beyond simple Room-backed history suggestions, and conversational summaries are out of scope.
+
+## Platform
+
+- New feature work goes into the iOS app under `ios/`, and the AI Worker goes under `worker/`. Do not add Android features beyond the one-off data exporter.
+- Port behavior from the Android code and use its unit tests as the spec.
+- iOS signing is personal-team, renewed by Lodestone2's scheduled LaunchAgent. Free signing allows three apps per device (Lodestone Health, Pacing Monitor, FoodLog). Check the slot impact before adding an app extension.
+- Never uninstall FoodLog from either phone to fix signing; that wipes local data.
 
 ## Product Direction
 

@@ -1,6 +1,6 @@
 # FoodLog
 
-Private, local-first Android food logging app.
+Private, local-first food logging app. The Android app in this repository is frozen as the reference implementation while FoodLog moves to a native SwiftUI iPhone app (planned under `ios/`), with a provider-neutral AI Worker planned under `worker/`. See [PLAN.md](PLAN.md).
 
 The canonical implementation plan is in [PLAN.md](PLAN.md). Agent-specific working notes are in [AGENTS.md](AGENTS.md). Historical Codex context is preserved in [docs/codex-handover.md](docs/codex-handover.md). The retained CSV file is sample fixture data and documents the legacy Health Monitor export format now imported by Lodestone.
 
@@ -27,7 +27,7 @@ This repository contains the first Phase 1 implementation slice:
 
 ## Current Direction
 
-The goal is low-friction, mindful tracking of calories, with protein and fibre backfilled later rather than entered at logging time. Next up: keep the nutrients labels already provide, add provider-neutral AI estimates (text or photo, reviewed before logging) through a Cloudflare Worker, evaluate AI label reading against local OCR, and add quicker capture entry points. Lodestone export stays available but is no longer a daily obligation. Barcode lookup is parked. See [PLAN.md](PLAN.md) for details.
+The goal is low-friction, mindful tracking of calories, with protein and fibre backfilled later rather than entered at logging time. Next up: export existing data from the Android app, port the core to SwiftUI with nutrients and shortcut links built in, add provider-neutral AI estimates (text or photo, reviewed before logging) through a Cloudflare Worker, evaluate AI label reading against local OCR, and add quicker capture entry points (App Intents first). Lodestone export stays available but is no longer a daily obligation. Barcode lookup is parked. See [PLAN.md](PLAN.md) for details.
 
 ## Work Tracking
 

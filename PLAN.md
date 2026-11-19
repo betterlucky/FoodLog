@@ -1,14 +1,14 @@
 # FoodLog Plan
 
-FoodLog is a private, local-first Android food logging app. Its purpose is to make the user mindful of what they consume by recording calories, and later protein and fibre, with as little friction as possible.
+FoodLog is a private, local-first food logging app, moving from Android to a native iPhone app (see Platform). Its purpose is to make the user mindful of what they consume by recording calories, and later protein and fibre, with as little friction as possible.
 
 The user has ADHD. Most journalling attempts stop after one or two entries, so the measure of success is sustained logging, not complete or perfect data. Every feature should be judged by how many taps, decisions, and remembered chores it adds to or removes from logging one item.
 
-Room is the source of truth. Raw entries, food rows, daily weight, daily status, shortcuts, products, and exports must come from database state, not rendered UI text, chat history, or CSV files.
+The app's local database (Room on Android, its iOS equivalent after the port) is the source of truth. Raw entries, food rows, daily weight, daily status, shortcuts, products, and exports must come from database state, not rendered UI text, chat history, or CSV files.
 
 ## Current State
 
-Implemented local core:
+Implemented local core (Android):
 
 - Kotlin native Android app using Compose, Room, coroutines, Flow, and MVVM-style screen state.
 - Raw-entry audit records, deterministic shortcut/default parsing, pending resolution, logged-item editing/removal, daily totals, daily weight, daily status, and Lodestone CSV export.
@@ -34,6 +34,26 @@ Out of scope:
 
 The retained `food_log_full_2026-04-04_to_2026-04-23.csv` file is synthetic fixture/context for the legacy Health Monitor CSV contract consumed by Lodestone. It must not contain real personal food history.
 
+## Platform
+
+The user's daily phone is an iPhone, so FoodLog moves to a native SwiftUI app. A logging app only works if it is on the phone already in hand.
+
+- **Native SwiftUI, not Kotlin Multiplatform, for now.** The user prefers Android and may return to it. If that happens, revisit Kotlin Multiplatform or a port back then rather than paying its build complexity now.
+- **The Android app is frozen** as the reference implementation and the source of existing data. Its behavior, decisions, and unit tests are the spec for the iOS port. Apart from a data exporter, do not add Android features.
+- **Repository layout.** Keep the Android project at the repository root. Add `ios/` for the iPhone app and `worker/` for the AI Worker.
+- **What to port.** Deterministic parser, shortcuts with portion modes, pending resolution, logging wizard, logged-item edit/remove, history suggestions, label parser and portion resolver (fed by Apple's Vision text recognition instead of ML Kit), daily totals, daily weight, and the live journal export. Build nutrient columns and the food row to shortcut link into the iOS data model from the start.
+- **What not to port yet.** The Lodestone daily CSV export and its daily-close prompt. Lodestone currently reads from the Android Downloads folder; revisit an iOS export only if Lodestone becomes a focus again.
+- **iOS persistence.** Choose at the start of the port. It must support explicit, tested schema migrations.
+- **iOS-native capture.** App Intents (Siri, Action Button, Shortcuts) live inside the main app and are the first low-friction entry points. A share extension and interactive widgets come later, subject to the signing limits below. Apple Health writes (energy, protein, fibre) and weight reads are an optional later addition.
+
+Signing and installation:
+
+- FoodLog uses personal-team (free) signing, renewed every 7 days by Lodestone2's existing scheduled LaunchAgent (`Lodestone2/scripts/scheduled_harvest.py`), following the Pacing Monitor pattern: a FoodLog `device.py`-style installer that backs up app Documents before an in-place update and never uninstalls, plus a FoodLog renewal lane in Lodestone2.
+- Free signing allows three active apps per device. The slots are Lodestone Health, Pacing Monitor, and FoodLog. H10 Sessions was archived and removed from the iPhone on 2026-11-19 to free a slot.
+- App extensions (share extension, widgets) may count against the same limit. Check this before building one.
+- If another slot is needed, Lodestone Health is the next candidate to retire, possibly moving its recording to Android.
+- Never uninstall FoodLog to fix signing; it holds the only copy of local data.
+
 ## Product Direction
 
 Principles:
@@ -46,12 +66,12 @@ Principles:
 
 Priorities, in order:
 
-1. **Backfill-ready data (local only).** Persist the nutrients the label parser already extracts on products and label-derived shortcuts, record ml as well as grams where known, and link food rows to the shortcut that produced them. One Room migration (17 → 18).
-2. **AI estimate capture.** A provider-neutral backend (see AI Architecture) and an "estimate this" entry point that takes text or a photo and returns a reviewed draft in the logging wizard, with `source = ESTIMATE`, a confidence level, and provenance. This covers home-made food (paste or photograph the ingredients and enter the cooked batch weight to get a per-100g shortcut), plates, restaurant meals, and vague text.
-3. **AI label reading.** Offer an AI label read alongside local OCR. Compare both on several real labels before choosing the default. Keep local OCR as the offline path.
-4. **Nutrient backfill and display.** Fill protein and fibre for existing rows from product/shortcut data first, then from batched AI estimates marked as estimates. Show protein and fibre totals on Today once enough rows have values.
-5. **Lower-friction entry points.** Android share target ("share photo to FoodLog") and/or a home-screen quick-add, so capture does not require opening the app and navigating.
-6. **Demote daily close.** Remove the stale-export prompt from the main surface. Keep Lodestone export available as an explicit action.
+1. **Android data export.** A one-off, versioned JSON export of shortcuts, products, food rows, raw entries, and daily weight from Room, for import on iOS. Shortcuts matter most; history is optional. This is the last Android feature.
+2. **iOS port of the core.** SwiftUI app with the scope in Platform, the Kotlin unit tests ported as its spec, import of the Android export, nutrients and the shortcut link built into the data model, and installation through the renewal lane.
+3. **AI estimate capture.** A provider-neutral backend (see AI Architecture) and an "estimate this" entry point that takes text or a photo and returns a reviewed draft in the logging wizard, with `source = ESTIMATE`, a confidence level, and provenance. This covers home-made food (paste or photograph the ingredients and enter the cooked batch weight to get a per-100g shortcut), plates, restaurant meals, and vague text.
+4. **AI label reading.** Offer an AI label read alongside on-device OCR. Compare both on several real labels before choosing the default. Keep on-device OCR as the offline path.
+5. **Nutrient backfill and display.** Fill protein and fibre for existing rows, including imported Android history, from product/shortcut data first, then from batched AI estimates marked as estimates. Show protein and fibre totals on Today once enough rows have values.
+6. **Lower-friction entry points.** App Intents first ("log tea" by Siri, Action Button, or Shortcuts), then a share extension and widgets if signing slots allow, so capture does not require opening the app and navigating.
 
 Later:
 
@@ -63,7 +83,7 @@ Parked:
 
 - Leftovers/container behavior.
 - Correction audit flows and fuzzy matching.
-- Direct Lodestone integration replacing the CSV handoff, export reminders, and richer closed-day semantics.
+- Lodestone CSV export on iOS, direct Lodestone integration, export reminders, and richer closed-day semantics.
 - A lightweight recovery journal for same-day resilience after reinstall/restore surprises. If revisited, keep it append-only, Room-grounded, and replayable only with explicit user review.
 
 Explicitly dropped:
@@ -143,7 +163,7 @@ Primary entities:
 - `DailyStatusEntity`: export and change status per food day.
 - `AppSettingsEntity`: local app settings such as food-day boundary.
 
-Planned additions (priority 1 and 4):
+Additions to build into the iOS data model (priority 2):
 
 - Per-100g/100ml protein and fibre (and other parsed label nutrients) on products and label-derived shortcuts.
 - A nullable shortcut reference on `FoodItemEntity`.
@@ -177,7 +197,7 @@ The Today screen is the main product surface. It should support:
 - daily weight entry
 - local label scan/manual product logging
 - AI estimate entry point (planned)
-- explicit, non-nagging Lodestone export action
+- live journal export (the Lodestone export stays Android-only for now)
 
 Important behavior:
 
@@ -196,7 +216,7 @@ Important behavior:
 
 Label OCR is the current packaged-food path:
 
-- Use local on-device ML Kit Latin text recognition.
+- Use on-device text recognition: ML Kit Latin on Android, Apple's Vision framework on iOS. The label parser takes plain text, so it ports unchanged in behavior, but OCR line ordering may differ and needs checking against real labels.
 - Let the user take a photo or choose an image.
 - Parse conservatively and require user confirmation before logging.
 - Prefer clear partial-success behavior over guessing.
@@ -279,7 +299,14 @@ scripts/android-smoke.sh /tmp/foodlog-smoke.png
 
 Do not fix install/signature problems with a plain `adb uninstall com.betterlucky.foodlog`; that wipes local FoodLog data. Use the smoke script's guarded reinstall path or take an app-private data backup first.
 
-Current smoke scenario: after the script launches the app, follow `docs/android-smoke-scenario.md` to log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current. Update the scenario when daily close is demoted and when AI capture lands.
+Android smoke scenario: after the script launches the app, follow `docs/android-smoke-scenario.md` to log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current.
+
+iOS verification (to be set up with the port):
+
+- Unit tests for ported domain logic, run with `xcodebuild test` on a simulator. Port the matching Kotlin tests first and keep their cases.
+- Builds and UI checks in the iOS Simulator.
+- Device installs only through the FoodLog installer, which backs up Documents first and never uninstalls.
+- A migration test for every schema change.
 
 Prefer local unit tests for parser, export, totals, daily close, day-boundary, label parsing, portion resolution, and AI contract mapping. Use instrumented tests when Room migrations, Android framework behavior, or Compose interaction is the thing being verified. Worker adapters should have their own tests against recorded provider responses, so contract changes are caught without live API calls.
 
