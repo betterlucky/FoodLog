@@ -54,7 +54,17 @@ FoodLog is a private, local-first food logging app moving from Android to a nati
 
 ## Verification
 
-Use the checked-in Gradle wrapper:
+iOS (where new work goes):
+
+```sh
+cd ios/FoodLogCore && swift test
+cd ios && xcodebuild -project FoodLog.xcodeproj -scheme FoodLog -destination 'platform=iOS Simulator,name=iPhone 17' test
+scripts/ios-device.py install
+```
+
+Install on the iPhone only with `scripts/ios-device.py` (see `PLAN.md` "iOS verification"). After changing iOS source, a deliberate install is needed before automatic signing renewal resumes.
+
+Android (frozen reference). Use the checked-in Gradle wrapper:
 
 ```sh
 JAVA_HOME=/opt/homebrew/Cellar/openjdk/25.0.2/libexec/openjdk.jdk/Contents/Home ./gradlew testDebugUnitTest

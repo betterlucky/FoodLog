@@ -67,7 +67,7 @@ Principles:
 Priorities, in order:
 
 1. **Android data export.** Done (2026-11-19): `scripts/export-android-data.py` turns a pulled Room database into a versioned JSON export of shortcuts, products, raw entries, food rows, and daily weight. See `docs/android-data-export.md`. The Android app needed no changes.
-2. **iOS port of the core.** SwiftUI app with the scope in Platform, the Kotlin unit tests ported as its spec, import of the Android export, nutrients and the shortcut link built into the data model, and installation through the renewal lane.
+2. **iOS port of the core.** Done (2026-11-19): `ios/FoodLogCore` (Swift package: SQLite store with explicit migrations, parser, label parser and portion resolver, shortcut resolver, logging service, Android import, journal export) and `ios/FoodLog` (SwiftUI app). Kotlin unit tests ported as the spec. Installed on the iPhone with `scripts/ios-device.py`, renewed by Lodestone2's FoodLog lane. Remaining iOS-only polish is tracked by use, not as a port gap.
 3. **AI estimate capture.** A provider-neutral backend (see AI Architecture) and an "estimate this" entry point that takes text or a photo and returns a reviewed draft in the logging wizard, with `source = ESTIMATE`, a confidence level, and provenance. This covers home-made food (paste or photograph the ingredients and enter the cooked batch weight to get a per-100g shortcut), plates, restaurant meals, and vague text.
 4. **AI label reading.** Offer an AI label read alongside on-device OCR. Compare both on several real labels before choosing the default. Keep on-device OCR as the offline path.
 5. **Nutrient backfill and display.** Fill protein and fibre for existing rows, including imported Android history, from product/shortcut data first, then from batched AI estimates marked as estimates. Show protein and fibre totals on Today once enough rows have values.
@@ -301,12 +301,19 @@ Do not fix install/signature problems with a plain `adb uninstall com.betterluck
 
 Android smoke scenario: after the script launches the app, follow `docs/android-smoke-scenario.md` to log one OCR/label-derived food row, add one daily weight, export the Lodestone CSV, and confirm the day reports as exported/current.
 
-iOS verification (to be set up with the port):
+iOS verification:
 
-- Unit tests for ported domain logic, run with `xcodebuild test` on a simulator. Port the matching Kotlin tests first and keep their cases.
-- Builds and UI checks in the iOS Simulator.
-- Device installs only through the FoodLog installer, which backs up Documents first and never uninstalls.
-- A migration test for every schema change.
+```sh
+cd ios/FoodLogCore && swift test
+cd ios && xcodebuild -project FoodLog.xcodeproj -scheme FoodLog -destination 'platform=iOS Simulator,name=iPhone 17' test
+scripts/ios-device.py install
+```
+
+- `swift test` runs the core logic on the Mac; it includes the ported Kotlin cases. Set `FOODLOG_REAL_EXPORT=<path>` to also check a real Android export imports (never commit the file).
+- The UI tests run against an in-memory store (`-uiTestInMemory`). The opt-in import UI test runs with `TEST_RUNNER_FOODLOG_IMPORT_UI_TEST=1`.
+- Device installs only go through `scripts/ios-device.py`. It pulls Lodestone Health and backs up its collector, backs up FoodLog's Documents, installs in place, and refuses to finish if any FoodLog table shrank. It never uninstalls. `backup` takes a rolling copy (Lodestone2's harvest runs it daily) and `push-import --export <file>` stages an Android export for the in-app import button.
+- Any change under `ios/FoodLog`, `ios/FoodLog.xcodeproj`, `ios/FoodLogCore/Sources` or `Package.swift` pauses automatic signing renewal until a deliberate `scripts/ios-device.py install`.
+- Add a migration test for every schema change.
 
 Prefer local unit tests for parser, export, totals, daily close, day-boundary, label parsing, portion resolution, and AI contract mapping. Use instrumented tests when Room migrations, Android framework behavior, or Compose interaction is the thing being verified. Worker adapters should have their own tests against recorded provider responses, so contract changes are caught without live API calls.
 
