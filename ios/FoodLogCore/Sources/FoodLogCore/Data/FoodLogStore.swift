@@ -204,13 +204,16 @@ public final class FoodLogStore {
         let nutrientColumns = Nutrient.allCases
             .map { "SUM(\($0.column)) AS sum_\($0.rawValue), COUNT(\($0.column)) AS count_\($0.rawValue)" }
             .joined(separator: ", ")
+        let allKnown = Nutrient.allCases.map { "\($0.column) IS NOT NULL" }.joined(separator: " AND ")
         let row = try connection.query(
             """
-            SELECT COALESCE(SUM(calories), 0) AS calories, COUNT(*) AS items, \(nutrientColumns)
+            SELECT COALESCE(SUM(calories), 0) AS calories, COUNT(*) AS items, \(nutrientColumns),
+                SUM(CASE WHEN \(allKnown) THEN 1 ELSE 0 END) AS complete
             FROM food_items WHERE logDate = ? AND voided = 0
             """,
             [date]).first
         var totals = DayTotals(calories: row?.double("calories") ?? 0, itemCount: row?.int("items") ?? 0)
+        totals.itemsWithAllNutrients = row?.int("complete") ?? 0
         for nutrient in Nutrient.allCases {
             totals.nutrients[nutrient] = row?.double("sum_\(nutrient.rawValue)")
             totals.itemsWith[nutrient] = row?.int("count_\(nutrient.rawValue)") ?? 0
@@ -387,8 +390,8 @@ public struct DayTotals: Hashable, Sendable {
     public var fibreG: Double? { nutrients[.fibre] }
     public var itemsWithProtein: Int { itemsWith[.protein] ?? 0 }
     public var itemsWithFibre: Int { itemsWith[.fibre] ?? 0 }
-    /// Rows with every tracked nutrient.
-    public var itemsWithAllNutrients: Int { Nutrient.allCases.map { itemsWith[$0] ?? 0 }.min() ?? itemCount }
+    /// Rows that have every tracked nutrient (not the smallest per-nutrient count).
+    public var itemsWithAllNutrients = 0
 
     public static let empty = DayTotals(calories: 0, itemCount: 0)
 }

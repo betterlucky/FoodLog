@@ -63,6 +63,8 @@ struct LabelScanSheet: View {
                     if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
                         read(image)
                     } else {
+                        // Forget the earlier photo so "Read with AI" can't send the wrong one.
+                        image = nil
                         stage = .failed("That photo couldn't be opened.")
                     }
                 }

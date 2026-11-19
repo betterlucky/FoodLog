@@ -63,6 +63,7 @@ struct PartForm: Identifiable {
     mutating func apply(_ suggestion: FoodHistorySuggestion) {
         base = nil
         estimateSummary = nil
+        nutrients = [:]
         name = suggestion.name
         amount = suggestion.amount.map(Format.number) ?? ""
         unit = suggestion.unit ?? ""
@@ -114,6 +115,11 @@ struct PartForm: Identifiable {
     /// Writes the typed nutrient values (blank as unknown) into a draft.
     func applyNutrients(to draft: inout FoodDraft) {
         for nutrient in Nutrient.allCases { draft[nutrient] = Format.parseNumber(nutrients[nutrient] ?? "") }
+    }
+
+    /// Everything the user can type, to notice edits made while an estimate was being fetched.
+    var editSignature: [String] {
+        [name, amount, unit, calories, notes] + Nutrient.allCases.map { nutrients[$0] ?? "" }
     }
 
     var isValid: Bool {
@@ -298,10 +304,16 @@ private struct PartSection: View {
         let hints = EstimateHints(batchWeightGrams: Format.parseNumber(batchWeight), servings: Format.parseNumber(servings))
         estimating = true
         estimateError = nil
+        let before = form.editSignature
         Task {
             defer { estimating = false }
             do {
                 let response = try await model.estimate(text: text.isEmpty ? nil : text, image: aiImage, hints: hints)
+                guard form.editSignature == before else {
+                    estimateError = "You changed the details while the estimate was running, so it wasn't applied. "
+                        + "Tap Estimate with AI again to use it."
+                    return
+                }
                 form.apply(response)
                 if response.items.count > 1 || form.notes.count > 0 { showNutrients = true }
             } catch {

@@ -25,8 +25,12 @@ final class NutrientTests: XCTestCase {
             XCTAssertTrue(JournalCsvExporter.header.contains(nutrient.csvColumn), nutrient.name)
             XCTAssertFalse(nutrient.name.isEmpty)
         }
-        XCTAssertEqual(csv.split(separator: "\n")[0].split(separator: ",").count,
-                       csv.split(separator: "\n")[1].split(separator: ",", omittingEmptySubsequences: false).count)
+        let lines = csv.split(separator: "\n").map { $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init) }
+        XCTAssertEqual(lines[0].count, lines[1].count)
+        for (index, nutrient) in Nutrient.allCases.enumerated() {
+            let column = try XCTUnwrap(lines[0].firstIndex(of: nutrient.csvColumn))
+            XCTAssertEqual(Double(lines[1][column]), Double(index + 1), nutrient.csvColumn)
+        }
         XCTAssertEqual(item.nutrientSource, .manual)
     }
 

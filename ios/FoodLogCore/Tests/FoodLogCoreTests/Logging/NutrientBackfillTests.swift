@@ -80,4 +80,47 @@ final class NutrientBackfillTests: XCTestCase {
         XCTAssertNil(NutrientRatio(proteinG: 5, fibreG: 0, forKcal: 0))
         XCTAssertNil(NutrientRatio(proteinG: nil, fibreG: nil, forKcal: 100))
     }
+
+    // MARK: Review fixes
+
+    func testShortcutKnowingOnlyProteinStillGetsFibreEstimated() throws {
+        try store.upsertShortcut(Shortcut(lookupKey: "skyr", name: "Skyr", calories: 100, unit: "pot", proteinPerPortion: 16))
+        guard case .logged(let ids, _) = try logging.submit("skyr", selectedDate: day) else { return XCTFail() }
+        XCTAssertEqual(try store.foodItem(id: ids[0])?.proteinG, 16)
+        let plan = try logging.backfillNutrientsLocally()
+        let target = try XCTUnwrap(plan.targets.first { $0.shortcutKey == "skyr" }, "fibre is still missing")
+        XCTAssertEqual(target.itemIds, ids)
+        try logging.applyNutrientEstimate(target, proteinG: 99, fibreG: 2, forKcal: 100)
+        let item = try XCTUnwrap(store.foodItem(id: ids[0]))
+        XCTAssertEqual(item.proteinG, 16, "known value kept")
+        XCTAssertEqual(item.fibreG, 2)
+        let shortcut = try XCTUnwrap(store.shortcut(lookupKey: "skyr"))
+        XCTAssertEqual(shortcut.proteinPerPortion, 16, "known value kept")
+        XCTAssertEqual(shortcut.fibrePerPortion, 2, "missing value learned")
+    }
+
+    func testRowEditedIntoADifferentFoodIsSkipped() throws {
+        let id = try logManual(FoodDraft(name: "Curry", calories: 600))
+        let target = try XCTUnwrap(logging.backfillNutrientsLocally().targets.first { $0.id == "name:curry" })
+        var item = try XCTUnwrap(store.foodItem(id: id))
+        item.name = "Salad"
+        try store.updateFoodItem(item)
+        XCTAssertEqual(try logging.applyNutrientEstimate(target, proteinG: 30, fibreG: 5, forKcal: 600), 0)
+        XCTAssertNil(try store.foodItem(id: id)?.proteinG)
+    }
+
+    func testItemShortcutDescribesItsDefaultPortion() {
+        let shortcut = Shortcut(lookupKey: "biscuit", name: "Biscuit", calories: 50, unit: "biscuit",
+                                defaultAmount: 2, portionMode: .item, itemUnit: "biscuit")
+        XCTAssertEqual(shortcut.backfillDescription, "2 biscuit Biscuit, about 100 kcal")
+    }
+
+    func testCompleteItemCountNeedsEveryNutrientOnTheSameRow() throws {
+        try logManual(FoodDraft(name: "A", calories: 100, proteinG: 5))
+        try logManual(FoodDraft(name: "B", calories: 100, fibreG: 2))
+        let totals = try store.dayTotals(for: day)
+        XCTAssertEqual(totals.itemsWithProtein, 1)
+        XCTAssertEqual(totals.itemsWithFibre, 1)
+        XCTAssertEqual(totals.itemsWithAllNutrients, 0)
+    }
 }

@@ -53,6 +53,8 @@ public struct BackfillTarget: Hashable, Sendable, Identifiable {
     public var description: String
     public var itemIds: [Int64]
     public var shortcutKey: String?
+    /// Each row's name when planned, so a row edited into a different food meanwhile is skipped.
+    public var itemNames: [Int64: String] = [:]
 }
 
 public struct BackfillPlan: Hashable, Sendable {
@@ -81,20 +83,21 @@ extension LoggingService {
             var groups: [String: BackfillTarget] = [:]
             var order: [String] = []
 
-            for item in try store.allActiveFoodItems() where item.missingNutrients {
+            for original in try store.allActiveFoodItems() where original.missingNutrients {
+                var item = original
+                // Label data first, then the shortcut; whatever is still missing goes to the AI.
                 if let productId = item.productId {
                     if products[productId] == nil { products[productId] = try store.product(id: productId) }
-                    if let product = products[productId] ?? nil, let ratio = product.nutrientRatio,
-                       try fill(item, with: ratio, source: .label) {
-                        filled += 1
-                        continue
+                    if let product = products[productId] ?? nil, let ratio = product.nutrientRatio {
+                        item = try fill(item, with: ratio, source: .label)
                     }
                 }
                 let shortcut = item.shortcutKey.flatMap { byKey[$0] } ?? byName[item.name.lowercased()]
-                if let shortcut, let ratio = shortcut.nutrientRatio, try fill(item, with: ratio, source: .shortcut) {
-                    filled += 1
-                    continue
+                if item.missingNutrients, let shortcut, let ratio = shortcut.nutrientRatio {
+                    item = try fill(item, with: ratio, source: .shortcut)
                 }
+                if item != original { filled += 1 }
+                guard item.missingNutrients else { continue }
                 let key = shortcut.map { "shortcut:\($0.lookupKey)" } ?? "name:\(item.name.lowercased())"
                 if groups[key] == nil {
                     order.append(key)
@@ -103,9 +106,10 @@ extension LoggingService {
                         itemIds: [], shortcutKey: shortcut?.lookupKey)
                 }
                 groups[key]?.itemIds.append(item.id)
+                groups[key]?.itemNames[item.id] = item.name
             }
-            // Shortcuts without nutrients get them too, so future one-tap logs carry protein and fibre.
-            for shortcut in shortcuts where shortcut.nutrientRatio == nil && groups["shortcut:\(shortcut.lookupKey)"] == nil {
+            // Shortcuts missing a nutrient get it too, so future one-tap logs carry it.
+            for shortcut in shortcuts where shortcut.isMissingNutrientData && groups["shortcut:\(shortcut.lookupKey)"] == nil {
                 let key = "shortcut:\(shortcut.lookupKey)"
                 order.append(key)
                 groups[key] = BackfillTarget(id: key, description: shortcut.backfillDescription, itemIds: [],
@@ -133,36 +137,39 @@ extension LoggingService {
         return try connection.transaction {
             var changed = 0
             for id in target.itemIds {
-                if let item = try store.foodItem(id: id), !item.voided, try fill(item, with: ratio, source: .estimate) {
-                    changed += 1
-                }
+                guard let item = try store.foodItem(id: id), !item.voided else { continue }
+                // Skip a row that was edited into a different food while the estimate was fetched.
+                if let planned = target.itemNames[id], planned.lowercased() != item.name.lowercased() { continue }
+                if try fill(item, with: ratio, source: .estimate) != item { changed += 1 }
             }
-            if let key = target.shortcutKey, var shortcut = try store.shortcut(lookupKey: key),
-               !shortcut.hasAnyNutrientData {
+            if let key = target.shortcutKey, var shortcut = try store.shortcut(lookupKey: key) {
                 let per100 = ShortcutResolver.toLabelFacts(shortcut).flatMap { $0.kcalPer100g ?? $0.kcalPer100ml }
-                for (nutrient, perKcal) in ratio.perKcal {
+                var updated = false
+                // Only nutrients the shortcut has no value for; known values and their basis are kept.
+                for (nutrient, perKcal) in ratio.perKcal where shortcut.lacks(nutrient) {
                     if let per100 {
                         shortcut[keyPath: nutrient.shortcutPer100] = NutrientRatio.rounded(perKcal * per100)
                     } else {
                         shortcut[keyPath: nutrient.shortcutPerPortion] = NutrientRatio.rounded(perKcal * shortcut.calories)
                     }
+                    updated = true
                 }
-                try store.upsertShortcut(shortcut)
+                if updated { try store.upsertShortcut(shortcut) }
             }
             return changed
         }
     }
 
-    /// Fills only the missing values. Returns whether anything changed.
-    private func fill(_ item: FoodItem, with ratio: NutrientRatio, source: NutrientSource) throws -> Bool {
+    /// Fills only the missing values, scaled to the row's current calories. Returns the row as saved.
+    private func fill(_ item: FoodItem, with ratio: NutrientRatio, source: NutrientSource) throws -> FoodItem {
         var updated = item
         for (nutrient, perKcal) in ratio.perKcal where updated[nutrient] == nil {
             updated[nutrient] = NutrientRatio.rounded(perKcal * item.calories)
         }
-        guard updated != item else { return false }
+        guard updated != item else { return item }
         if !item.hasAnyNutrient { updated.nutrientSource = source }
         try store.updateFoodItem(updated)
-        return true
+        return updated
     }
 }
 
@@ -178,9 +185,11 @@ extension FoodItem {
 }
 
 extension Shortcut {
-    var hasAnyNutrientData: Bool {
-        Nutrient.allCases.contains { self[keyPath: $0.shortcutPerPortion] != nil || self[keyPath: $0.shortcutPer100] != nil }
+    func lacks(_ nutrient: Nutrient) -> Bool {
+        self[keyPath: nutrient.shortcutPerPortion] == nil && self[keyPath: nutrient.shortcutPer100] == nil
     }
+
+    var isMissingNutrientData: Bool { Nutrient.allCases.contains(where: lacks) }
 
     var nutrientRatio: NutrientRatio? {
         if Nutrient.allCases.contains(where: { self[keyPath: $0.shortcutPerPortion] != nil }) {
@@ -190,9 +199,14 @@ extension Shortcut {
         return NutrientRatio(self, \.shortcutPer100, forKcal: per100)
     }
 
+    /// The portion a one-tap log of this shortcut produces (item and measure shortcuts store
+    /// calories per unit, so the resolved default portion is described, not the stored figure).
     var backfillDescription: String {
-        let amount = ShortcutResolver.formatPlainNumber(defaultAmount ?? 1)
-        return "\(amount) \(unit) \(name), about \(Int(calories.rounded())) kcal"
+        let resolved = ShortcutResolver.resolve(self, part: ParsedFoodPart(
+            normalizedFoodText: lookupKey, shortcutTrigger: lookupKey, quantity: 1, quantityUnit: nil))
+        let quantity = [resolved.amount.map(ShortcutResolver.formatPlainNumber), resolved.unit]
+            .compactMap { $0 }.joined(separator: " ")
+        return "\(quantity.isEmpty ? "" : quantity + " ")\(name), about \(Int(resolved.calories.rounded())) kcal"
     }
 }
 

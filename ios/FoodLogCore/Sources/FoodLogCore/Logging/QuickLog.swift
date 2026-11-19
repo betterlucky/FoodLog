@@ -22,7 +22,7 @@ extension LoggingService {
         let dayPrefix = day == today ? "" : "for \(day == today.minusDays(1) ? "yesterday" : day.iso) "
         switch outcome {
         case .logged(let ids, let summary):
-            return QuickLogResult(message: "Logged \(dayPrefix)\(summary). \(try totalLine(for: day))",
+            return QuickLogResult(message: "Logged \(dayPrefix)\(summary).\(totalSuffix(for: day))",
                                   loggedItemIds: ids, savedForDetails: false)
         case .needsDetails:
             let quoted = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -44,13 +44,19 @@ extension LoggingService {
         let day = try store.currentFoodDate()
         let logged = try logShortcut(shortcutKey, on: day)
         return QuickLogResult(
-            message: "Logged \(logged.draft.name) \(Int(logged.draft.calories.rounded())) kcal. \(try totalLine(for: day))",
+            message: "Logged \(logged.draft.name) \(Int(logged.draft.calories.rounded())) kcal.\(totalSuffix(for: day))",
             loggedItemIds: [logged.itemId], savedForDetails: false)
     }
 
     /// "Today: 1,240 kcal, 52 g protein, 14 g fibre."
     public func todaySummary() throws -> String {
         try totalLine(for: store.currentFoodDate())
+    }
+
+    /// The running total after a log has already been saved. A failed read must not turn a saved log
+    /// into an error, or Siri would report failure and invite a duplicate retry.
+    private func totalSuffix(for day: LocalDate) -> String {
+        (try? totalLine(for: day)).map { " " + $0 } ?? ""
     }
 
     private func totalLine(for day: LocalDate) throws -> String {
