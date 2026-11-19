@@ -16,7 +16,7 @@ export interface CompatConfig {
 export function createOpenAICompatibleAdapter(config: CompatConfig): ProviderAdapter {
   return {
     name: config.name,
-    async complete(request: CompletionRequest, model: string, env: Env): Promise<unknown> {
+    async complete(request: CompletionRequest, model: string, env: Env, servedBy?: (model: string) => void): Promise<unknown> {
       const apiKey = env[config.apiKeyVar];
       if (!apiKey) throw new AdapterError("not_configured", `${config.apiKeyVar} not set`);
       const baseUrl = (env[config.baseUrlVar] || config.defaultBaseUrl || "").replace(/\/+$/, "");
@@ -75,6 +75,7 @@ export function createOpenAICompatibleAdapter(config: CompatConfig): ProviderAda
       } catch {
         throw new AdapterError("bad_response", "response was not valid JSON");
       }
+      if (typeof payload?.model === "string" && payload.model) servedBy?.(payload.model);
       const choice = payload?.choices?.[0];
       if (!choice) throw new AdapterError("bad_response", "no choices in response");
       if (choice.message?.refusal || choice.finish_reason === "content_filter") {

@@ -9,7 +9,7 @@ const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 export function createAnthropicAdapter(options: { fetch?: FetchLike } = {}): ProviderAdapter {
   return {
     name: "anthropic",
-    async complete(request: CompletionRequest, model: string, env: Env): Promise<unknown> {
+    async complete(request: CompletionRequest, model: string, env: Env, servedBy?: (model: string) => void): Promise<unknown> {
       const apiKey = env.ANTHROPIC_API_KEY;
       if (!apiKey) throw new AdapterError("not_configured", "ANTHROPIC_API_KEY not set");
 
@@ -49,6 +49,7 @@ export function createAnthropicAdapter(options: { fetch?: FetchLike } = {}): Pro
         throw mapSdkError(err);
       }
 
+      if (typeof message.model === "string" && message.model) servedBy?.(message.model);
       if (message.stop_reason === "refusal") throw new AdapterError("refusal", "model refused");
       if (message.stop_reason === "max_tokens") {
         throw new AdapterError("max_tokens", "output truncated at max_tokens");

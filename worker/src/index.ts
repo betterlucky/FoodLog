@@ -66,9 +66,28 @@ async function readBody(request: Request): Promise<{ ok: true; text: string } | 
   if (declared > MAX_BODY_BYTES) {
     return { ok: false, response: errorResponse(413, "payload_too_large", "request body exceeds 8 MB") };
   }
-  const buf = await request.arrayBuffer();
-  if (buf.byteLength > MAX_BODY_BYTES) {
-    return { ok: false, response: errorResponse(413, "payload_too_large", "request body exceeds 8 MB") };
+  // Count bytes as they arrive, so a body without (or with a false) content-length can't be
+  // buffered past the limit before it is rejected.
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) {
+        await reader.cancel().catch(() => {});
+        return { ok: false, response: errorResponse(413, "payload_too_large", "request body exceeds 8 MB") };
+      }
+      chunks.push(value);
+    }
+  }
+  const buf = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buf.set(chunk, offset);
+    offset += chunk.byteLength;
   }
   return { ok: true, text: new TextDecoder().decode(buf) };
 }

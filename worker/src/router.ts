@@ -77,6 +77,8 @@ function issueSummary(error: z.ZodError): string {
 
 interface Outcome<T> {
   entry: RouteEntry;
+  /** The model the provider reports serving, when it says. */
+  servedModel?: string;
   latencyMs: number;
   data?: T;
   reason?: string;
@@ -86,12 +88,15 @@ async function tryEntry<T>(entry: RouteEntry, opts: RouteOptions<T>): Promise<Ou
   const started = Date.now();
   const adapter = opts.resolve(entry.provider);
   if (!adapter) return { entry, latencyMs: 0, reason: "unknown_provider" };
+  let servedModel: string | undefined;
   try {
-    const raw = await adapter.complete(opts.request, entry.model, opts.env);
+    const raw = await adapter.complete(opts.request, entry.model, opts.env, (model) => {
+      servedModel = model;
+    });
     const latencyMs = Date.now() - started;
     const parsed = opts.request.schema.safeParse(raw);
     if (!parsed.success) return { entry, latencyMs, reason: issueSummary(parsed.error) };
-    return { entry, latencyMs, data: parsed.data };
+    return { entry, servedModel, latencyMs, data: parsed.data };
   } catch (err) {
     const latencyMs = Date.now() - started;
     const reason = err instanceof AdapterError ? err.reason : "adapter_error";
@@ -106,7 +111,7 @@ export async function runRoute<T>(opts: RouteOptions<T>): Promise<RouteResult<T>
   const finish = (o: Outcome<T>): RouteResult<T> => ({
     ok: true,
     data: o.data as T,
-    provenance: { provider: o.entry.provider, model: o.entry.model, latencyMs: o.latencyMs },
+    provenance: { provider: o.entry.provider, model: o.servedModel ?? o.entry.model, latencyMs: o.latencyMs },
     attempts,
   });
 

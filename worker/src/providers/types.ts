@@ -22,8 +22,12 @@ export interface CompletionRequest {
 
 export interface ProviderAdapter {
   name: string;
-  /** Returns parsed JSON from the model. The router validates it against the schema. */
-  complete(request: CompletionRequest, model: string, env: Env): Promise<unknown>;
+  /**
+   * Returns parsed JSON from the model. The router validates it against the schema. Adapters call
+   * `servedBy` with the model the provider says produced the answer (it can differ from the requested
+   * model under provider-side fallback), so provenance names the real model.
+   */
+  complete(request: CompletionRequest, model: string, env: Env, servedBy?: (model: string) => void): Promise<unknown>;
 }
 
 export type AdapterErrorKind =

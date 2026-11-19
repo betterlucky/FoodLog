@@ -91,12 +91,41 @@ test("400 on invalid JSON and invalid requests", async () => {
 });
 
 test("413 by content-length and by actual size", async () => {
-  const byHeader = await call("POST", "/v1/estimate", {
-    raw: "{}",
-    headers: { "content-length": String(9 * 1024 * 1024) },
-  }).catch(() => null);
-  // Some runtimes refuse to construct a Request with a lying content-length; accept either.
+  // Only Request construction may fail (some runtimes refuse a lying content-length); a failure
+  // inside the handler must fail the test.
+  let byHeader: Response | null = null;
+  try {
+    byHeader = await call("POST", "/v1/estimate", {
+      raw: "{}",
+      headers: { "content-length": String(9 * 1024 * 1024) },
+    });
+  } catch (error) {
+    assert.ok(error instanceof TypeError, `unexpected failure: ${error}`);
+  }
   if (byHeader) assert.equal(byHeader.status, 413);
+
+  // A streamed body with no content-length is cut off once it passes the limit.
+  const chunk = new Uint8Array(1024 * 1024).fill(32);
+  let sent = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (sent >= 20) return controller.close();
+      sent += 1;
+      controller.enqueue(chunk);
+    },
+  });
+  const streamed = await handleRequest(
+    new Request("https://worker.test/v1/estimate", {
+      method: "POST",
+      headers: { authorization: `Bearer ${env.APP_TOKEN}` },
+      body: stream,
+      duplex: "half",
+    } as RequestInit),
+    env,
+    { resolve: () => undefined, log: () => {} },
+  );
+  assert.equal(streamed.status, 413);
+  assert.ok(sent < 20, "stopped reading once over the limit");
 
   const huge = JSON.stringify({ contractVersion: 1, text: "tea", pad: "x".repeat(8 * 1024 * 1024 + 10) });
   const res = await call("POST", "/v1/estimate", { raw: huge });

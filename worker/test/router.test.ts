@@ -128,3 +128,21 @@ test("no entries gives ok:false", async () => {
   const res = await runRoute({ entries: [], request, env, resolve: resolverOf([]) });
   assert.equal(res.ok, false);
 });
+
+test("provenance names the model the provider reports serving", async () => {
+  const a: ProviderAdapter = {
+    name: "a",
+    async complete(_req, _model, _env, servedBy) {
+      servedBy?.("fallback-model");
+      return estimateModelOutput;
+    },
+  };
+  const res = await runRoute({
+    entries: parseRoute("a:requested-model", resolverOf([a])).entries,
+    request,
+    env,
+    resolve: resolverOf([a]),
+  });
+  assert.ok(res.ok);
+  if (res.ok) assert.equal(res.provenance.model, "fallback-model");
+});
