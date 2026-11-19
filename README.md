@@ -22,12 +22,12 @@ This repository contains the first Phase 1 implementation slice:
 - daily weight and daily close/export status
 - local CSV export
 - full-history live journal CSV export with optional weight rows
-- no backend and no OpenAI calls in Phase 1
+- no backend or AI calls yet
 - barcode logging was tried and is dropped for now
 
 ## Current Direction
 
-Near-term work should polish the existing local daily workflow in this order: shortcuts/defaults, OCR/manual product repeat logging, Lodestone export readiness, live journal export, and local history suggestion quality. Shortcuts should be portion-first for users rather than saved as unintuitive per-gram defaults where that can be avoided. In-app data visualisation is parked for later, though journal fields should stay sensible enough to support future charts. Barcode lookup is parked unless the plan is explicitly reopened.
+The goal is low-friction, mindful tracking of calories, with protein and fibre backfilled later rather than entered at logging time. Next up: keep the nutrients labels already provide, add provider-neutral AI estimates (text or photo, reviewed before logging) through a Cloudflare Worker, evaluate AI label reading against local OCR, and add quicker capture entry points. Lodestone export stays available but is no longer a daily obligation. Barcode lookup is parked. See [PLAN.md](PLAN.md) for details.
 
 ## Work Tracking
 

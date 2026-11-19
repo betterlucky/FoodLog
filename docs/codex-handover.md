@@ -16,8 +16,8 @@ This note preserves useful context from older Codex project threads that may sta
 - **Shortcuts are user portions.** A shortcut should represent a repeatable human portion such as a cup, wrap, pot, bowl, or serving where possible. Gram/ml math can exist internally, but saved defaults should not become unintuitive per-gram entries unless the user really wants that.
 - **History suggestions are reviewed hints.** Historical Room rows can help resolve repeated ambiguous foods, but they should be presented as candidates with enough context to review. They should not silently auto-log.
 - **Live journal is replaceable, not canonical.** The full-history journal export is for external review/analysis. It should be regenerated from Room, not treated as a second database or append-only truth.
-- **Lodestone CSV remains the daily handoff.** Keep `Downloads/FoodLogData/food_log_YYYY-MM-DD.csv` stable until Lodestone changes its importer.
-- **AI is later.** AI may eventually help with unknown meals, plate photos, partial labels, and user-initiated questions, but it should come after deterministic shortcuts, OCR/manual flows, local history suggestions, and export trust are solid.
+- **Lodestone CSV contract stays stable.** Keep `Downloads/FoodLogData/food_log_YYYY-MM-DD.csv` stable, but as of November 2026 Lodestone is secondary and daily export is no longer an obligation.
+- **AI moved up (November 2026).** Earlier threads treated AI as a last resort. `PLAN.md` now makes provider-neutral, reviewed AI estimates a near-term priority, with nutrient backfill favoured over upfront nutrient entry.
 
 ## Completed Tracks Worth Remembering
 

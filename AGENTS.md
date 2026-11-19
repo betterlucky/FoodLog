@@ -4,19 +4,21 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 
 ## Current Product State
 
-- Phase 1 is local-only Kotlin/Compose/Room.
+- The local core is Kotlin/Compose/Room with no backend yet.
 - Deterministic parsing, shortcuts/defaults, pending resolution, logged-item editing/removal, daily weight, daily close status, Lodestone CSV export, and reviewable history suggestions are implemented.
 - Local on-device OCR label scanning, the logging wizard, and Room-backed live journal export are implemented.
 - Barcode logging was tried and is dropped for now. Do not add barcode/cache fields or Open Food Facts work unless the plan is explicitly reopened.
-- OpenAI/backend features, leftovers, corrections, fuzzy matching beyond simple Room-backed history suggestions, and conversational summaries are out of scope for the current local core.
+- Leftovers, corrections, fuzzy matching beyond simple Room-backed history suggestions, and conversational summaries are out of scope.
 
 ## Product Direction
 
-- Near-term work should make the existing daily workflow more dependable before adding new capture modes.
-- Prefer shortcut/product polish, label/manual product polish, daily close/export polish, live journal stability, then history suggestion quality before AI integration.
+- The goal is mindful intake tracking with minimal friction. The user has ADHD; sustained logging matters more than complete data. Judge changes by the taps, decisions, and chores they add or remove.
+- Log now, enrich later: capture name, portion, and provenance; backfill protein and fibre afterwards rather than requiring nutrient entry at logging time.
+- AI estimate capture is a near-term priority. Keep it provider-neutral: the app speaks FoodLog's versioned contract to a Cloudflare Worker, and provider adapters live in the Worker. Never hardcode a provider in the app or ship provider keys. See `PLAN.md` "AI Architecture".
+- AI output is always a reviewed draft, never a silent log.
 - Shortcuts should be portion-first for users. Save a repeatable user-facing portion with the shortcut where possible; use gram/ml math internally only when needed, and offer a non-intrusive "update shortcut" toggle when a logged edit should become the new default.
+- Lodestone is secondary for now. Keep its CSV contract stable in `Downloads/FoodLogData`, but do not treat daily export as an obligation or add nutrient columns to it.
 - Treat barcode lookup as a parked experiment, not a missing required feature.
-- Keep the Lodestone CSV export as the daily handoff contract. Lodestone still imports from the historical `Downloads/FoodLogData` folder for now.
 
 ## Working Rules
 
@@ -26,12 +28,12 @@ FoodLog is a private, local-first Android app. Treat Room as the source of truth
 - Check whether a task is already implemented before changing code, and update docs when product direction, workflow, or verification expectations change.
 - CodeRabbit and `scripts/review-guard review --context "<change summary>"` are optional review tools. Use them when the user asks or when an independent review is proportionate to the change. ReviewGuard uses Qwen, Antigravity, and E4B where available; inspect and verify accepted findings yourself.
 - During requested review waits or other timed sleeps, state that you are waiting and then stay quiet until there is a result or a blocker.
-- Keep changes local-first and deterministic unless the plan says otherwise.
+- Keep changes local-first. Network calls are limited to the user-initiated AI Worker described in `PLAN.md`.
 - Save raw text before interpretation and preserve raw-entry audit records.
 - Use repository/database transactions for flows that create or update raw entries and food rows together.
 - Exports must be generated from Room rows only.
 - Keep parsing, export generation, totals, and label/product calculations out of composables where practical.
-- Do not commit real food logs, personal exports, SDK paths, keystores, tokens, or API keys.
+- Do not commit real food logs, personal exports, SDK paths, keystores, tokens, Worker secrets, or API keys.
 
 ## Important Paths
 
