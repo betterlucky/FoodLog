@@ -38,3 +38,8 @@ ios/build/
 ios/local/
 *.xcuserstate
 xcuserdata/
+
+# Cloudflare Worker
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
