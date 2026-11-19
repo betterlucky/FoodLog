@@ -167,7 +167,9 @@ public final class LoggingService {
 
     /// Saves the raw text first, then logs it at once if every part matches an active shortcut.
     /// Anything else stays a pending entry and comes back for review.
-    public func submit(_ input: String, selectedDate: LocalDate) throws -> SubmitOutcome {
+    /// `dictated` is the original speech transcript when `input` was tidied from dictation; it is kept
+    /// on the raw entry's notes so the audit record holds what was actually said.
+    public func submit(_ input: String, selectedDate: LocalDate, dictated: String? = nil) throws -> SubmitOutcome {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return .invalid }
         let intent = classifier.classify(text)
@@ -175,17 +177,19 @@ public final class LoggingService {
         guard parsed.logDate == selectedDate else { return .dateMismatch(requested: parsed.logDate) }
         let now = clock.now
         let consumedTime = parsed.consumedTime ?? clock.localTime
+        let spoken = dictated.flatMap { $0 == text ? nil : "Dictated: “\($0)”" }
 
         return try connection.transaction {
             guard intent == .foodLog else {
                 try store.insertRawEntry(RawEntry(
                     createdAt: now, logDate: parsed.logDate, consumedTime: consumedTime, rawText: text,
-                    entryKind: intent.entryKind, status: intent.rawEntryStatus, notes: intent.placeholderNotes))
+                    entryKind: intent.entryKind, status: intent.rawEntryStatus,
+                    notes: [intent.placeholderNotes, spoken].compactMap { $0 }.joined(separator: " · ").nilIfEmpty))
                 return .nonFood(intent)
             }
             let rawEntryId = try store.insertRawEntry(RawEntry(
                 createdAt: now, logDate: parsed.logDate, consumedTime: consumedTime, rawText: text,
-                entryKind: .text, status: .pending))
+                entryKind: .text, status: .pending, notes: spoken))
             let matches = try parsed.parts.map { part in
                 (part, try part.shortcutTrigger.flatMap { try store.activeShortcut(lookupKey: $0) })
             }

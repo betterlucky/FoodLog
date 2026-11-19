@@ -57,10 +57,6 @@ struct EditFoodSheet: View {
                 }
                 Section {
                     LabeledContent("Source", value: sourceText)
-                    Button("Delete", role: .destructive) {
-                        model.removeItem(item.id)
-                        dismiss()
-                    }
                 }
             }
             .navigationTitle("Edit")
@@ -70,6 +66,15 @@ struct EditFoodSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save).disabled(!form.isValid)
+                }
+                ToolbarItem(placement: .bottomBar) {
+                    Button(role: .destructive) {
+                        model.removeItem(item.id)
+                        dismiss()
+                    } label: {
+                        Label("Delete", systemImage: "trash").labelStyle(.titleAndIcon)
+                    }
+                    .tint(.red)
                 }
             }
         }

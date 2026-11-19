@@ -147,6 +147,17 @@ struct ResolveSheet: View {
                     Button("Log", action: save)
                         .disabled(!forms.allSatisfy(\.isValid) || forms.allSatisfy { !$0.include })
                 }
+                if let pendingId = request.rawEntryId {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(role: .destructive) {
+                            model.removePending(pendingId)
+                            dismiss()
+                        } label: {
+                            Label("Discard entry", systemImage: "trash").labelStyle(.titleAndIcon)
+                        }
+                        .tint(.red)
+                    }
+                }
             }
         }
     }

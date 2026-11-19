@@ -45,67 +45,7 @@ extension Notification.Name {
     static let foodLogDataChanged = Notification.Name("FoodLogDataChanged")
 }
 
-// MARK: Shortcut entity
-
-struct ShortcutEntity: AppEntity {
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Food shortcut"
-    static let defaultQuery = ShortcutEntityQuery()
-
-    var id: String
-    var name: String
-    var calories: Double
-
-    var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(name)", subtitle: "\(Int(calories.rounded())) kcal")
-    }
-
-    init(_ shortcut: Shortcut) {
-        id = shortcut.lookupKey
-        name = shortcut.name
-        calories = shortcut.calories
-    }
-}
-
-struct ShortcutEntityQuery: EntityStringQuery {
-    @MainActor private func all() throws -> [ShortcutEntity] {
-        try FoodLogServices.shared().store.activeShortcuts().map(ShortcutEntity.init)
-    }
-
-    @MainActor func entities(for identifiers: [String]) async throws -> [ShortcutEntity] {
-        try all().filter { identifiers.contains($0.id) }
-    }
-
-    @MainActor func entities(matching string: String) async throws -> [ShortcutEntity] {
-        let query = string.lowercased()
-        return try all().filter { $0.name.lowercased().contains(query) || $0.id.contains(query) }
-    }
-
-    @MainActor func suggestedEntities() async throws -> [ShortcutEntity] { try all() }
-}
-
 // MARK: Intents
-
-struct LogShortcutIntent: AppIntent {
-    static let title: LocalizedStringResource = "Log a food shortcut"
-    static let description = IntentDescription("Logs one of your FoodLog shortcuts without opening the app.")
-
-    @Parameter(title: "Shortcut")
-    var shortcut: ShortcutEntity
-
-    @Parameter(title: "Portions")
-    var portions: Double?
-
-    static var parameterSummary: some ParameterSummary {
-        Summary("Log \(\.$shortcut)") { \.$portions }
-    }
-
-    @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
-        let result = try FoodLogServices.shared().logging.quickLog(shortcutKey: shortcut.id, quantity: portions)
-        FoodLogServices.dataChanged()
-        return .result(dialog: "\(result.message)")
-    }
-}
 
 struct LogFoodIntent: AppIntent {
     static let title: LocalizedStringResource = "Log food"
@@ -119,7 +59,7 @@ struct LogFoodIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let result = try FoodLogServices.shared().logging.quickLog(text)
+        let result = try FoodLogServices.shared().logging.quickLogSpoken(text)
         FoodLogServices.dataChanged()
         return .result(dialog: "\(result.message)")
     }
@@ -138,15 +78,11 @@ struct TodayTotalIntent: AppIntent {
 
 struct FoodLogAppShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: LogShortcutIntent(),
-                    phrases: ["Log \(\.$shortcut) in \(.applicationName)",
-                              "Add \(\.$shortcut) to \(.applicationName)",
-                              "\(.applicationName) \(\.$shortcut)"],
-                    shortTitle: "Log shortcut", systemImageName: "bolt.fill")
+        // "FoodLog" on its own asks "What did you have?"; the answer is tidied and parsed like typed text.
         AppShortcut(intent: LogFoodIntent(),
-                    phrases: ["Log food in \(.applicationName)",
-                              "Add food to \(.applicationName)",
-                              "Log in \(.applicationName)"],
+                    phrases: ["\(.applicationName)",
+                              "Log food in \(.applicationName)",
+                              "\(.applicationName) log"],
                     shortTitle: "Log food", systemImageName: "fork.knife")
         AppShortcut(intent: TodayTotalIntent(),
                     phrases: ["How much have I eaten in \(.applicationName)",

@@ -152,6 +152,18 @@ final class FoodLogBackfillUITests: XCTestCase {
 }
 
 final class FoodLogIntentUITests: XCTestCase {
+    func testDictatedTextIsTidiedAndUnresolvedEntryCanBeDiscarded() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestInMemory", "-uiTestIntentText", "Two teas and a mystery pie."]
+        app.launch()
+        let pending = app.staticTexts["2 teas, 1 mystery pie"]
+        XCTAssertTrue(pending.waitForExistence(timeout: 5))
+        pending.tap()
+        XCTAssertTrue(app.navigationBars["Add details"].waitForExistence(timeout: 3))
+        app.buttons["Discard entry"].tap()
+        XCTAssertFalse(pending.waitForExistence(timeout: 2))
+    }
+
     func testLogFoodIntentUpdatesTheOpenApp() {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTestInMemory", "-uiTestIntentText", "2 tea"]

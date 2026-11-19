@@ -78,11 +78,7 @@ final class AppModel {
             pending = try store.pendingEntries(for: selectedDate)
             totals = try store.dayTotals(for: selectedDate)
             weight = try store.dailyWeight(for: selectedDate)
-            let latest = try store.activeShortcuts()
-            if latest.map(\.lookupKey) != shortcuts.map(\.lookupKey) || latest.map(\.name) != shortcuts.map(\.name) {
-                FoodLogAppShortcuts.updateAppShortcutParameters()
-            }
-            shortcuts = latest
+            shortcuts = try store.activeShortcuts()
             settings = try store.settings()
             canImportAndroidData = try !store.hasUserData
             rowsMissingNutrients = try logging.rowsMissingNutrients()

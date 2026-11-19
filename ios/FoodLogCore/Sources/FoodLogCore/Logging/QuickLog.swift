@@ -11,12 +11,12 @@ public struct QuickLogResult: Hashable, Sendable {
 extension LoggingService {
     /// Logs typed or spoken food on the current food day. Anything FoodLog can't resolve is kept as
     /// a "needs details" entry (log now, enrich later); nothing is estimated or guessed silently.
-    public func quickLog(_ text: String) throws -> QuickLogResult {
+    public func quickLog(_ text: String, dictated: String? = nil) throws -> QuickLogResult {
         var day = try store.currentFoodDate()
-        var outcome = try submit(text, selectedDate: day)
+        var outcome = try submit(text, selectedDate: day, dictated: dictated)
         if case .dateMismatch(let requested) = outcome {
             day = requested
-            outcome = try submit(text, selectedDate: requested)
+            outcome = try submit(text, selectedDate: requested, dictated: dictated)
         }
         let today = try store.currentFoodDate()
         let dayPrefix = day == today ? "" : "for \(day == today.minusDays(1) ? "yesterday" : day.iso) "
