@@ -11,10 +11,12 @@ struct EditFoodSheet: View {
     @State private var updateShortcut = false
     @State private var shortcut: Shortcut?
     @Environment(\.dismiss) private var dismiss
+    private let onLogAgain: (() -> Void)?
 
-    init(model: AppModel, item: FoodItem) {
+    init(model: AppModel, item: FoodItem, onLogAgain: (() -> Void)? = nil) {
         self.model = model
         self.item = item
+        self.onLogAgain = onLogAgain
         var form = PartForm(part: PartDraft(id: 0, inputText: item.name, lookupKey: nil, shortcut: nil, draft: nil,
                                             historySuggestions: []), saveByDefault: false)
         form.fill(from: FoodDraft(item: item))
@@ -75,6 +77,13 @@ struct EditFoodSheet: View {
                         Label("Delete", systemImage: "trash").labelStyle(.titleAndIcon)
                     }
                     .tint(.red)
+                }
+                if let onLogAgain {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(action: onLogAgain) {
+                            Label("Log again", systemImage: "arrow.uturn.forward").labelStyle(.titleAndIcon)
+                        }
+                    }
                 }
             }
         }

@@ -7,8 +7,9 @@ struct PartForm: Identifiable {
     let id: Int
     var inputText: String
     var fromShortcut: FoodDraft?
-    /// The reviewed AI draft this form was filled from; keeps its source, confidence and provenance.
-    var fromEstimate: FoodDraft?
+    /// The draft this form was filled from (an AI estimate or a past entry being logged again); its
+    /// source, confidence, provenance and nutrients are kept apart from what the user edits.
+    var base: FoodDraft?
     var estimateSummary: String?
     var include = true
     var name = ""
@@ -47,13 +48,21 @@ struct PartForm: Identifiable {
     mutating func apply(_ estimate: EstimateResponse) {
         let typed = name.trimmingCharacters(in: .whitespaces)
         let draft = estimate.combinedDraft(named: typed.isEmpty ? "Meal" : typed)
+        apply(base: draft, summary: Self.estimateSummary(draft))
+    }
+
+    mutating func apply(base draft: FoodDraft, summary: String?) {
         fill(from: draft)
-        fromEstimate = draft
-        estimateSummary = "AI estimate · \(draft.confidence.label.lowercased()). Check it before logging."
+        base = draft
+        estimateSummary = summary
+    }
+
+    static func estimateSummary(_ draft: FoodDraft) -> String {
+        "AI estimate · \(draft.confidence.label.lowercased()). Check it before logging."
     }
 
     mutating func apply(_ suggestion: FoodHistorySuggestion) {
-        fromEstimate = nil
+        base = nil
         estimateSummary = nil
         name = suggestion.name
         amount = suggestion.amount.map(Format.number) ?? ""
@@ -66,7 +75,7 @@ struct PartForm: Identifiable {
     /// source unless the user changed what was resolved.
     var draft: FoodDraft? {
         guard include else { return nil }
-        if let estimate = fromEstimate {
+        if let estimate = base {
             // Still an AI-derived estimate after review; only nutrients the user retyped lose ESTIMATE.
             var draft = estimate
             draft.name = name
@@ -118,10 +127,18 @@ struct ResolveSheet: View {
     @State private var time: Date
     @Environment(\.dismiss) private var dismiss
 
-    init(model: AppModel, request: ResolutionContext) {
+    private let title: String?
+
+    /// `prefill` fills parts from drafts (AI estimates already fetched, or a past entry to log again).
+    init(model: AppModel, request: ResolutionContext, prefill: AppModel.Prefill = .init()) {
         self.model = model
         self.request = request
-        _forms = State(initialValue: request.parts.map { PartForm(part: $0, saveByDefault: request.rawEntryId != nil) })
+        self.title = prefill.title
+        _forms = State(initialValue: request.parts.map { part in
+            var form = PartForm(part: part, saveByDefault: request.rawEntryId != nil && prefill.saveShortcuts)
+            if let draft = prefill.drafts[part.id] { form.apply(base: draft, summary: prefill.summary?(draft)) }
+            return form
+        })
         _time = State(initialValue: (request.consumedTime ?? LocalTime(date: Date())).asDate)
     }
 
@@ -139,7 +156,7 @@ struct ResolveSheet: View {
                     DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
                 }
             }
-            .navigationTitle(request.rawEntryId == nil ? "Add food" : "Add details")
+            .navigationTitle(title ?? (request.rawEntryId == nil ? "Add food" : "Add details"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -222,7 +239,7 @@ private struct PartSection: View {
             Button {
                 runEstimate(image: nil)
             } label: {
-                Label(form.fromEstimate == nil ? "Estimate with AI" : "Estimate again", systemImage: "sparkles")
+                Label(form.base == nil ? "Estimate with AI" : "Estimate again", systemImage: "sparkles")
             }
             .disabled(estimating || estimateText.isEmpty)
             Spacer()

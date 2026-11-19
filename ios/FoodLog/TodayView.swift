@@ -8,9 +8,10 @@ struct TodayView: View {
     @State private var sheet: Sheet?
     @State private var showDatePicker = false
     @FocusState private var entryFocused: Bool
+    @State private var dayDirection = 1
 
     enum Sheet: Identifiable {
-        case resolve(ResolutionContext)
+        case resolve(ResolutionContext, AppModel.Prefill = .init())
         case edit(FoodItem)
         case weight
         case settings
@@ -19,7 +20,7 @@ struct TodayView: View {
 
         var id: String {
             switch self {
-            case .resolve(let request): return "resolve-\(request.id)"
+            case .resolve(let request, _): return "resolve-\(request.id)"
             case .edit(let item): return "edit-\(item.id)"
             case .weight: return "weight"
             case .settings: return "settings"
@@ -37,6 +38,14 @@ struct TodayView: View {
                 loggedSection
             }
             .listStyle(.insetGrouped)
+            .id(model.selectedDate)
+            .transition(.push(from: dayDirection > 0 ? .trailing : .leading))
+            // Swipe sideways anywhere on the day to move between days.
+            .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { value in
+                let dx = value.translation.width, dy = value.translation.height
+                guard abs(dx) > 70, abs(dx) > abs(dy) * 1.5 else { return }
+                changeDay(by: dx < 0 ? 1 : -1)
+            })
             .navigationTitle(Format.day(model.selectedDate, today: (try? model.store.currentFoodDate()) ?? model.selectedDate))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
@@ -98,22 +107,60 @@ struct TodayView: View {
     }
 
     private var pendingSection: some View {
-        Section("Needs details") {
+        Section {
             ForEach(model.pending) { entry in
-                Button {
-                    if let request = model.resolveRequest(forPending: entry.id) { sheet = .resolve(request) }
-                } label: {
-                    HStack {
-                        Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
-                        Text(entry.rawText).foregroundStyle(.primary)
-                        Spacer()
-                        Text(Format.time(entry.consumedTime)).foregroundStyle(.secondary).font(.caption)
+                let draft = model.pendingDrafts[entry.id]
+                HStack {
+                    Button {
+                        guard let request = model.resolveRequest(forPending: entry.id) else { return }
+                        if let draft {
+                            sheet = .resolve(request, AppModel.Prefill(drafts: draft.drafts,
+                                                                       summary: PartForm.estimateSummary))
+                        } else {
+                            sheet = .resolve(request)
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: draft == nil ? "questionmark.circle.fill" : "sparkles")
+                                .foregroundStyle(draft == nil ? .orange : .purple)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.rawText).foregroundStyle(.primary)
+                                if let draft {
+                                    Text(draft.summary).font(.caption).foregroundStyle(.secondary)
+                                        .accessibilityIdentifier("pendingDraft")
+                                }
+                            }
+                            Spacer()
+                            Text(Format.time(entry.consumedTime)).foregroundStyle(.secondary).font(.caption)
+                        }
+                    }
+                    .tint(.primary)
+                    if draft != nil {
+                        Button("Log") { model.logPendingDraft(entry.id) }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .accessibilityIdentifier("logPendingDraft")
                     }
                 }
-                .tint(.primary)
-                .swipeActions {
-                    Button("Discard", role: .destructive) { model.removePending(entry.id) }
+            }
+        } header: {
+            HStack {
+                Text("Needs details")
+                Spacer()
+                if model.aiAvailable, model.pending.contains(where: { model.pendingDrafts[$0.id] == nil }) {
+                    if model.estimatingPending {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Estimate all", systemImage: "sparkles") { model.estimatePending() }
+                            .font(.caption)
+                            .textCase(nil)
+                            .accessibilityIdentifier("estimatePending")
+                    }
                 }
+            }
+        } footer: {
+            if model.pending.contains(where: { model.pendingDrafts[$0.id] != nil }) {
+                Text("AI drafts: check the name and calories, then tap Log. Tap an entry to change it.")
             }
         }
     }
@@ -127,9 +174,6 @@ struct TodayView: View {
             ForEach(model.items) { item in
                 Button { sheet = .edit(item) } label: { FoodRow(item: item) }
                     .tint(.primary)
-                    .swipeActions {
-                        Button("Delete", role: .destructive) { model.removeItem(item.id) }
-                    }
             }
         }
     }
@@ -226,11 +270,16 @@ struct TodayView: View {
 
     // MARK: Toolbar and sheets
 
+    private func changeDay(by days: Int) {
+        dayDirection = days
+        withAnimation(.snappy(duration: 0.25)) { model.moveDay(by: days) }
+    }
+
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarLeading) {
-            Button { model.moveDay(by: -1) } label: { Image(systemName: "chevron.left") }
+            Button { changeDay(by: -1) } label: { Image(systemName: "chevron.left") }
                 .accessibilityLabel("Previous day")
-            Button { model.moveDay(by: 1) } label: { Image(systemName: "chevron.right") }
+            Button { changeDay(by: 1) } label: { Image(systemName: "chevron.right") }
                 .accessibilityLabel("Next day")
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -253,8 +302,12 @@ struct TodayView: View {
 
     @ViewBuilder private func sheetView(_ sheet: Sheet) -> some View {
         switch sheet {
-        case .resolve(let request): ResolveSheet(model: model, request: request)
-        case .edit(let item): EditFoodSheet(model: model, item: item)
+        case .resolve(let request, let prefill): ResolveSheet(model: model, request: request, prefill: prefill)
+        case .edit(let item):
+            EditFoodSheet(model: model, item: item) {
+                let (request, prefill) = model.logAgainRequest(for: item)
+                self.sheet = .resolve(request, prefill)
+            }
         case .weight: WeightSheet(model: model)
         case .settings: SettingsSheet(model: model)
         case .label: LabelScanSheet(model: model)

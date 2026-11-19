@@ -172,3 +172,53 @@ final class FoodLogIntentUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["dayTotal"].label, "50 kcal")
     }
 }
+
+final class FoodLogReuseUITests: XCTestCase {
+    private var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        app.launchArguments = ["-uiTestInMemory", "-uiTestAIStub"]
+        app.launch()
+    }
+
+    private func enter(_ text: String) {
+        let field = app.textFields["entryField"]
+        field.tap()
+        field.typeText(text)
+        app.buttons["submitEntry"].tap()
+    }
+
+    func testSwipeMovesBetweenDays() {
+        app.collectionViews.firstMatch.swipeRight()
+        XCTAssertTrue(app.navigationBars["Yesterday"].waitForExistence(timeout: 3))
+        app.collectionViews.firstMatch.swipeLeft()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
+    }
+
+    func testLogAgainFromAPastEntryLogsToday() {
+        app.buttons["Previous day"].tap()
+        XCTAssertTrue(app.navigationBars["Yesterday"].waitForExistence(timeout: 3))
+        app.buttons["Tea"].tap()
+        app.staticTexts["Tea"].tap()
+        XCTAssertTrue(app.navigationBars["Edit"].waitForExistence(timeout: 3))
+        app.buttons["Log again"].tap()
+        XCTAssertTrue(app.navigationBars["Log again"].waitForExistence(timeout: 3))
+        app.buttons["Log"].tap()
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.staticTexts["dayTotal"].label, "25 kcal")
+    }
+
+    func testEstimateAllDraftsPendingEntriesForOneTapLogging() {
+        enter("mystery stew")
+        XCTAssertTrue(app.navigationBars["Add details"].waitForExistence(timeout: 3))
+        app.buttons["Cancel"].tap()
+        app.buttons["estimatePending"].tap()
+        XCTAssertTrue(app.staticTexts["pendingDraft"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["pendingDraft"].label, "Beef chilli · 420 kcal")
+        app.buttons["logPendingDraft"].tap()
+        XCTAssertTrue(app.staticTexts["Beef chilli"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.staticTexts["dayTotal"].label, "420 kcal")
+    }
+}

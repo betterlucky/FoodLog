@@ -40,6 +40,29 @@ final class AppModel {
     var toast: Toast?
     var errorMessage: String?
 
+    /// Drafts a review sheet starts from: AI estimates already fetched, or a past entry to log again.
+    struct Prefill {
+        var drafts: [Int: FoodDraft] = [:]
+        var title: String?
+        var summary: ((FoodDraft) -> String?)?
+        var saveShortcuts = true
+    }
+
+    /// AI drafts fetched for "Needs details" entries, keyed by raw entry id. Never logged until confirmed.
+    struct PendingDraft {
+        var context: ResolutionContext
+        var drafts: [Int: FoodDraft]
+
+        var summary: String {
+            let parts = context.parts.compactMap { $0.draft ?? drafts[$0.id] }
+            let names = parts.map(\.name).joined(separator: ", ")
+            return "\(names) · \(Format.kcal(parts.map(\.calories).reduce(0, +)))"
+        }
+    }
+
+    private(set) var pendingDrafts: [Int64: PendingDraft] = [:]
+    private(set) var estimatingPending = false
+
     struct Toast: Identifiable, Equatable {
         let id = UUID()
         var message: String
@@ -150,7 +173,60 @@ final class AppModel {
 
     func removeItem(_ id: Int64) { mutate { try logging.removeItems([id]) } }
 
-    func removePending(_ id: Int64) { mutate { try store.removePendingEntry(id: id) } }
+    func removePending(_ id: Int64) {
+        pendingDrafts[id] = nil
+        mutate { try store.removePendingEntry(id: id) }
+    }
+
+    /// Asks the AI for a draft of every unresolved entry on the selected day. Drafts are shown for
+    /// review; nothing is logged until the user taps Log.
+    func estimatePending() {
+        guard !estimatingPending, aiClient != nil else { return }
+        estimatingPending = true
+        let entries = pending.filter { pendingDrafts[$0.id] == nil }
+        Task {
+            defer { estimatingPending = false }
+            var failures: [String] = []
+            for entry in entries {
+                guard let context = resolveRequest(forPending: entry.id) else { continue }
+                var drafts: [Int: FoodDraft] = [:]
+                do {
+                    for part in context.parts where part.draft == nil {
+                        let response = try await estimate(text: part.inputText, image: nil, hints: nil)
+                        let typed = part.inputText.prefix(1).uppercased() + part.inputText.dropFirst()
+                        drafts[part.id] = response.combinedDraft(named: typed)
+                    }
+                    pendingDrafts[entry.id] = PendingDraft(context: context, drafts: drafts)
+                } catch {
+                    failures.append(error.localizedDescription)
+                    if case AIError.unauthorized = error { break }
+                    if case AIError.network = error { break }
+                    if failures.count >= 3 { break }
+                }
+            }
+            if let first = failures.first {
+                toast = Toast(message: "Some entries couldn't be estimated. \(first)")
+            }
+        }
+    }
+
+    /// Logs a reviewed AI draft for a "Needs details" entry, saving shortcuts as the review sheet would.
+    func logPendingDraft(_ id: Int64) {
+        guard let draft = pendingDrafts[id] else { return }
+        let context = draft.context
+        let drafts = context.parts.map { $0.draft ?? draft.drafts[$0.id] }
+        let saves = Set(context.parts.filter { $0.draft == nil && $0.lookupKey != nil }.map(\.id))
+        if resolve(context, drafts: drafts, time: context.consumedTime, saveShortcuts: saves) {
+            pendingDrafts[id] = nil
+        }
+    }
+
+    /// A manual entry for today, pre-filled from a past entry ("log again").
+    func logAgainRequest(for item: FoodItem) -> (ResolutionContext, Prefill) {
+        let context = logging.manualContext(on: (try? store.currentFoodDate()) ?? store.clock.today)
+        let draft = FoodDraft(item: item)
+        return (context, Prefill(drafts: [context.parts[0].id: draft], title: "Log again", saveShortcuts: false))
+    }
 
     func resolveRequest(forPending id: Int64) -> ResolutionContext? {
         var context: ResolutionContext?
@@ -167,6 +243,9 @@ final class AppModel {
     func resolve(_ context: ResolutionContext, drafts: [FoodDraft?], time: LocalTime?, saveShortcuts: Set<Int>) -> Bool {
         mutate {
             let result = try logging.resolve(context, drafts: drafts, consumedTime: time, saveShortcuts: saveShortcuts)
+            if let rawEntryId = context.rawEntryId { pendingDrafts[rawEntryId] = nil }
+            // Show the day that was logged to (e.g. "log again" from a past day logs today).
+            if context.logDate != selectedDate { selectedDate = context.logDate }
             var message = "Logged \(result.itemIds.count == 1 ? "1 item" : "\(result.itemIds.count) items")"
             if !result.savedShortcuts.isEmpty { message += " · saved shortcut" }
             if !result.skippedShortcuts.isEmpty { message += " · kept existing shortcut" }
