@@ -375,6 +375,9 @@ public struct DayTotals: Hashable, Sendable {
     public var itemCount: Int
     public var itemsWithProtein: Int
     public var itemsWithFibre: Int
+
+    public static let empty = DayTotals(calories: 0, proteinG: nil, fibreG: nil, itemCount: 0,
+                                        itemsWithProtein: 0, itemsWithFibre: 0)
 }
 
 // MARK: Row mapping

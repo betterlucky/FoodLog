@@ -81,6 +81,16 @@ public struct PartDraft: Hashable, Sendable, Identifiable {
     /// Prefilled from the shortcut, when there is one.
     public var draft: FoodDraft?
     public var historySuggestions: [FoodHistorySuggestion]
+
+    public init(id: Int, inputText: String, lookupKey: String?, shortcut: Shortcut?, draft: FoodDraft?,
+                historySuggestions: [FoodHistorySuggestion]) {
+        self.id = id
+        self.inputText = inputText
+        self.lookupKey = lookupKey
+        self.shortcut = shortcut
+        self.draft = draft
+        self.historySuggestions = historySuggestions
+    }
 }
 
 /// Everything needed to review and confirm one submission.
