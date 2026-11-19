@@ -130,11 +130,13 @@ public struct LabelLogInput: Sendable {
     public var notes: String?
     public var saveAsShortcut: Bool
     public var itemSize: LabelShortcutItemSize?
+    /// Set when the label was read by the AI service rather than on-device OCR.
+    public var aiProvenance: AIProvenance?
 
     public init(name: String, facts: LabelNutritionFacts, inputMode: LabelInputMode,
                 resolution: LabelPortionResolution, calories: Double, logDate: LocalDate,
                 consumedTime: LocalTime?, notes: String? = nil, saveAsShortcut: Bool,
-                itemSize: LabelShortcutItemSize? = nil) {
+                itemSize: LabelShortcutItemSize? = nil, aiProvenance: AIProvenance? = nil) {
         self.name = name
         self.facts = facts
         self.inputMode = inputMode
@@ -145,6 +147,7 @@ public struct LabelLogInput: Sendable {
         self.notes = notes
         self.saveAsShortcut = saveAsShortcut
         self.itemSize = itemSize
+        self.aiProvenance = aiProvenance
     }
 }
 
@@ -402,7 +405,8 @@ public final class LoggingService {
                 proteinG: resolution.proteinG, fibreG: resolution.fibreG, notes: input.notes?.nilIfEmpty,
                 shortcutKey: savedKey ?? existingKey,
                 productId: productId, source: .savedLabel, confidence: .high,
-                nutrientSource: resolution.proteinG != nil || resolution.fibreG != nil ? .label : nil)
+                nutrientSource: resolution.proteinG != nil || resolution.fibreG != nil ? .label : nil,
+                aiProvenance: input.aiProvenance)
             let id = try insert(draft, rawEntryId: rawEntryId, logDate: input.logDate,
                                 consumedTime: input.consumedTime ?? clock.localTime, createdAt: now)
             return (id, savedKey)
