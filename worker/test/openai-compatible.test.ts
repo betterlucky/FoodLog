@@ -100,6 +100,19 @@ test("error statuses map to typed errors", async () => {
   }
 });
 
+test("provider status codes are kept, messages are not", async () => {
+  const { fetchImpl } = recorder(503, [{ error: { code: 503, status: "UNAVAILABLE", message: "overloaded: user text" } }]);
+  await assert.rejects(
+    compatAdapterFor("openai", fetchImpl)!.complete(request, "m", { OPENAI_API_KEY: "k" }),
+    (e: unknown) => e instanceof AdapterError && e.reason === "http_503 UNAVAILABLE",
+  );
+  const spaced = recorder(400, { error: { type: "has spaces user text", message: "x" } });
+  await assert.rejects(
+    compatAdapterFor("openai", spaced.fetchImpl)!.complete(request, "m", { OPENAI_API_KEY: "k" }),
+    (e: unknown) => e instanceof AdapterError && e.reason === "http_400",
+  );
+});
+
 test("refusal, truncation and bad content", async () => {
   const run = (body: unknown) =>
     compatAdapterFor("openai", recorder(200, body).fetchImpl)!.complete(request, "m", { OPENAI_API_KEY: "k" });

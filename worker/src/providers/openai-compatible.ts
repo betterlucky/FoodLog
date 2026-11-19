@@ -65,7 +65,9 @@ export function createOpenAICompatibleAdapter(config: CompatConfig): ProviderAda
       if (response.status === 401 || response.status === 403) {
         throw new AdapterError("auth_failed", `http_${response.status} authentication failed`);
       }
-      if (!response.ok) throw new AdapterError("http_error", `http_${response.status}`);
+      if (!response.ok) {
+        throw new AdapterError("http_error", `http_${response.status}${await providerErrorDetail(response)}`);
+      }
 
       let payload: any;
       try {
@@ -90,6 +92,23 @@ export function createOpenAICompatibleAdapter(config: CompatConfig): ProviderAda
       }
     },
   };
+}
+
+/**
+ * The provider's error status code (e.g. "UNAVAILABLE", "INVALID_ARGUMENT"), so failed attempts are
+ * diagnosable. Only a short identifier-like code is kept: provider messages can echo request content.
+ */
+async function providerErrorDetail(response: Response): Promise<string> {
+  try {
+    const payload: any = await response.json();
+    const error = Array.isArray(payload) ? payload[0]?.error : payload?.error;
+    const code = [error?.status, error?.type, error?.code].find(
+      (value) => typeof value === "string" && /^[A-Za-z0-9_.-]{1,40}$/.test(value),
+    );
+    return code ? ` ${code}` : "";
+  } catch {
+    return "";
+  }
 }
 
 /** `openai` -> OPENAI_*, `compat-<name>` -> COMPAT_<NAME>_* (name upper-cased, non-alphanumerics to `_`). */
