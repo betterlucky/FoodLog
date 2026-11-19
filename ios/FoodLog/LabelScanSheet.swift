@@ -17,6 +17,9 @@ struct LabelScanSheet: View {
     @State private var caloriesEdited = false
     @State private var saveAsShortcut = true
     @State private var showText = false
+    @State private var image: UIImage?
+    @State private var aiProvenance: AIProvenance?
+    @State private var readingWithAI = false
     @Environment(\.dismiss) private var dismiss
 
     enum Stage: Equatable { case choose, reading, review, failed(String) }
@@ -26,7 +29,7 @@ struct LabelScanSheet: View {
             Group {
                 switch stage {
                 case .choose: chooser
-                case .reading: ProgressView("Reading label…")
+                case .reading: ProgressView(readingWithAI ? "Reading label with AI…" : "Reading label…")
                 case .review: review
                 case .failed(let message):
                     ContentUnavailableView {
@@ -34,6 +37,9 @@ struct LabelScanSheet: View {
                     } description: {
                         Text(message)
                     } actions: {
+                        if model.aiAvailable, image != nil, aiProvenance == nil {
+                            Button("Read with AI") { readWithAI() }.buttonStyle(.borderedProminent)
+                        }
                         Button("Try again") { stage = .choose }
                     }
                 }
@@ -83,7 +89,11 @@ struct LabelScanSheet: View {
         .padding()
     }
 
+    /// On-device text recognition first: free, offline and private. AI is offered when it fails.
     private func read(_ image: UIImage) {
+        self.image = image
+        aiProvenance = nil
+        readingWithAI = false
         stage = .reading
         Task {
             do {
@@ -91,19 +101,49 @@ struct LabelScanSheet: View {
                 let parsed = LabelNutritionParser().parse(text)
                 guard parsed.hasRequiredCalories else {
                     facts = parsed
-                    stage = .failed("No calories were found. Try a sharper photo of the table, or add it manually.")
+                    stage = .failed("No calories were found. Try a sharper photo of the table"
+                                    + (model.aiAvailable ? ", read it with AI," : "") + " or add it manually.")
                     return
                 }
-                facts = parsed
-                mode = LabelInputMode.fromStorage(model.settings.lastLabelInputMode)
-                if mode == .items && parsed.kcalPerServing == nil && parsed.packageItemCount == nil { mode = .measure }
-                amountText = mode == .measure ? "100" : "1"
-                caloriesEdited = false
-                stage = .review
+                present(parsed)
             } catch {
                 stage = .failed(error.localizedDescription)
             }
         }
+    }
+
+    private func readWithAI() {
+        guard let image, let aiImage = AIImage(image: image) else { return }
+        readingWithAI = true
+        stage = .reading
+        Task {
+            defer { readingWithAI = false }
+            do {
+                let response = try await model.readLabel(aiImage)
+                let parsed = response.labelFacts
+                aiProvenance = response.aiProvenance
+                if name.trimmingCharacters(in: .whitespaces).isEmpty, let product = response.productName {
+                    name = product
+                }
+                guard parsed.hasRequiredCalories else {
+                    facts = parsed
+                    stage = .failed("The AI couldn't read any calories either. Add it manually.")
+                    return
+                }
+                present(parsed)
+            } catch {
+                stage = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func present(_ parsed: LabelNutritionFacts) {
+        facts = parsed
+        mode = LabelInputMode.fromStorage(model.settings.lastLabelInputMode)
+        if mode == .items && parsed.kcalPerServing == nil && parsed.packageItemCount == nil { mode = .measure }
+        amountText = mode == .measure ? "100" : "1"
+        caloriesEdited = false
+        stage = .review
     }
 
     private var resolution: LabelPortionResolution? {
@@ -139,6 +179,13 @@ struct LabelScanSheet: View {
                     if facts.isPartial {
                         Text("Some details were unclear. Check the portion and calories.")
                             .font(.footnote).foregroundStyle(.orange)
+                    }
+                    if aiProvenance != nil {
+                        Text("Read by AI. Check the numbers against the label.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else if model.aiAvailable, image != nil {
+                        Button("Wrong numbers? Read with AI", systemImage: "sparkles") { readWithAI() }
+                            .font(.footnote)
                     }
                 }
                 Section("Portion") {
@@ -187,7 +234,7 @@ struct LabelScanSheet: View {
         let input = LabelLogInput(
             name: name, facts: facts, inputMode: mode, resolution: resolution, calories: calories,
             logDate: model.selectedDate, consumedTime: LocalTime(date: Date()).truncatedToMinutes,
-            saveAsShortcut: saveAsShortcut)
+            saveAsShortcut: saveAsShortcut, aiProvenance: aiProvenance)
         if model.logLabel(input) {
             var settings = model.settings
             settings.lastLabelInputMode = mode.storageValue

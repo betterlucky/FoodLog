@@ -106,3 +106,28 @@ final class FoodLogImportUITests: XCTestCase {
         app.buttons["Pick a day"].tap()
     }
 }
+
+/// The AI estimate flow against canned Worker answers (DEBUG-only stub, no network).
+final class FoodLogAIUITests: XCTestCase {
+    func testEstimateFillsReviewedDraftAndLogsAsEstimate() {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments = ["-uiTestInMemory", "-uiTestAIStub"]
+        app.launch()
+
+        let field = app.textFields["entryField"]
+        field.tap()
+        field.typeText("friend's chilli")
+        app.buttons["submitEntry"].tap()
+        XCTAssertTrue(app.navigationBars["Add details"].waitForExistence(timeout: 3))
+
+        app.buttons["Estimate with AI"].tap()
+        XCTAssertTrue(app.staticTexts["estimateSummary"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["Calories"].value as? String, "420")
+        app.buttons["Log"].tap()
+
+        XCTAssertTrue(app.staticTexts["Beef chilli"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.staticTexts["dayTotal"].label, "420 kcal")
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'estimate'")).firstMatch.exists)
+    }
+}

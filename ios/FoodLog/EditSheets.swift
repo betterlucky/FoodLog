@@ -226,6 +226,10 @@ struct SettingsSheet: View {
     @State private var boundary = Date()
     @State private var importing = false
     @State private var importMessage: String?
+    @State private var aiURL = ""
+    @State private var aiToken = ""
+    @State private var aiStatus: String?
+    @State private var checkingAI = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -243,6 +247,26 @@ struct SettingsSheet: View {
                 }
                 .onChange(of: useBoundary) { saveBoundary() }
                 .onChange(of: boundary) { saveBoundary() }
+
+                Section {
+                    TextField("Worker address (https://…)", text: $aiURL)
+                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("App token", text: $aiToken)
+                    Button(checkingAI ? "Checking…" : "Save and test") {
+                        checkingAI = true
+                        Task {
+                            aiStatus = await model.configureAI(url: aiURL, token: aiToken)
+                            checkingAI = false
+                        }
+                    }
+                    .disabled(checkingAI)
+                    if let aiStatus { Text(aiStatus).font(.footnote) }
+                } header: {
+                    Text("AI estimates")
+                } footer: {
+                    Text("Sends only food descriptions and food or label photos, to your own FoodLog Worker. "
+                         + "Every estimate is a draft you check before it's logged.")
+                }
 
                 Section("Journal export") {
                     Toggle("Include weight", isOn: Binding(
@@ -272,6 +296,8 @@ struct SettingsSheet: View {
             .onAppear {
                 useBoundary = model.settings.dayBoundaryTime != nil
                 boundary = (model.settings.dayBoundaryTime ?? LocalTime(hour: 6, minute: 0)!).asDate
+                aiURL = AISettings.workerURL ?? ""
+                aiToken = AISettings.token ?? ""
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
                 if case .success(let url) = result { runImport(url) }

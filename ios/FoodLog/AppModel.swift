@@ -18,6 +18,9 @@ final class AppModel {
     private(set) var shortcuts: [Shortcut] = []
     private(set) var settings = AppSettings()
     private(set) var canImportAndroidData = false
+    /// The Worker client, or nil until an address and token are saved. AI is always optional.
+    private(set) var aiClient: AIClient? = AISettings.client()
+    var aiAvailable: Bool { aiClient != nil }
 
     /// A short confirmation with an optional undo, shown after a one-tap log.
     var toast: Toast?
@@ -209,6 +212,36 @@ final class AppModel {
             updated.journalIncludeWeight = include
             try store.saveSettings(updated)
         }
+    }
+
+    // MARK: AI
+
+    /// Saves the Worker address and token, then checks them. Returns a line for the settings screen.
+    func configureAI(url: String, token: String) async -> String {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        AISettings.workerURL = trimmed.isEmpty ? nil : trimmed
+        AISettings.token = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        aiClient = AISettings.client()
+        guard let aiClient else {
+            return trimmed.isEmpty ? "AI estimates are off." : "Enter an https address and the app token."
+        }
+        do {
+            let health = try await aiClient.health()
+            let estimate = health.routes["estimate"]?.first ?? "none"
+            return "Connected. Estimates use \(estimate)."
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func estimate(text: String?, image: AIImage?, hints: EstimateHints?) async throws -> EstimateResponse {
+        guard let aiClient else { throw AIError.notConfigured }
+        return try await aiClient.estimate(text: text, image: image, hints: hints)
+    }
+
+    func readLabel(_ image: AIImage) async throws -> LabelReadResponse {
+        guard let aiClient else { throw AIError.notConfigured }
+        return try await aiClient.readLabel(image: image)
     }
 
     // MARK: Import and export

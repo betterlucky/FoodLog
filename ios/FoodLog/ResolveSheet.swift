@@ -1,4 +1,5 @@
 import FoodLogCore
+import PhotosUI
 import SwiftUI
 
 /// Editable text for one food part.
@@ -6,6 +7,9 @@ struct PartForm: Identifiable {
     let id: Int
     var inputText: String
     var fromShortcut: FoodDraft?
+    /// The reviewed AI draft this form was filled from; keeps its source, confidence and provenance.
+    var fromEstimate: FoodDraft?
+    var estimateSummary: String?
     var include = true
     var name = ""
     var amount = ""
@@ -40,7 +44,17 @@ struct PartForm: Identifiable {
         notes = draft.notes ?? ""
     }
 
+    mutating func apply(_ estimate: EstimateResponse) {
+        let typed = name.trimmingCharacters(in: .whitespaces)
+        let draft = estimate.combinedDraft(named: typed.isEmpty ? "Meal" : typed)
+        fill(from: draft)
+        fromEstimate = draft
+        estimateSummary = "AI estimate · \(draft.confidence.label.lowercased()). Check it before logging."
+    }
+
     mutating func apply(_ suggestion: FoodHistorySuggestion) {
+        fromEstimate = nil
+        estimateSummary = nil
         name = suggestion.name
         amount = suggestion.amount.map(Format.number) ?? ""
         unit = suggestion.unit ?? ""
@@ -52,6 +66,20 @@ struct PartForm: Identifiable {
     /// source unless the user changed what was resolved.
     var draft: FoodDraft? {
         guard include else { return nil }
+        if let estimate = fromEstimate {
+            // Still an AI-derived estimate after review; only nutrients the user retyped lose ESTIMATE.
+            var draft = estimate
+            draft.name = name
+            draft.amount = Format.parseNumber(amount)
+            draft.unit = unit
+            if draft.amount != estimate.amount || unit != (estimate.unit ?? "") { draft.grams = nil }
+            draft.calories = Format.parseNumber(calories) ?? 0
+            draft.proteinG = Format.parseNumber(protein)
+            draft.fibreG = Format.parseNumber(fibre)
+            if draft.proteinG != estimate.proteinG || draft.fibreG != estimate.fibreG { draft.nutrientSource = nil }
+            draft.notes = notes
+            return draft
+        }
         var draft = fromShortcut ?? FoodDraft()
         let edited = FoodDraft(
             name: name, amount: Format.parseNumber(amount), unit: unit, calories: Format.parseNumber(calories) ?? 0,
@@ -138,6 +166,13 @@ private struct PartSection: View {
     let isManual: Bool
     let showsInclude: Bool
     @State private var showNutrients = false
+    @State private var estimating = false
+    @State private var estimateError: String?
+    @State private var showBatch = false
+    @State private var batchWeight = ""
+    @State private var servings = ""
+    @State private var showCamera = false
+    @State private var photo: PhotosPickerItem?
 
     var body: some View {
         Section {
@@ -165,7 +200,89 @@ private struct PartSection: View {
         }
     }
 
+    /// Text sent for an estimate: what the user typed for this part, or the name in a manual add.
+    private var estimateText: String {
+        let typed = form.inputText.trimmingCharacters(in: .whitespaces)
+        return typed.isEmpty ? form.name.trimmingCharacters(in: .whitespaces) : typed
+    }
+
+    @ViewBuilder private var estimateControls: some View {
+        HStack {
+            Button {
+                runEstimate(image: nil)
+            } label: {
+                Label(form.fromEstimate == nil ? "Estimate with AI" : "Estimate again", systemImage: "sparkles")
+            }
+            .disabled(estimating || estimateText.isEmpty)
+            Spacer()
+            if estimating {
+                ProgressView()
+            } else {
+                Menu {
+                    if CameraPicker.isAvailable {
+                        Button("Take photo", systemImage: "camera") { showCamera = true }
+                    }
+                    PhotosPicker(selection: $photo, matching: .images) { Label("Choose photo", systemImage: "photo") }
+                } label: {
+                    Image(systemName: "camera.viewfinder").accessibilityLabel("Estimate from photo")
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraPicker { image in runEstimate(image: image) }.ignoresSafeArea()
+        }
+        .onChange(of: photo) { _, item in
+            guard let item else { return }
+            photo = nil
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self), let image = UIImage(data: data) {
+                    runEstimate(image: image)
+                } else {
+                    estimateError = "That photo couldn't be opened."
+                }
+            }
+        }
+        DisclosureGroup("Home-made batch", isExpanded: $showBatch) {
+            HStack {
+                TextField("Cooked weight", text: $batchWeight).keyboardType(.decimalPad)
+                Text("g").foregroundStyle(.secondary)
+                TextField("Servings", text: $servings).keyboardType(.decimalPad)
+            }
+            Text("List the ingredients above; FoodLog asks for one serving.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        if let summary = form.estimateSummary {
+            Text(summary).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("estimateSummary")
+        }
+        if let estimateError {
+            Text(estimateError).font(.caption).foregroundStyle(.red)
+        }
+    }
+
+    private func runEstimate(image: UIImage?) {
+        let aiImage = image.flatMap { AIImage(image: $0) }
+        let text = estimateText
+        guard !text.isEmpty || aiImage != nil else { return }
+        let hints = EstimateHints(batchWeightGrams: Format.parseNumber(batchWeight), servings: Format.parseNumber(servings))
+        estimating = true
+        estimateError = nil
+        Task {
+            defer { estimating = false }
+            do {
+                let response = try await model.estimate(text: text.isEmpty ? nil : text, image: aiImage, hints: hints)
+                form.apply(response)
+                if response.items.count > 1 || form.notes.count > 0 { showNutrients = true }
+            } catch {
+                estimateError = error.localizedDescription
+            }
+        }
+    }
+
     @ViewBuilder private var fields: some View {
+        if model.aiAvailable, form.fromShortcut == nil {
+            estimateControls
+        }
         if form.fromShortcut == nil, !form.suggestions.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack {
